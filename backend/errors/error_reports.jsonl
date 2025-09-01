@@ -1,0 +1,1 @@
+{"error": "name 'generate_sql' is not defined", "context": {"nl": "read table Final_NBA_Output_python_20250519 and create a visualization with frequency of recommended message and provider input", "job_id": "test_nba_001"}, "user": "anonymous", "timestamp": "2025-09-01T10:50:52.086776"}
