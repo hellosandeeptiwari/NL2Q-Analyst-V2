@@ -8,7 +8,7 @@ function StatusPanel() {
 
   const fetchStatus = async () => {
     try {
-      const response = await axios.get('http://localhost:8003/agent-status');
+      const response = await axios.get('http://localhost:8000/health');
       setStatus(response.data);
       setLoading(false);
     } catch (error) {
@@ -91,15 +91,15 @@ function StatusPanel() {
           padding: '0.75rem', 
           background: '#f8f9fa', 
           borderRadius: '6px',
-          border: `2px solid ${getStatusColor(status?.database?.connected === true)}`
+          border: `2px solid ${getStatusColor(status?.connected === true)}`
         }}>
           <div style={{ fontWeight: '600', color: '#495057', marginBottom: '0.25rem' }}>Database</div>
-          <div style={{ color: getStatusColor(status?.database?.connected === true) }}>
-            {getStatusText(status?.database?.connected === true)}
+          <div style={{ color: getStatusColor(status?.connected === true) }}>
+            {getStatusText(status?.connected === true)}
           </div>
-          {status?.tables?.count && (
+          {status?.latency_ms && (
             <div style={{ fontSize: '0.85rem', color: '#6c757d', marginTop: '0.25rem' }}>
-              {status.tables.count} tables indexed
+              Latency: {status.latency_ms}ms
             </div>
           )}
         </div>
@@ -108,15 +108,15 @@ function StatusPanel() {
           padding: '0.75rem', 
           background: '#f8f9fa', 
           borderRadius: '6px',
-          border: `2px solid ${getStatusColor(status?.agents?.ready === true)}`
+          border: `2px solid ${getStatusColor(status?.connected === true)}`
         }}>
           <div style={{ fontWeight: '600', color: '#495057', marginBottom: '0.25rem' }}>AI Agents</div>
-          <div style={{ color: getStatusColor(status?.agents?.ready === true) }}>
-            {status?.agents?.ready === true ? 'Ready' : 'Not Ready'}
+          <div style={{ color: getStatusColor(status?.connected === true) }}>
+            {status?.connected === true ? 'Ready' : 'Not Ready'}
           </div>
-          {status?.agents?.llm_connected && (
+          {status?.connected && (
             <div style={{ fontSize: '0.85rem', color: '#6c757d', marginTop: '0.25rem' }}>
-              LLM Connected
+              System Ready
             </div>
           )}
         </div>

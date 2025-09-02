@@ -45,26 +45,58 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
     setLoading(true);
     
     try {
-      const res = await axios.post('http://localhost:8003/query', {
+      // First, get table suggestions
+      console.log('🔍 Getting table suggestions for query:', nl);
+      const suggestionsRes = await axios.post('http://localhost:8000/table-suggestions', {
+        query: nl
+      });
+      
+      console.log('📋 Table suggestions response:', suggestionsRes.data);
+      
+      // Handle NBA agent server response format
+      if (suggestionsRes.data.user_guidance?.should_provide_suggestions && suggestionsRes.data.suggestions?.length > 0) {
+        // Convert NBA agent format to frontend format
+        const nbaResponse = suggestionsRes.data;
+        const tableNames = nbaResponse.suggestions.map((s: any) => s.table_name || s);
+        
+        const convertedSuggestions = {
+          suggested_tables: tableNames,
+          all_tables: tableNames, // For now, use the same list
+          message: nbaResponse.user_guidance.message || 'Please select tables for your query',
+          query: nl
+        };
+        
+        console.log('🔄 Converted suggestions:', convertedSuggestions);
+        setTableSuggestions(convertedSuggestions);
+        setLoading(false);
+        return;
+      }
+      
+      // Handle standard backend format  
+      if (suggestionsRes.data.suggested_tables?.length > 0) {
+        setTableSuggestions(suggestionsRes.data);
+        setLoading(false);
+        return;
+      }
+      
+      // If no suggestions needed or no matches, run query directly
+      const res = await axios.post('http://localhost:8000/query', {
         natural_language: nl,
         job_id: jobId || `job_${Date.now()}`,
         db_type: dbType,
         selected_tables: selectedTables
       });
       
-      if (res.data.status === 'needs_table_selection') {
-        setTableSuggestions(res.data);
-      } else {
-        setResponse(res.data);
-        setSelectedTables([]); // Reset selections
-        // Notify parent component of results
-        if (onQueryResults) {
-          onQueryResults(res.data);
-        }
+      setResponse(res.data);
+      setSelectedTables([]); // Reset selections
+      // Notify parent component of results
+      if (onQueryResults) {
+        onQueryResults(res.data);
       }
     } catch (err: any) {
       const errorData = err.response?.data;
       setError(errorData?.error || 'Error running query');
+      console.error('❌ Query error:', errorData);
       if (errorData && (errorData.message || errorData.available_columns || errorData.llm_analysis)) {
         setErrorDetails(errorData);
       }
@@ -93,7 +125,7 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
     setErrorDetails(null);
     setLoading(true);
     try {
-      const res = await axios.post('http://localhost:8003/query-with-table', {
+      const res = await axios.post('http://localhost:8000/query-with-table', {
         natural_language: tableSuggestions?.query || nl,
         job_id: jobId || `job_${Date.now()}`,
         selected_tables: selectedTables
@@ -127,7 +159,7 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
         columns: response.columns || []
       };
       
-      const res = await axios.post('http://localhost:8003/insights', insightPayload);
+      const res = await axios.post('http://localhost:8000/insights', insightPayload);
       setInsight(res.data.insight);
       // Notify parent component of insight update
       if (onInsightUpdate) {
@@ -166,63 +198,96 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
         </div>
       </div>
       
-      {/* Main Query Form */}
-      <form onSubmit={handleSubmit} style={{ marginBottom: '2rem' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px 150px', gap: '1rem', alignItems: 'end', marginBottom: '1rem' }}>
-          <div>
-            <label style={{ 
-              display: 'block', 
-              marginBottom: '0.75rem', 
-              fontWeight: '600', 
-              color: '#374151',
-              fontSize: '0.9rem',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em'
-            }}>
-              Your Query
-            </label>
-            <textarea
-              value={nl}
-              onChange={e => setNl(e.target.value)}
-              placeholder="e.g., 'Show me NBA player statistics from the Lakers team'&#10;'Create a visualization of player performance trends'&#10;'Find top 10 scoring players this season'"
+      {/* Enhanced Main Query Form */}
+      <div style={{ 
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        borderRadius: '16px',
+        padding: '2rem',
+        marginBottom: '2rem',
+        boxShadow: '0 10px 25px rgba(0,0,0,0.1)'
+      }}>
+        <div style={{ marginBottom: '1.5rem' }}>
+          <h2 style={{ 
+            color: 'white', 
+            margin: 0, 
+            fontSize: '1.5rem',
+            fontWeight: '700',
+            textAlign: 'center'
+          }}>
+            🏀 NBA Data Intelligence System
+          </h2>
+          <p style={{ 
+            color: 'rgba(255,255,255,0.9)', 
+            margin: '0.5rem 0 0 0', 
+            textAlign: 'center',
+            fontSize: '14px'
+          }}>
+            Ask questions about NBA data in natural language and get intelligent insights
+          </p>
+        </div>
+        
+        <form onSubmit={handleSubmit}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px 150px', gap: '1rem', alignItems: 'end', marginBottom: '1.5rem' }}>
+            <div>
+              <label style={{ 
+                display: 'block', 
+                marginBottom: '0.75rem', 
+                fontWeight: '600', 
+                color: 'white',
+                fontSize: '0.9rem',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em'
+              }}>
+                🎯 Your Query
+              </label>
+              <textarea
+                value={nl}
+                onChange={e => setNl(e.target.value)}
+                placeholder="Example queries:&#10;• 'read table final nba output python and fetch top 5 rows'&#10;• 'create a visualization with frequency of recommended message'&#10;• 'show me NBA player performance data with charts'"
+                style={{ 
+                  width: '100%', 
+                  padding: '16px 20px', 
+                  border: 'none', 
+                  borderRadius: '12px',
+                  fontSize: '14px',
+                  minHeight: '120px',
+                  resize: 'vertical',
+                  fontFamily: 'inherit',
+                  background: 'white',
+                  boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                  transition: 'all 0.2s ease',
+                  outline: 'none'
+                }}
+                onFocus={(e) => e.target.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)'}
+                onBlur={(e) => e.target.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)'}
+                required
+              />
+            </div>
+            
+            <div>
+              <label style={{ 
+                display: 'block', 
+                marginBottom: '0.75rem', 
+                fontWeight: '600', 
+                color: 'white',
+                fontSize: '0.9rem',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em'
+              }}>
+                🗄️ Database
+              </label>
+              <select
+                value={dbType}
+                onChange={e => setDbType(e.target.value)}
               style={{ 
                 width: '100%', 
                 padding: '16px 20px', 
-                border: '2px solid #e2e8f0', 
+                border: 'none', 
                 borderRadius: '12px',
+                background: 'white',
                 fontSize: '14px',
-                minHeight: '100px',
-                resize: 'vertical',
-                fontFamily: 'inherit',
-                background: '#fafafa',
-                transition: 'all 0.2s ease'
-              }}
-              required
-            />
-          </div>
-          
-          <div>
-            <label style={{ 
-              display: 'block', 
-              marginBottom: '0.75rem', 
-              fontWeight: '600', 
-              color: '#374151',
-              fontSize: '0.9rem',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em'
-            }}>
-              Database
-            </label>
-            <select
-              value={dbType}
-              onChange={e => setDbType(e.target.value)}
-              style={{ 
-                width: '100%', 
-                padding: '16px 20px', 
-                border: '2px solid #e2e8f0', 
-                borderRadius: '12px',
-                background: '#fafafa',
-                fontSize: '14px'
+                boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                outline: 'none'
               }}
             >
               <option value="snowflake">❄️ Snowflake</option>
@@ -233,56 +298,45 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
           </div>
           
           <div>
-            <label style={{ 
-              display: 'block', 
-              marginBottom: '0.75rem', 
-              fontWeight: '600', 
-              color: '#374151',
-              fontSize: '0.9rem',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em'
-            }}>
-              Job ID
-            </label>
-            <input
-              type="text"
-              value={jobId}
-              onChange={e => setJobId(e.target.value)}
-              placeholder="Optional"
+            <button
+              type="submit"
+              disabled={loading}
               style={{ 
-                width: '100%', 
-                padding: '16px 20px', 
-                border: '2px solid #e2e8f0', 
+                width: '100%',
+                padding: '16px 24px', 
+                backgroundColor: loading ? '#6c757d' : '#28a745',
+                color: 'white',
+                border: 'none',
                 borderRadius: '12px',
-                background: '#fafafa',
-                fontSize: '14px'
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                transition: 'all 0.2s ease',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px'
               }}
-            />
+              onMouseEnter={(e) => {
+                if (!loading) {
+                  e.currentTarget.style.backgroundColor = '#218838';
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                  e.currentTarget.style.boxShadow = '0 6px 12px rgba(0,0,0,0.15)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!loading) {
+                  e.currentTarget.style.backgroundColor = '#28a745';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
+                }
+              }}
+            >
+              {loading ? '🔄 Analyzing...' : '🚀 Query NBA Data'}
+            </button>
           </div>
         </div>
-        
-        <div style={{ display: 'flex', justifyContent: 'center' }}>
-          <button 
-            type="submit" 
-            disabled={loading}
-            className={loading ? '' : 'primary-button'}
-            style={{ 
-              height: '48px', 
-              padding: '0 2.5rem',
-              fontSize: '16px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.75rem',
-              background: loading ? '#9ca3af' : undefined
-            }}
-          >
-            {loading && (
-              <div className="loading-spinner" style={{ width: '18px', height: '18px' }} />
-            )}
-            {loading ? 'Processing Query...' : '🚀 Execute Query'}
-          </button>
-        </div>
-      </form>
+        </form>
+      </div>
 
       {/* Table Selection UI */}
       {tableSuggestions && (
@@ -312,13 +366,13 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
                 Table Selection Required
               </h3>
               <p style={{ color: '#6b7280', margin: 0, fontSize: '0.9rem' }}>
-                {tableSuggestions.message}
+                {tableSuggestions?.message || 'Select tables to proceed with your query'}
               </p>
             </div>
           </div>
           
           {/* Suggested Tables */}
-          {tableSuggestions.suggested_tables.length > 0 && (
+          {tableSuggestions && tableSuggestions.suggested_tables && tableSuggestions.suggested_tables.length > 0 && (
             <div style={{ marginBottom: '2rem' }}>
               <h4 style={{ 
                 color: '#374151', 
@@ -332,7 +386,7 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
                 AI Recommended Tables
               </h4>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
-                {tableSuggestions.suggested_tables.map((table, index) => (
+                {tableSuggestions?.suggested_tables?.map((table, index) => (
                   <button
                     key={index}
                     onClick={() => handleTableSelection(table)}
@@ -382,7 +436,7 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
                 color: '#6c757d'
               }}
             >
-              {showAllTables ? 'Hide' : 'Show'} All Available Tables ({tableSuggestions.all_tables.length})
+              {showAllTables ? 'Hide' : 'Show'} All Available Tables ({tableSuggestions?.all_tables?.length || 0})
             </button>
           </div>
 
@@ -403,7 +457,7 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
                 borderRadius: '4px',
                 backgroundColor: 'white'
               }}>
-                {tableSuggestions.all_tables.map((table, index) => (
+                {tableSuggestions?.all_tables?.map((table, index) => (
                   <button
                     key={index}
                     onClick={() => handleTableSelection(table)}
@@ -562,7 +616,7 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
                   {errorDetails.llm_analysis.column_matches?.length > 0 && (
                     <div style={{ marginBottom: '1rem' }}>
                       <strong style={{ color: '#004085' }}>Possible Column Matches:</strong>
-                      {errorDetails.llm_analysis.column_matches.map((match: any, index: number) => (
+                      {errorDetails.llm_analysis.column_matches?.map((match: any, index: number) => (
                         <div key={index} style={{ 
                           margin: '0.5rem 0', 
                           padding: '0.5rem', 
@@ -583,7 +637,7 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
                   {errorDetails.llm_analysis.suggested_alternatives?.length > 0 && (
                     <div>
                       <strong style={{ color: '#004085' }}>Alternative Columns:</strong>
-                      {errorDetails.llm_analysis.suggested_alternatives.slice(0, 3).map((alt: any, index: number) => (
+                      {errorDetails.llm_analysis.suggested_alternatives?.slice(0, 3).map((alt: any, index: number) => (
                         <div key={index} style={{ 
                           margin: '0.5rem 0', 
                           padding: '0.5rem', 
@@ -616,7 +670,7 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
                     gap: '0.5rem',
                     fontSize: '13px'
                   }}>
-                    {errorDetails.available_columns.slice(0, 20).map((col, index) => (
+                    {errorDetails.available_columns?.slice(0, 20).map((col, index) => (
                       <div key={index} style={{ 
                         padding: '0.25rem 0.5rem', 
                         background: 'white', 
@@ -626,7 +680,7 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
                         {col}
                       </div>
                     ))}
-                    {errorDetails.available_columns.length > 20 && (
+                    {errorDetails.available_columns && errorDetails.available_columns.length > 20 && (
                       <div style={{ padding: '0.25rem 0.5rem', color: '#6c757d' }}>
                         ... and {errorDetails.available_columns.length - 20} more
                       </div>
@@ -658,51 +712,227 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
             {response.job_id && <p><strong>Job ID:</strong> {response.job_id}</p>}
           </div>
 
-          {/* Data Table */}
+          {/* Enhanced Data Table with Better Formatting */}
           {response.rows && response.rows.length > 0 && (
             <div style={{ marginBottom: '2rem' }}>
-              <h4 style={{ color: '#495057', marginBottom: '0.5rem' }}>Data ({response.rows.length} rows)</h4>
+              <h4 style={{ color: '#495057', marginBottom: '1rem' }}>
+                📊 NBA Data Results ({response.rows.length} records)
+              </h4>
+              
+              {/* Executive Summary if available */}
+              {response.executive_summary && (
+                <div style={{ 
+                  backgroundColor: '#e8f4f8', 
+                  padding: '1rem', 
+                  borderRadius: '8px', 
+                  marginBottom: '1rem',
+                  border: '1px solid #bee5eb'
+                }}>
+                  <h5 style={{ color: '#0c5460', marginBottom: '0.5rem' }}>📋 Executive Summary</h5>
+                  <p style={{ margin: '0.25rem 0', fontSize: '14px' }}>
+                    <strong>Query Intent:</strong> {response.executive_summary.query_intent}
+                  </p>
+                  <p style={{ margin: '0.25rem 0', fontSize: '14px' }}>
+                    <strong>Data Source:</strong> {response.executive_summary.data_source}
+                  </p>
+                  {response.executive_summary.key_findings && response.executive_summary.key_findings.length > 0 && (
+                    <div style={{ marginTop: '0.5rem' }}>
+                      <strong style={{ fontSize: '14px' }}>Key Findings:</strong>
+                      <ul style={{ margin: '0.25rem 0', paddingLeft: '1.5rem' }}>
+                        {response.executive_summary.key_findings.map((finding: string, idx: number) => (
+                          <li key={idx} style={{ fontSize: '14px', margin: '0.25rem 0' }}>{finding}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+              
               <div style={{ 
-                maxHeight: '400px', 
+                maxHeight: '500px', 
                 overflow: 'auto', 
-                border: '1px solid #e9ecef',
-                borderRadius: '4px'
+                border: '1px solid #dee2e6',
+                borderRadius: '8px',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
               }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-                  <tbody>
-                    {response.rows.slice(0, 10).map((row: any[], index: number) => (
-                      <tr key={index} style={{ borderBottom: '1px solid #e9ecef' }}>
-                        {row.map((cell: any, cellIndex: number) => (
-                          <td key={cellIndex} style={{ 
-                            padding: '8px', 
-                            textAlign: 'left',
-                            backgroundColor: index % 2 === 0 ? '#f8f9fa' : 'white'
+                  {/* Enhanced Table Header */}
+                  {response.columns && response.columns.length > 0 && (
+                    <thead style={{ backgroundColor: '#343a40', color: 'white', position: 'sticky', top: 0 }}>
+                      <tr>
+                        <th style={{ padding: '12px 8px', textAlign: 'left', fontWeight: '600', fontSize: '13px' }}>
+                          #
+                        </th>
+                        {response.columns.map((column: string, idx: number) => (
+                          <th key={idx} style={{ 
+                            padding: '12px 8px', 
+                            textAlign: 'left', 
+                            fontWeight: '600',
+                            fontSize: '13px',
+                            borderLeft: idx > 0 ? '1px solid #495057' : 'none'
                           }}>
-                            {String(cell)}
-                          </td>
+                            {column}
+                          </th>
                         ))}
+                      </tr>
+                    </thead>
+                  )}
+                  <tbody>
+                    {response.rows.slice(0, 15).map((row: any, index: number) => (
+                      <tr key={index} style={{ 
+                        borderBottom: '1px solid #e9ecef',
+                        backgroundColor: index % 2 === 0 ? '#f8f9fa' : 'white',
+                        transition: 'background-color 0.2s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e3f2fd'}
+                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = index % 2 === 0 ? '#f8f9fa' : 'white'}>
+                        <td style={{ 
+                          padding: '10px 8px', 
+                          textAlign: 'center',
+                          fontWeight: '500',
+                          color: '#6c757d',
+                          fontSize: '12px'
+                        }}>
+                          {index + 1}
+                        </td>
+                        {typeof row === 'object' && !Array.isArray(row) ? (
+                          // Handle formatted object rows from backend
+                          Object.values(row).map((cell: any, cellIndex: number) => (
+                            <td key={cellIndex} style={{ 
+                              padding: '10px 8px', 
+                              textAlign: 'left',
+                              fontSize: '13px',
+                              fontFamily: typeof cell === 'number' ? 'monospace' : 'inherit',
+                              color: typeof cell === 'number' ? '#0d6efd' : '#212529'
+                            }}>
+                              {String(cell)}
+                            </td>
+                          ))
+                        ) : (
+                          // Handle array rows (fallback)
+                          (Array.isArray(row) ? row : Object.values(row)).map((cell: any, cellIndex: number) => (
+                            <td key={cellIndex} style={{ 
+                              padding: '10px 8px', 
+                              textAlign: 'left',
+                              fontSize: '13px',
+                              fontFamily: typeof cell === 'number' ? 'monospace' : 'inherit',
+                              color: typeof cell === 'number' ? '#0d6efd' : '#212529'
+                            }}>
+                              {typeof cell === 'number' ? 
+                                (cell < 1 && cell > 0 ? `${(cell * 100).toFixed(2)}%` : 
+                                 cell > 1000 ? cell.toLocaleString() : 
+                                 cell.toFixed(3)) : 
+                                String(cell)}
+                            </td>
+                          ))
+                        )}
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              {response.rows.length > 10 && (
-                <p style={{ fontSize: '14px', color: '#6c757d', marginTop: '0.5rem' }}>
-                  Showing first 10 of {response.rows.length} rows
+              {response.rows.length > 15 && (
+                <p style={{ 
+                  fontSize: '14px', 
+                  color: '#6c757d', 
+                  marginTop: '0.75rem',
+                  textAlign: 'center',
+                  fontStyle: 'italic'
+                }}>
+                  📄 Showing first 15 of {response.rows.length} records
                 </p>
+              )}
+              
+              {/* Performance Metrics */}
+              {response.performance_metrics && (
+                <div style={{ 
+                  marginTop: '1rem', 
+                  padding: '0.75rem', 
+                  backgroundColor: '#f8f9fa', 
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  color: '#495057'
+                }}>
+                  ⚡ Query executed in {response.performance_metrics.total_execution_time}s 
+                  ({response.performance_metrics.rows_per_second} rows/sec) • 
+                  Performance: {response.performance_metrics.performance_category}
+                </div>
               )}
             </div>
           )}
 
-          {/* Visualization */}
+          {/* Enhanced Visualization */}
           {response.plotly_spec && (
             <div style={{ marginBottom: '2rem' }}>
-              <h4 style={{ color: '#495057', marginBottom: '0.5rem' }}>Visualization</h4>
-              <Plot
-                data={response.plotly_spec.data}
-                layout={response.plotly_spec.layout}
-                style={{ width: '100%', height: '500px' }}
-              />
+              <h4 style={{ color: '#495057', marginBottom: '1rem' }}>
+                📈 Data Visualization
+              </h4>
+              
+              {/* Visualization Context */}
+              {response.analysis_insights && response.analysis_insights.visualization_type && (
+                <div style={{ 
+                  backgroundColor: '#fff3cd', 
+                  border: '1px solid #ffeaa7',
+                  borderRadius: '6px',
+                  padding: '0.75rem',
+                  marginBottom: '1rem'
+                }}>
+                  <p style={{ margin: 0, fontSize: '14px', color: '#856404' }}>
+                    <strong>📊 Chart Type:</strong> {response.analysis_insights.visualization_type.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())}
+                    {response.analysis_insights.confidence_score && (
+                      <span style={{ marginLeft: '1rem' }}>
+                        <strong>🎯 AI Confidence:</strong> {(response.analysis_insights.confidence_score * 100).toFixed(0)}%
+                      </span>
+                    )}
+                  </p>
+                </div>
+              )}
+              
+              <div style={{ 
+                border: '1px solid #dee2e6',
+                borderRadius: '8px',
+                padding: '1rem',
+                backgroundColor: 'white',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+              }}>
+                <Plot
+                  data={response.plotly_spec.data}
+                  layout={{
+                    ...response.plotly_spec.layout,
+                    font: { family: 'Inter, system-ui, sans-serif', size: 12 },
+                    margin: { l: 60, r: 40, t: 80, b: 100 },
+                    plot_bgcolor: 'rgba(248,249,250,0.8)',
+                    paper_bgcolor: 'white'
+                  }}
+                  style={{ width: '100%', height: '500px' }}
+                  config={{
+                    displayModeBar: true,
+                    displaylogo: false,
+                    modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
+                    responsive: true
+                  }}
+                />
+              </div>
+              
+              {/* Chart Insights */}
+              {response.analysis_insights && response.analysis_insights.data_interpretation && (
+                <div style={{ 
+                  marginTop: '1rem',
+                  padding: '1rem',
+                  backgroundColor: '#d1ecf1',
+                  border: '1px solid #bee5eb',
+                  borderRadius: '6px'
+                }}>
+                  <h6 style={{ color: '#0c5460', marginBottom: '0.5rem' }}>🔍 Data Insights</h6>
+                  <ul style={{ margin: 0, paddingLeft: '1.5rem' }}>
+                    {response.analysis_insights.data_interpretation.slice(0, 3).map((insight: string, idx: number) => (
+                      <li key={idx} style={{ fontSize: '14px', marginBottom: '0.25rem', color: '#0c5460' }}>
+                        {insight}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           )}
 

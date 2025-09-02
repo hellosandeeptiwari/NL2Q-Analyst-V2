@@ -568,7 +568,9 @@ class SchemaEmbedder:
             
             # Single API call for entire batch
             start_time = time.time()
-            response = openai.Embedding.create(
+            from openai import OpenAI
+            client = OpenAI()
+            response = client.embeddings.create(
                 input=batch_texts,
                 model=self.model
             )
@@ -578,7 +580,7 @@ class SchemaEmbedder:
             results = []
             for i, (table_name, schema_info) in enumerate(batch_info):
                 try:
-                    embedding = np.array(response['data'][i]['embedding'])
+                    embedding = np.array(response.data[i].embedding)
                     
                     table_schema = TableSchema(
                         table_name=table_name,
@@ -637,11 +639,13 @@ class SchemaEmbedder:
             
         try:
             # Get query embedding
-            response = openai.Embedding.create(
+            from openai import OpenAI
+            client = OpenAI()
+            response = client.embeddings.create(
                 input=query,
                 model=self.model
             )
-            query_embedding = np.array(response['data'][0]['embedding'])
+            query_embedding = np.array(response.data[0].embedding)
             
             # Calculate similarities
             similarities = []

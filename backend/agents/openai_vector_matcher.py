@@ -30,7 +30,6 @@ class OpenAIVectorMatcher:
             print("⚠️ No OPENAI_API_KEY found in environment variables")
             print("🔄 Vector matching will be unavailable")
         else:
-            openai.api_key = self.api_key
             print("✅ OpenAI API key loaded from environment")
         
         self.cache_dir = cache_dir
@@ -123,12 +122,16 @@ class OpenAIVectorMatcher:
             print(f"🔄 Getting embeddings for batch {i//batch_size + 1}/{(len(valid_texts)-1)//batch_size + 1}")
             
             try:
-                response = openai.Embedding.create(
+                # Use OpenAI 1.0+ API format
+                from openai import OpenAI
+                client = OpenAI(api_key=self.api_key)
+                
+                response = client.embeddings.create(
                     model=self.embedding_model,
                     input=batch
                 )
                 
-                batch_embeddings = [np.array(item['embedding']) for item in response['data']]
+                batch_embeddings = [np.array(item.embedding) for item in response.data]
                 embeddings.extend(batch_embeddings)
                 
             except Exception as e:
@@ -329,16 +332,10 @@ class OpenAIVectorMatcher:
             'search_method': 'openai_vector_embeddings'
         }
     
-    def _similarity_to_confidence(self, similarity: float) -> str:
+    def _similarity_to_confidence(self, similarity: float) -> float:
         """Convert similarity score to confidence level"""
-        if similarity >= 0.8:
-            return "very_high"
-        elif similarity >= 0.6:
-            return "high"
-        elif similarity >= 0.4:
-            return "medium"
-        else:
-            return "low"
+        # Return the actual similarity score as a float for percentage formatting
+        return max(0.0, min(1.0, similarity))  # Clamp between 0 and 1
     
     def _load_cached_embeddings(self) -> bool:
         """Load cached embeddings if they exist"""
