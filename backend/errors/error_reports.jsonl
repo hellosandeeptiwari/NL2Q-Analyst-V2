@@ -14,3 +14,8 @@
 {"error": "agent_query", "context": "object NoneType can't be used in 'await' expression", "user": "anonymous", "timestamp": "2025-09-03T20:21:00.904661"}
 {"error": "agent_query", "context": "Object of type ToolType is not JSON serializable", "user": "anonymous", "timestamp": "2025-09-03T20:22:23.861520"}
 {"error": "agent_query", "context": "Object of type SchemaContext is not JSON serializable", "user": "anonymous", "timestamp": "2025-09-03T20:26:08.809508"}
+{"error": "approve_plan", "context": "Expecting value: line 1 column 1 (char 0)", "user": "anonymous", "timestamp": "2025-09-04T18:04:31.871771"}
+{"error": "agent_query", "context": "'dict' object has no attribute 'to_dict'", "user": "anonymous", "timestamp": "2025-09-04T18:14:01.011820"}
+{"error": "agent_query", "context": "'dict' object has no attribute 'to_dict'", "user": "anonymous", "timestamp": "2025-09-04T18:16:33.496973"}
+{"error": "agent_query", "context": "'dict' object has no attribute 'to_dict'", "user": "anonymous", "timestamp": "2025-09-04T19:20:59.095732"}
+{"error": "agent_query", "context": "'dict' object has no attribute 'to_dict'", "user": "anonymous", "timestamp": "2025-09-04T19:24:43.929939"}

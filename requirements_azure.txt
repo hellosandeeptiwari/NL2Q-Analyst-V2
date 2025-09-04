@@ -1,0 +1,8 @@
+# Add these to your requirements.txt for Azure AI Search integration
+
+# Azure AI Search SDK
+azure-search-documents==11.4.0
+azure-core==1.29.5
+
+# Already have OpenAI for embeddings
+# openai>=1.0.0

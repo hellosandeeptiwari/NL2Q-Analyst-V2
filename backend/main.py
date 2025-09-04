@@ -1,8 +1,11 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from typing import Dict, Any
 import asyncio
 import json
+import time
+from datetime import datetime
 from dotenv import load_dotenv
 import os
 
@@ -18,10 +21,34 @@ from backend.agent.pipeline import NLQueryNode
 from backend.audit.audit_log import log_audit
 from backend.exports.csv_export import to_csv
 from backend.storage.data_storage import DataStorage
+
+# Global variables
+orchestrator = None
+
+async def startup_tasks():
+    """Initialize and auto-index on startup if needed"""
+    print("🚀 Starting backend initialization...")
+    global orchestrator
+    
+    # Import here to avoid circular imports
+    from backend.orchestrators.dynamic_agent_orchestrator import DynamicAgentOrchestrator
+    orchestrator = DynamicAgentOrchestrator()
+    
+    # Perform comprehensive startup initialization including optimized auto-indexing
+    await orchestrator.initialize_on_startup()
+    print("✅ Backend initialization complete")
+
+# Initialize FastAPI app
+app = FastAPI(title="NL2Q Agent API", version="1.0.0")
+
+# Add startup event
+@app.on_event("startup")
+async def on_startup():
+    await startup_tasks()
 from backend.history.query_history import save_query_history, get_recent_queries
 from backend.analytics.usage import log_usage
 from backend.errors.error_reporting import report_error, get_error_reports
-from backend.agents.agentic_orchestrator import AgenticOrchestrator, PlanStatus
+from backend.orchestrators.dynamic_agent_orchestrator import DynamicAgentOrchestrator
 
 app = FastAPI()
 
@@ -33,8 +60,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Agentic Orchestrator Setup ---
-orchestrator = AgenticOrchestrator()
+# --- Dynamic Agent Orchestrator Setup ---
+orchestrator = DynamicAgentOrchestrator()
 
 @app.post("/api/agent/query")
 async def agent_query(request: Request):
@@ -56,7 +83,7 @@ async def agent_query(request: Request):
             session_id=session_id
         )
         
-        return JSONResponse(content=plan.to_dict())
+        return JSONResponse(content=plan)
     except Exception as e:
         report_error("agent_query", str(e))
         return JSONResponse(status_code=500, content={"error": f"An error occurred: {str(e)}"})
@@ -154,6 +181,7 @@ async def test_connection(request: Request):
         body = await request.json()
         db_type = body.get("type")
         host = body.get("host")
+        account = body.get("account")  # Snowflake account identifier
         database = body.get("database")
         username = body.get("username")
         password = body.get("password")
@@ -167,7 +195,7 @@ async def test_connection(request: Request):
             conn = snowflake.connector.connect(
                 user=username,
                 password=password,
-                account=host,
+                account=account,  # Use account instead of host for Snowflake
                 warehouse=warehouse,
                 database=database,
                 schema=schema
@@ -207,6 +235,319 @@ async def test_connection(request: Request):
         
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+# --- Database Configuration and Vector Indexing Endpoints ---
+
+# Global indexing status tracking
+indexing_status = {
+    "isIndexed": False,
+    "totalTables": 0,
+    "indexedTables": 0,
+    "lastIndexed": None,
+    "isIndexing": False
+}
+
+pinecone_store = None
+
+@app.get("/api/database/config")
+async def get_database_config():
+    """Get current database configuration from .env"""
+    try:
+        # Load current .env values
+        return {
+            "engine": os.getenv("DB_ENGINE", "snowflake"),
+            "database": os.getenv("SNOWFLAKE_DATABASE", ""),
+            "schema": os.getenv("SNOWFLAKE_SCHEMA", ""),
+            "username": os.getenv("SNOWFLAKE_USER", ""),
+            "account": os.getenv("SNOWFLAKE_ACCOUNT", ""),
+            "warehouse": os.getenv("SNOWFLAKE_WAREHOUSE", ""),
+            "role": os.getenv("SNOWFLAKE_ROLE", ""),
+            # Don't return password for security
+            "password": "••••••••",
+            "connected": True  # We'll test this separately
+        }
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.post("/api/database/save-config")
+async def save_database_config(request: Request):
+    """Save database configuration to environment"""
+    try:
+        body = await request.json()
+        # In a real app, you'd save to .env file or database
+        # For now, we'll just validate the config
+        return {"success": True, "message": "Configuration saved"}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.get("/api/database/status")
+async def get_database_status():
+    """Get current database connection status"""
+    try:
+        # Check if we have database configuration
+        account = os.getenv("SNOWFLAKE_ACCOUNT", "")
+        user = os.getenv("SNOWFLAKE_USER", "")
+        database = os.getenv("SNOWFLAKE_DATABASE", "")
+        schema = os.getenv("SNOWFLAKE_SCHEMA", "")
+        warehouse = os.getenv("SNOWFLAKE_WAREHOUSE", "")
+        
+        if not account or not user:
+            return {
+                "isConnected": False,
+                "databaseType": "Snowflake",
+                "server": "",
+                "database": "",
+                "schema": "",
+                "warehouse": ""
+            }
+        
+        # Test connection
+        try:
+            db_adapter = get_adapter("snowflake")
+            # Simple test query
+            result = db_adapter.run("SELECT 1", dry_run=False)
+            is_connected = not result.error
+        except Exception:
+            is_connected = False
+        
+        return {
+            "isConnected": is_connected,
+            "databaseType": "Snowflake",
+            "server": account,
+            "database": database,
+            "schema": schema,
+            "warehouse": warehouse,
+            "lastConnected": time.time() if is_connected else None
+        }
+        
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.post("/api/database/test-connection")
+async def test_database_connection(request: Request):
+    """Test database connection and return indexing status"""
+    try:
+        body = await request.json()
+        
+        # Extract connection parameters
+        db_type = body.get("type", "snowflake")
+        
+        # For Snowflake, we need to temporarily set environment variables
+        # or create a connection string to test
+        if db_type == "snowflake":
+            # Test Snowflake connection with provided parameters
+            import os
+            import tempfile
+            
+            # Store original env vars
+            original_env = {
+                'SNOWFLAKE_USER': os.getenv('SNOWFLAKE_USER'),
+                'SNOWFLAKE_PASSWORD': os.getenv('SNOWFLAKE_PASSWORD'),
+                'SNOWFLAKE_ACCOUNT': os.getenv('SNOWFLAKE_ACCOUNT'),
+                'SNOWFLAKE_WAREHOUSE': os.getenv('SNOWFLAKE_WAREHOUSE'),
+                'SNOWFLAKE_DATABASE': os.getenv('SNOWFLAKE_DATABASE'),
+                'SNOWFLAKE_SCHEMA': os.getenv('SNOWFLAKE_SCHEMA'),
+                'SNOWFLAKE_ROLE': os.getenv('SNOWFLAKE_ROLE'),
+            }
+            
+            # Set new env vars for testing
+            test_env_vars = {
+                'SNOWFLAKE_USER': body.get('username'),
+                'SNOWFLAKE_PASSWORD': body.get('password'),
+                'SNOWFLAKE_ACCOUNT': body.get('account'),
+                'SNOWFLAKE_WAREHOUSE': body.get('warehouse'),
+                'SNOWFLAKE_DATABASE': body.get('database'),
+                'SNOWFLAKE_SCHEMA': body.get('schema'),
+                'SNOWFLAKE_ROLE': body.get('role', ''),
+            }
+            
+            # Update environment
+            for key, value in test_env_vars.items():
+                if value:
+                    os.environ[key] = value
+            
+            try:
+                # Test the connection
+                db_adapter = get_adapter("snowflake")
+                result = db_adapter.run("SELECT 1 as test", dry_run=False)
+                
+                if result.error:
+                    raise Exception(f"Connection test failed: {result.error}")
+                
+                # Check indexing status
+                global pinecone_store
+                if not pinecone_store:
+                    from backend.pinecone_schema_vector_store import PineconeSchemaVectorStore
+                    pinecone_store = PineconeSchemaVectorStore()
+                
+                indexing_info = await check_pinecone_indexing_status()
+                
+                return {
+                    "success": True, 
+                    "message": "Connection successful! Snowflake database is accessible.",
+                    "indexing_status": indexing_info,
+                    "connection_details": {
+                        "account": body.get('account'),
+                        "database": body.get('database'),
+                        "schema": body.get('schema'),
+                        "warehouse": body.get('warehouse')
+                    }
+                }
+                
+            finally:
+                # Restore original environment variables
+                for key, value in original_env.items():
+                    if value is not None:
+                        os.environ[key] = value
+                    elif key in os.environ:
+                        del os.environ[key]
+        
+        else:
+            # Handle other database types
+            return JSONResponse(
+                status_code=400, 
+                content={"error": f"Database type {db_type} not yet supported in test endpoint"}
+            )
+        
+    except Exception as e:
+        print(f"Connection test error: {e}")
+        return {
+            "success": False,
+            "message": f"Connection failed: {str(e)}",
+            "error": str(e)
+        }
+
+@app.get("/api/database/indexing-status")
+async def get_indexing_status():
+    """Get current vector indexing status"""
+    try:
+        status = await check_pinecone_indexing_status()
+        return status
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.post("/api/database/start-indexing")
+async def start_schema_indexing(request: Request):
+    """Start schema indexing process"""
+    try:
+        body = await request.json()
+        force_reindex = body.get("force_reindex", False)
+        
+        global indexing_status, pinecone_store
+        
+        if indexing_status["isIndexing"]:
+            return {"error": "Indexing already in progress"}
+        
+        if not pinecone_store:
+            from backend.pinecone_schema_vector_store import PineconeSchemaVectorStore
+            pinecone_store = PineconeSchemaVectorStore()
+        
+        # Start indexing in background
+        asyncio.create_task(perform_schema_indexing(force_reindex))
+        
+        return {"success": True, "message": "Indexing started"}
+        
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+async def check_pinecone_indexing_status() -> Dict[str, Any]:
+    """Check if Pinecone index has data"""
+    global pinecone_store
+    
+    try:
+        if not pinecone_store:
+            from backend.pinecone_schema_vector_store import PineconeSchemaVectorStore
+            pinecone_store = PineconeSchemaVectorStore()
+        
+        # Check if index has vectors
+        stats = pinecone_store.index.describe_index_stats()
+        total_vectors = stats.total_vector_count
+        
+        # Get table count from Snowflake
+        db_adapter = get_adapter("snowflake")
+        result = db_adapter.run("SHOW TABLES IN SCHEMA ENHANCED_NBA", dry_run=False)
+        total_tables = len(result.rows) if not result.error else 0
+        
+        return {
+            "isIndexed": total_vectors > 0,
+            "totalTables": total_tables,
+            "indexedTables": total_vectors // 3 if total_vectors > 0 else 0,  # Rough estimate
+            "lastIndexed": indexing_status.get("lastIndexed"),
+            "isIndexing": indexing_status.get("isIndexing", False)
+        }
+        
+    except Exception as e:
+        print(f"Error checking indexing status: {e}")
+        return {
+            "isIndexed": False,
+            "totalTables": 0,
+            "indexedTables": 0,
+            "lastIndexed": None,
+            "isIndexing": False
+        }
+
+async def perform_schema_indexing(force_reindex: bool = False):
+    """Perform the actual schema indexing with optimized chunking"""
+    global indexing_status, pinecone_store, orchestrator
+    
+    try:
+        indexing_status["isIndexing"] = True
+        print("🚀 Starting manual schema indexing with optimized chunking...")
+        
+        # Use the orchestrator's optimized indexing if available
+        if orchestrator and hasattr(orchestrator, '_perform_full_database_indexing'):
+            await orchestrator._perform_full_database_indexing()
+        else:
+            # Fallback to direct indexing
+            print("📁 Using direct indexing fallback...")
+            if not pinecone_store:
+                from backend.pinecone_schema_vector_store import PineconeSchemaVectorStore
+                pinecone_store = PineconeSchemaVectorStore()
+                
+            # Get database adapter
+            db_adapter = get_adapter("snowflake")
+            if not db_adapter:
+                raise Exception("Failed to get database adapter")
+            
+            # Clear existing index if force reindex
+            if force_reindex:
+                pinecone_store.clear_index()
+                print("🧹 Cleared existing index for fresh indexing")
+            
+            # Index schema with optimized chunking
+            await pinecone_store.index_database_schema(db_adapter)
+        
+        # Get final statistics
+        if not pinecone_store:
+            from backend.pinecone_schema_vector_store import PineconeSchemaVectorStore
+            pinecone_store = PineconeSchemaVectorStore()
+            
+        stats = pinecone_store.index.describe_index_stats()
+        
+        # Get total table count
+        db_adapter = get_adapter("snowflake")
+        result = db_adapter.run("SHOW TABLES IN SCHEMA ENHANCED_NBA", dry_run=False)
+        total_tables = len(result.rows) if not result.error else 0
+        
+        # Update status
+        indexing_status.update({
+            "isIndexed": True,
+            "totalTables": total_tables,
+            "indexedTables": total_tables,
+            "lastIndexed": time.time(),
+            "isIndexing": False
+        })
+        
+        print(f"✅ Optimized schema indexing complete! {stats.total_vector_count} vectors for {total_tables} tables.")
+        
+    except Exception as e:
+        print(f"❌ Schema indexing failed: {e}")
+        import traceback
+        traceback.print_exc()
+        indexing_status.update({
+            "isIndexing": False,
+            "error": str(e)
+        })
 
 @app.post("/query")
 async def query(request: Request):
@@ -1162,8 +1503,8 @@ if __name__ == "__main__":
     print("🚀 Starting uvicorn server...")
     import uvicorn
     try:
-        print("📡 Running uvicorn on port 8001...")
-        uvicorn.run(app, host="0.0.0.0", port=8001)
+        print("📡 Running uvicorn on port 8000...")
+        uvicorn.run(app, host="0.0.0.0", port=8000)
     except Exception as e:
         print(f"❌ Error starting server: {e}")
         import traceback

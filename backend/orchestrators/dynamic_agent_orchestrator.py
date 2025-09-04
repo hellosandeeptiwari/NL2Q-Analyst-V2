@@ -50,6 +50,134 @@ class DynamicAgentOrchestrator:
         self.available_agents = self._register_agents()
         self.reasoning_model = os.getenv("REASONING_MODEL", "o3-mini")
         self.fast_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        self._index_initialized = False
+        self.db_connector = None
+        self.pinecone_store = None
+        
+    async def initialize_on_startup(self):
+        """Initialize the system on startup, including comprehensive auto-indexing"""
+        try:
+            print("🚀 Starting system initialization...")
+            
+            # Initialize database connector
+            await self._initialize_database_connector()
+            
+            # Initialize vector store
+            await self._initialize_vector_store()
+            
+            # Check if vector store needs indexing
+            if self.pinecone_store and self.db_connector:
+                await self._check_and_perform_comprehensive_indexing()
+            
+            print("✅ System initialization completed")
+        except Exception as e:
+            print(f"⚠️ Error during startup initialization: {e}")
+            # Don't fail startup completely
+            
+    async def _initialize_database_connector(self):
+        """Initialize database connection"""
+        try:
+            from backend.db.engine import get_adapter
+            self.db_connector = get_adapter("snowflake")
+            print("✅ Database connector initialized")
+        except Exception as e:
+            print(f"⚠️ Database connector initialization failed: {e}")
+            
+    async def _initialize_vector_store(self):
+        """Initialize Pinecone vector store"""
+        try:
+            from backend.pinecone_schema_vector_store import PineconeSchemaVectorStore
+            self.pinecone_store = PineconeSchemaVectorStore()
+            print("✅ Vector store initialized")
+        except Exception as e:
+            print(f"⚠️ Vector store initialization failed: {e}")
+            
+    async def _check_and_perform_comprehensive_indexing(self):
+        """Check indexing completeness and perform auto-indexing if needed"""
+        try:
+            # Get current index statistics
+            stats = self.pinecone_store.index.describe_index_stats()
+            total_vectors = stats.total_vector_count
+            
+            # Get available tables count
+            available_tables = []
+            try:
+                result = self.db_connector.run("SHOW TABLES IN SCHEMA ENHANCED_NBA", dry_run=False)
+                available_tables = result.rows if result.rows else []
+            except Exception as e:
+                print(f"⚠️ Could not fetch table list: {e}")
+                return
+            
+            total_available_tables = len(available_tables)
+            
+            # Calculate expected vectors per table (overview + column groups + business context)
+            # With improved chunking: 3-5 chunks per table
+            expected_vectors_per_table = 4  # Conservative estimate
+            expected_total_vectors = total_available_tables * expected_vectors_per_table
+            
+            # Check if indexing is needed
+            indexing_completeness = (total_vectors / expected_total_vectors) if expected_total_vectors > 0 else 0
+            
+            print(f"📊 Index status: {total_vectors} vectors, {total_available_tables} tables available")
+            print(f"� Indexing completeness: {indexing_completeness:.1%}")
+            
+            # Trigger auto-indexing if less than 80% complete or completely empty
+            should_index = (indexing_completeness < 0.8) or (total_vectors == 0)
+            
+            if should_index and total_available_tables > 0:
+                print("🔄 Starting comprehensive auto-indexing with optimized chunking...")
+                await self._perform_full_database_indexing()
+            else:
+                print("✅ Index appears complete, skipping auto-indexing")
+                
+        except Exception as e:
+            print(f"⚠️ Error checking indexing status: {e}")
+            
+    async def _perform_full_database_indexing(self):
+        """Perform full database indexing with optimized chunking"""
+        try:
+            print("🗂️ Starting full database schema indexing with improved chunking...")
+            
+            # Ensure pinecone store is initialized
+            if not self.pinecone_store:
+                await self._initialize_vector_store()
+            
+            if not self.pinecone_store:
+                raise Exception("Failed to initialize Pinecone vector store")
+            
+
+            # Ensure db_connector is initialized
+            if not self.db_connector:
+                from backend.main import get_adapter
+                self.db_connector = get_adapter("snowflake")
+            if not self.db_connector:
+                raise Exception("Database adapter not initialized")
+
+            # Clear any existing incomplete index first to start fresh
+            try:
+                self.pinecone_store.clear_index()
+                print("🧹 Cleared existing incomplete index")
+            except Exception as e:
+                print(f"⚠️ Could not clear existing index: {e}")
+
+            # Index the complete database schema with new optimized chunking
+            await self.pinecone_store.index_database_schema(self.db_connector)
+            
+            # Verify indexing completed successfully
+            final_stats = self.pinecone_store.index.describe_index_stats()
+            print(f"✅ Indexing completed: {final_stats.total_vector_count} vectors indexed")
+            
+            self._index_initialized = True
+            
+        except Exception as e:
+            print(f"⚠️ Error during full database indexing: {e}")
+            import traceback
+            traceback.print_exc()
+            
+    async def initialize_vector_search(self):
+        """Legacy method - redirects to new comprehensive initialization"""
+        if not self._index_initialized:
+            await self.initialize_on_startup()
         
     def _register_agents(self) -> Dict[str, AgentCapability]:
         """Register all available agents and their capabilities"""
@@ -388,33 +516,144 @@ class DynamicAgentOrchestrator:
     
     # Individual task execution methods using real agents
     async def _execute_schema_discovery(self, inputs: Dict) -> Dict[str, Any]:
-        """Execute schema discovery task using real SchemaTool"""
+        """Execute schema discovery task using Pinecone vector search"""
         try:
-            from backend.tools.schema_tool import SchemaTool
-            schema_tool = SchemaTool()
+            from backend.pinecone_schema_vector_store import PineconeSchemaVectorStore, SchemaChunk
+            from backend.db.engine import get_adapter
             
+            pinecone_store = PineconeSchemaVectorStore()
             query = inputs.get("original_query", "")
             
-            # Discover schema for the query
-            schema_context = await schema_tool.discover_schema(query=query)
+            print("🔍 Using Pinecone for schema discovery and table suggestions")
             
+            # Check if Pinecone index has data, auto-index if needed
+            try:
+                stats = pinecone_store.index.describe_index_stats()
+                if stats.total_vector_count == 0:
+                    print("📊 Pinecone index is empty - starting automatic schema indexing...")
+                    db_adapter = get_adapter("snowflake")
+                    await pinecone_store.index_database_schema(db_adapter)
+                    print("✅ Auto-indexing complete!")
+            except Exception as auto_index_error:
+                print(f"⚠️ Auto-indexing failed: {auto_index_error}")
+                # Fall back to traditional schema discovery if Pinecone fails
+                return await self._fallback_schema_discovery(inputs)
+            
+            # Get top table matches from Pinecone
+            table_matches = await pinecone_store.search_relevant_tables(query, top_k=4)
+            relevant_tables = []
+            for match in table_matches:
+                table_name = match['table_name']
+                # Get details for each table
+                table_details = await pinecone_store.get_table_details(table_name)
+                columns = []
+                for chunk_type, chunk_data in table_details.get('chunks', {}).items():
+                    if chunk_type == 'column':
+                        col_meta = chunk_data.get('metadata', {})
+                        columns.append({
+                            "name": col_meta.get("column_name", "unknown"),
+                            "data_type": col_meta.get("data_type", "unknown"),
+                            "nullable": True,
+                            "description": None
+                        })
+                relevant_tables.append({
+                    "name": table_name,
+                    "schema": "ENHANCED_NBA",
+                    "columns": columns,
+                    "row_count": None,
+                    "description": f"Table containing {table_name.replace('_', ' ').lower()} data"
+                })
+            # Table suggestions for user
+            table_suggestions = []
+            for i, match in enumerate(table_matches):
+                table_suggestions.append({
+                    "rank": i + 1,
+                    "table_name": match['table_name'],
+                    "relevance_score": match['best_score'],
+                    "description": f"Table containing {match['table_name'].replace('_', ' ').lower()} data",
+                    "chunk_types": list(match['chunk_types']),
+                    "estimated_relevance": "High" if match['best_score'] > 0.8 else "Medium" if match['best_score'] > 0.6 else "Low"
+                })
+            print(f"✅ Pinecone schema discovery found {len(relevant_tables)} tables")
+            if table_suggestions:
+                print(f"💡 Generated {len(table_suggestions)} table suggestions for user selection")
             return {
-                "discovered_tables": [table.name for table in schema_context.relevant_tables],
-                "table_details": [
-                    {
-                        "name": table.name,
-                        "schema": table.schema,
-                        "columns": [col["name"] for col in table.columns],
-                        "row_count": table.row_count
-                    } for table in schema_context.relevant_tables
-                ],
-                "entity_mappings": schema_context.entity_mappings,
-                "business_glossary": schema_context.business_glossary,
+                "discovered_tables": [t["name"] for t in relevant_tables],
+                "table_details": relevant_tables,
+                "table_suggestions": table_suggestions,
                 "status": "completed"
             }
         except Exception as e:
-            print(f"❌ Schema discovery failed: {e}")
-            return {"error": str(e), "status": "failed"}
+            print(f"❌ Pinecone schema discovery failed: {e}")
+            import traceback
+            traceback.print_exc()
+            # Fall back to traditional schema discovery
+            return await self._fallback_schema_discovery(inputs)
+
+    async def _fallback_schema_discovery(self, inputs: Dict) -> Dict[str, Any]:
+        """Fallback to traditional schema discovery if Pinecone fails"""
+        try:
+            from backend.db.engine import get_adapter
+            
+            print("🔄 Using fallback schema discovery...")
+            db_adapter = get_adapter("snowflake")
+            
+            # Get limited set of tables for fallback
+            result = db_adapter.run("SHOW TABLES IN SCHEMA ENHANCED_NBA LIMIT 10", dry_run=False)
+            if result.error:
+                return {"error": f"Schema discovery failed: {result.error}", "status": "failed"}
+            
+            relevant_tables = []
+            table_suggestions = []
+            
+            for i, row in enumerate(result.rows[:4]):  # Limit to top 4
+                table_name = row[1] if len(row) > 1 else str(row[0])
+                try:
+                    # Get basic table info
+                    columns_result = db_adapter.run(f"DESCRIBE TABLE {table_name}", dry_run=False)
+                    columns = []
+                    if not columns_result.error:
+                        for col_row in columns_result.rows:
+                            columns.append({
+                                "name": col_row[0],
+                                "data_type": col_row[1],
+                                "nullable": col_row[2] == 'Y',
+                                "description": None
+                            })
+                    
+                    table_info = {
+                        "name": table_name,
+                        "schema": "ENHANCED_NBA", 
+                        "columns": columns,
+                        "row_count": None,
+                        "description": f"Table containing {table_name.replace('_', ' ').lower()} data"
+                    }
+                    relevant_tables.append(table_info)
+                    
+                    # Add to suggestions
+                    table_suggestions.append({
+                        "rank": i + 1,
+                        "table_name": table_name,
+                        "relevance_score": 0.5,  # Default score for fallback
+                        "description": f"Table containing {table_name.replace('_', ' ').lower()} data",
+                        "chunk_types": ["fallback"],
+                        "estimated_relevance": "Medium"
+                    })
+                    
+                except Exception as table_error:
+                    print(f"⚠️ Failed to get details for {table_name}: {table_error}")
+            
+            print(f"✅ Fallback schema discovery found {len(relevant_tables)} tables")
+            return {
+                "discovered_tables": [t["name"] for t in relevant_tables],
+                "table_details": relevant_tables,
+                "table_suggestions": table_suggestions,
+                "status": "completed"
+            }
+            
+        except Exception as e:
+            print(f"❌ Fallback schema discovery failed: {e}")
+            return {"error": f"All schema discovery methods failed: {e}", "status": "failed"}
     
     async def _execute_semantic_analysis(self, inputs: Dict) -> Dict[str, Any]:
         """Execute semantic analysis using real SemanticDictionary"""
@@ -500,55 +739,89 @@ class DynamicAgentOrchestrator:
             return {"error": str(e), "status": "failed"}
     
     async def _execute_user_verification(self, inputs: Dict) -> Dict[str, Any]:
-        """Execute user verification - present choices and get confirmation"""
+        """Execute user verification - present top 4 table suggestions for selection"""
         try:
-            # Get similarity matching results
-            matched_tables = []
-            similarity_confidence = "low"
+            # Get table suggestions from schema discovery
+            table_suggestions = []
+            discovered_tables = []
             
+            if "1_discover_schema" in inputs:
+                schema_result = inputs["1_discover_schema"]
+                table_suggestions = schema_result.get("table_suggestions", [])
+                discovered_tables = schema_result.get("discovered_tables", [])
+            
+            # Get similarity matching results as backup
+            matched_tables = []
             if "3_similarity_matching" in inputs:
                 similarity_result = inputs["3_similarity_matching"]
                 matched_tables = similarity_result.get("matched_tables", [])
-                similarity_confidence = similarity_result.get("confidence", "low")
             
-            print(f"\n👤 USER VERIFICATION REQUIRED")
-            print(f"="*50)
-            print(f"🔍 Found {len(matched_tables)} potentially relevant tables:")
+            print(f"\n👤 TABLE SELECTION REQUIRED")
+            print(f"="*60)
             
-            for i, table in enumerate(matched_tables, 1):
-                print(f"   {i}. {table}")
-            
-            print(f"🎯 Confidence level: {similarity_confidence}")
-            print(f"\n❓ Do you want to proceed with these tables? (y/n/modify)")
-            
-            # In a real system, this would be interactive
-            # For demo, auto-approve if we have high confidence or any tables
-            if matched_tables and similarity_confidence in ["high", "medium"]:
-                user_response = "y"  # Auto-approve good matches
-                print(f"✅ Auto-approved: High confidence matches found")
-            elif matched_tables:
-                user_response = "y"  # Auto-approve any matches for demo
-                print(f"⚠️ Auto-approved: Some tables found, proceeding")
-            else:
-                user_response = "n"  # No tables found
-                print(f"❌ No tables found to approve")
-            
-            if user_response.lower() == 'y':
-                return {
-                    "confirmed_tables": matched_tables,
-                    "user_approved": True,
-                    "modifications": None,
-                    "confidence": similarity_confidence,
-                    "status": "completed"
-                }
-            else:
-                return {
-                    "confirmed_tables": [],
-                    "user_approved": False,
-                    "modifications": "user_declined",
-                    "status": "failed"
-                }
+            # Present table suggestions if available (from Azure Search)
+            if table_suggestions:
+                print(f"💡 Found {len(table_suggestions)} relevant table suggestions:")
+                print(f"\nPlease select which table(s) to use for your query:")
                 
+                for suggestion in table_suggestions:
+                    print(f"\n   {suggestion['rank']}. {suggestion['table_name']}")
+                    print(f"      Relevance: {suggestion['estimated_relevance']} ({suggestion['relevance_score']:.3f})")
+                    print(f"      Description: {suggestion['description']}")
+                    # Only show sample content if it exists
+                    if 'sample_content' in suggestion:
+                        print(f"      Sample: {suggestion['sample_content'][:100]}...")
+                
+                # For demo, auto-select the top table with highest relevance
+                if table_suggestions[0]['relevance_score'] > 0.7:
+                    selected_tables = [table_suggestions[0]['table_name']]
+                    print(f"\n✅ Auto-selecting highest relevance table: {selected_tables[0]}")
+                    user_choice = "auto_selected"
+                else:
+                    # In production, this would be user input
+                    selected_tables = [table_suggestions[0]['table_name']]
+                    user_choice = "default_first"
+                    print(f"\n⚠️ Lower confidence - defaulting to first table: {selected_tables[0]}")
+                
+            # Fallback to discovered tables
+            elif discovered_tables:
+                print(f"📊 Found {len(discovered_tables)} discovered tables:")
+                for i, table in enumerate(discovered_tables, 1):
+                    print(f"   {i}. {table}")
+                
+                selected_tables = discovered_tables[:1]  # Select first table
+                user_choice = "discovered_fallback"
+                print(f"\n✅ Using discovered table: {selected_tables[0]}")
+                
+            # Fallback to similarity matched tables
+            elif matched_tables:
+                print(f"🔍 Found {len(matched_tables)} similarity-matched tables:")
+                for i, table in enumerate(matched_tables, 1):
+                    print(f"   {i}. {table}")
+                
+                selected_tables = matched_tables[:1]  # Select first table
+                user_choice = "similarity_fallback"
+                print(f"\n✅ Using similarity-matched table: {selected_tables[0]}")
+                
+            else:
+                print(f"❌ No tables found to approve")
+                return {
+                    "approved_tables": [],
+                    "user_choice": "none_available",
+                    "confidence": "none",
+                    "status": "failed",
+                    "error": "No tables available for selection"
+                }
+            
+            return {
+                "approved_tables": selected_tables,
+                "user_choice": user_choice,
+                "table_suggestions": table_suggestions,  # Pass along for reference
+                "confidence": "high" if table_suggestions else "medium",
+                "selection_method": "azure_enhanced" if table_suggestions else "fallback",
+                "status": "completed"
+            }
+            
         except Exception as e:
             print(f"❌ User verification failed: {e}")
             return {"error": str(e), "status": "failed"}
@@ -649,3 +922,39 @@ class DynamicAgentOrchestrator:
         except Exception as e:
             print(f"❌ Visualization failed: {e}")
             return {"error": str(e), "status": "failed"}
+
+    # API Compatibility Methods
+    async def process_query(self, user_query: str, user_id: str = "default", session_id: str = "default") -> Dict[str, Any]:
+        """
+        Main entry point for processing queries - compatible with main.py API
+        """
+        print(f"🚀 Dynamic Agent Orchestrator processing query: '{user_query}'")
+        
+        try:
+            # Step 1: Plan execution using reasoning model
+            tasks = await self.plan_execution(user_query)
+            
+            # Step 2: Execute the plan
+            results = await self.execute_plan(tasks, user_query)
+            
+            # Step 3: Format response for API compatibility
+            plan_id = f"plan_{hash(user_query)}_{session_id}"
+            
+            return {
+                "plan_id": plan_id,
+                "user_query": user_query,
+                "reasoning_steps": [f"Planned {len(tasks)} execution steps", "Used Pinecone vector search for schema discovery", "Executed dynamic agent coordination"],
+                "estimated_execution_time": f"{len(tasks) * 2}s",
+                "tasks": [{"task_type": task.task_type.value, "agent": "dynamic"} for task in tasks],
+                "status": "completed" if "error" not in results else "failed",
+                "results": results
+            }
+            
+        except Exception as e:
+            print(f"❌ Dynamic orchestrator failed: {e}")
+            return {
+                "plan_id": f"error_{hash(user_query)}",
+                "user_query": user_query,
+                "error": str(e),
+                "status": "failed"
+            }

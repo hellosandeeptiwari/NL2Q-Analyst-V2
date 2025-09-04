@@ -67,6 +67,16 @@ interface QueryPlan {
   context?: any;
 }
 
+interface DatabaseStatus {
+  isConnected: boolean;
+  databaseType: string;
+  server?: string;
+  database?: string;
+  schema?: string;
+  warehouse?: string;
+  lastConnected?: string;
+}
+
 // API Functions
 const api = {
   // User Profile
@@ -98,6 +108,32 @@ const api = {
   searchConversations: async (userId: string, query: string): Promise<Conversation[]> => {
     const response = await fetch(`/api/chat/search/${userId}?q=${encodeURIComponent(query)}`);
     return response.json();
+  },
+
+  // Database Status
+  getDatabaseStatus: async (): Promise<DatabaseStatus> => {
+    try {
+      const response = await fetch('/api/database/status');
+      if (!response.ok) {
+        throw new Error('Failed to fetch database status');
+      }
+      return await response.json();
+    } catch (error) {
+      // Return default disconnected state if API fails
+      return {
+        isConnected: false,
+        databaseType: 'Unknown',
+        server: '',
+        database: '',
+        schema: '',
+        warehouse: ''
+      };
+    }
+  },
+
+  // Refresh database status
+  refreshDatabaseStatus: async (): Promise<DatabaseStatus> => {
+    return api.getDatabaseStatus();
   },
 
   // Agent Query
@@ -158,7 +194,11 @@ const api = {
   ]
 };
 
-const EnhancedPharmaChat: React.FC = () => {
+interface EnhancedPharmaChatProps {
+  onNavigateToSettings?: () => void;
+}
+
+const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSettings }) => {
   // State Management
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -169,6 +209,14 @@ const EnhancedPharmaChat: React.FC = () => {
   const [activePlan, setActivePlan] = useState<QueryPlan | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showProfile, setShowProfile] = useState(false);
+  const [databaseStatus, setDatabaseStatus] = useState<DatabaseStatus>({
+    isConnected: false,
+    databaseType: 'Unknown',
+    server: '',
+    database: '',
+    schema: '',
+    warehouse: ''
+  });
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -200,12 +248,36 @@ const EnhancedPharmaChat: React.FC = () => {
           setActiveConversation(convs[0]);
           // In real implementation, load messages here
         }
+
+        // Load database status
+        const dbStatus = await api.getDatabaseStatus();
+        setDatabaseStatus(dbStatus);
       } catch (error) {
         console.error('Error initializing data:', error);
       }
     };
 
     initializeData();
+  }, []);
+
+  // Refresh database status function
+  const refreshDatabaseStatus = async () => {
+    try {
+      const dbStatus = await api.getDatabaseStatus();
+      setDatabaseStatus(dbStatus);
+    } catch (error) {
+      console.error('Error refreshing database status:', error);
+    }
+  };
+
+  // Add refresh when component comes into focus (e.g., returning from settings)
+  useEffect(() => {
+    const handleFocus = () => {
+      refreshDatabaseStatus();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
   }, []);
 
   // Poll for plan status updates
@@ -279,6 +351,53 @@ const EnhancedPharmaChat: React.FC = () => {
       e.preventDefault();
       handleSendMessage();
     }
+  };
+
+  // Database Connection Indicator Component
+  const DatabaseConnectionIndicator = () => {
+    const getStatusColor = () => {
+      return databaseStatus.isConnected ? '#10b981' : '#ef4444'; // green : red
+    };
+
+    const getStatusText = () => {
+      if (!databaseStatus.isConnected) {
+        return 'Not Connected';
+      }
+      
+      let connectionText = databaseStatus.databaseType;
+      if (databaseStatus.database) {
+        connectionText += ` - ${databaseStatus.database}`;
+      }
+      if (databaseStatus.schema) {
+        connectionText += `.${databaseStatus.schema}`;
+      }
+      return connectionText;
+    };
+
+    return (
+      <div className="database-status-indicator" style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        padding: '4px 12px',
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        borderRadius: '20px',
+        fontSize: '12px',
+        fontWeight: '500'
+      }}>
+        <div 
+          style={{
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            backgroundColor: getStatusColor(),
+            boxShadow: databaseStatus.isConnected ? `0 0 6px ${getStatusColor()}` : 'none'
+          }}
+        />
+        <FiDatabase size={12} />
+        <span>{getStatusText()}</span>
+      </div>
+    );
   };
 
   // Create new conversation
@@ -500,10 +619,18 @@ const EnhancedPharmaChat: React.FC = () => {
       <div className="chat-main">
         {/* Chat Header */}
         <div className="chat-header">
-          <h2 className="chat-title">
-            {activeConversation?.title || 'New Conversation'}
-          </h2>
+          <div className="header-left">
+            <h2 className="chat-title">
+              {activeConversation?.title || 'New Conversation'}
+            </h2>
+            <DatabaseConnectionIndicator />
+          </div>
           <div className="chat-actions">
+            {onNavigateToSettings && (
+              <button className="action-btn" onClick={onNavigateToSettings}>
+                <FiSettings size={14} /> Settings
+              </button>
+            )}
             <button className="action-btn">
               <FiStar size={14} /> Favorite
             </button>
