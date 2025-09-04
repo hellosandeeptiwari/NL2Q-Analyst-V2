@@ -6,6 +6,8 @@ Uses the automatic agent selection system to analyze any query without hardcodin
 import asyncio
 import sys
 import os
+import pandas as pd
+import sqlite3
 from pathlib import Path
 
 # Add backend to path
@@ -71,13 +73,13 @@ async def analyze_query_dynamically(user_query: str):
 async def main():
     """Main function using dynamic orchestration"""
     
-    # Test with the NBA query
-    nba_query = "read table final nba output python and fetch top 5 rows and create a visualization with frequency of recommended message and provider input"
+    # User's exact pharma GCO query - test with this specific pattern
+    user_query = "read table final nba output python and fetch top 5 rows and create a visualization with frequency of recommended message and input and action effect"
     
-    print("🧪 Testing Dynamic Agent Orchestration")
+    print("🧪 Testing Dynamic Agent Orchestration for Pharma GCO")
     print("="*80)
     
-    results = await analyze_query_dynamically(nba_query)
+    results = await analyze_query_dynamically(user_query)
     
     if results:
         print("\n✅ Dynamic orchestration successful!")
@@ -90,10 +92,10 @@ async def main():
         print("   6. ✅ Executed query safely")
         print("   7. ✅ Created visualizations")
         
-        print(f"\n🎯 This process will work for ANY query, not just NBA!")
+        print(f"\n🎯 This process will work for ANY pharma query, not just NBA!")
         
-        # Test with a different query
-        print(f"\n🧪 Testing with different query...")
+        # Test with another pharma query pattern
+        print(f"\n🧪 Testing with different pharma query...")
         other_query = "show me top providers by prescription volume in cardiology"
         other_results = await analyze_query_dynamically(other_query)
         
@@ -102,12 +104,18 @@ async def main():
     else:
         print("❌ Dynamic orchestration needs debugging")
 
-if __name__ == "__main__":
-    # Load environment variables
-    from dotenv import load_dotenv
-    load_dotenv()
-    
-    asyncio.run(main())
+# Database imports with availability checks
+try:
+    import snowflake.connector
+    SNOWFLAKE_AVAILABLE = True
+except ImportError:
+    SNOWFLAKE_AVAILABLE = False
+
+try:
+    import psycopg2
+    POSTGRESQL_AVAILABLE = True
+except ImportError:
+    POSTGRESQL_AVAILABLE = False
 
 def connect_to_database():
     """Connect to the configured database using environment variables"""
@@ -128,7 +136,7 @@ def connect_to_database():
             print("✅ Connected to Snowflake successfully")
             return conn
             
-        elif db_engine == 'postgresql' and POSTGRES_AVAILABLE:
+        elif db_engine == 'postgresql' and POSTGRESQL_AVAILABLE:
             print("🔌 Connecting to PostgreSQL database...")
             conn = psycopg2.connect(
                 host=os.getenv('POSTGRES_HOST', 'localhost'),
@@ -359,8 +367,8 @@ def analyze_patterns(df):
     print(f"\n⭐ Average Recommendation Score: {avg_score:.3f}")
     print(f"📈 Score Range: {df['recommendation_score'].min():.3f} - {df['recommendation_score'].max():.3f}")
 
-def main():
-    """Main execution function"""
+def legacy_main():
+    """Legacy execution function for direct data analysis"""
     print("🚀 Starting NBA Output Data Analysis...")
     
     # Connect to database
@@ -395,4 +403,9 @@ def main():
     return summary_data
 
 if __name__ == "__main__":
-    main()
+    # Load environment variables
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    # Run the dynamic orchestration main function
+    asyncio.run(main())
