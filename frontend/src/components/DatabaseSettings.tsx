@@ -34,6 +34,18 @@ interface IndexingStatus {
   error?: string;
 }
 
+interface IndexingProgress {
+  isIndexing: boolean;
+  totalTables: number;
+  processedTables: number;
+  currentTable: string;
+  stage: string;
+  startTime?: string;
+  estimatedTimeRemaining?: number;
+  errors: Array<{table: string; error: string; timestamp: string}>;
+  completedTables: string[];
+}
+
 const defaultConfigs: Record<string, Partial<DatabaseConfig>> = {
   snowflake: {
     type: 'snowflake',
@@ -77,10 +89,77 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
     indexedTables: 0
   });
 
+  // Real-time progress tracking
+  const [indexingProgress, setIndexingProgress] = useState<IndexingProgress>({
+    isIndexing: false,
+    totalTables: 0,
+    processedTables: 0,
+    currentTable: '',
+    stage: '',
+    errors: [],
+    completedTables: []
+  });
+  const [websocket, setWebsocket] = useState<WebSocket | null>(null);
+
   useEffect(() => {
     loadSavedConfig();
     checkIndexingStatus();
+    
+    // Setup WebSocket connection for real-time progress
+    const connectWebSocket = () => {
+      const ws = new WebSocket('ws://localhost:8000/ws/progress');
+      
+      ws.onopen = () => {
+        console.log('Connected to progress WebSocket');
+        setWebsocket(ws);
+      };
+      
+      ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          if (message.type === 'indexing_progress') {
+            setIndexingProgress(message.data);
+            // Also update the old indexing status for compatibility
+            setIndexingStatus(prev => ({
+              ...prev,
+              isIndexing: message.data.isIndexing,
+              totalTables: message.data.totalTables,
+              indexedTables: message.data.processedTables
+            }));
+          }
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
+        }
+      };
+      
+      ws.onclose = () => {
+        console.log('WebSocket connection closed, attempting to reconnect...');
+        setTimeout(connectWebSocket, 3000); // Reconnect after 3 seconds
+      };
+      
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+      };
+    };
+    
+    connectWebSocket();
+    
+    // Cleanup
+    return () => {
+      if (websocket) {
+        websocket.close();
+      }
+    };
   }, []);
+
+  // Cleanup WebSocket when component unmounts
+  useEffect(() => {
+    return () => {
+      if (websocket) {
+        websocket.close();
+      }
+    };
+  }, [websocket]);
 
   const loadSavedConfig = async () => {
     try {
@@ -153,6 +232,34 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
       }
     } catch (error) {
       console.error('Failed to trigger re-indexing:', error);
+    } finally {
+      setIsForceIndexing(false);
+    }
+  };
+
+  const resumeIndexing = async () => {
+    setIsForceIndexing(true);
+    try {
+      console.log('Resuming indexing from where left off...');
+      const response = await fetch('/api/database/start-indexing', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ force_reindex: false })
+      });
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Resume indexing triggered:', result);
+        // Refresh status after triggering reindex
+        setTimeout(() => {
+          checkIndexingStatus();
+        }, 2000); // Wait 2 seconds for the indexing to start
+      } else {
+        console.error('Failed to resume indexing:', response.status);
+      }
+    } catch (error) {
+      console.error('Failed to resume indexing:', error);
     } finally {
       setIsForceIndexing(false);
     }
@@ -414,13 +521,83 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
           </div>
         )}
 
+        {/* Real-time Progress Display */}
+        {indexingProgress.isIndexing && (
+          <div className="indexing-progress">
+            <div className="progress-header">
+              <span className="progress-icon">🔄</span>
+              <span>Indexing in Progress</span>
+            </div>
+            
+            <div className="progress-details">
+              <div className="progress-stage">{indexingProgress.stage}</div>
+              {indexingProgress.currentTable && (
+                <div className="current-table">
+                  Currently processing: <strong>{indexingProgress.currentTable}</strong>
+                </div>
+              )}
+              
+              <div className="progress-bar-container">
+                <div className="progress-bar">
+                  <div 
+                    className="progress-fill" 
+                    style={{
+                      width: `${indexingProgress.totalTables > 0 
+                        ? (indexingProgress.processedTables / indexingProgress.totalTables) * 100 
+                        : 0}%`
+                    }}
+                  ></div>
+                </div>
+                <div className="progress-text">
+                  {indexingProgress.processedTables} / {indexingProgress.totalTables} tables
+                  {indexingProgress.estimatedTimeRemaining && (
+                    <span className="time-remaining">
+                      {' '}• ETA: {Math.ceil(indexingProgress.estimatedTimeRemaining / 60)} min
+                    </span>
+                  )}
+                </div>
+              </div>
+              
+              {indexingProgress.completedTables.length > 0 && (
+                <div className="completed-tables">
+                  <div className="completed-header">Recently completed:</div>
+                  <div className="completed-list">
+                    {indexingProgress.completedTables.slice(-5).map((table, index) => (
+                      <span key={index} className="completed-table">✅ {table}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {indexingProgress.errors.length > 0 && (
+                <div className="progress-errors">
+                  <div className="errors-header">⚠️ Errors encountered:</div>
+                  {indexingProgress.errors.slice(-3).map((error, index) => (
+                    <div key={index} className="error-item">
+                      <strong>{error.table}:</strong> {error.error}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="indexing-actions">
           <button
             onClick={checkIndexingStatus}
-            disabled={indexingStatus.isIndexing || isRefreshingStatus}
+            disabled={indexingProgress.isIndexing || isRefreshingStatus}
             className="refresh-button"
           >
-            {isRefreshingStatus ? 'Refreshing...' : indexingStatus.isIndexing ? 'Indexing...' : 'Refresh Status'}
+            {isRefreshingStatus ? 'Refreshing...' : indexingProgress.isIndexing ? 'Indexing...' : 'Refresh Status'}
+          </button>
+          
+          <button
+            onClick={resumeIndexing}
+            disabled={indexingProgress.isIndexing || isRefreshingStatus || isForceIndexing}
+            className="resume-index-button"
+          >
+            {isForceIndexing ? 'Starting Resume...' : 'Resume Indexing'}
           </button>
           
           <button

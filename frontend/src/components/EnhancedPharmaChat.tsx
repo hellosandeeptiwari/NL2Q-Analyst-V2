@@ -53,6 +53,16 @@ interface PlanStep {
   start_time?: string;
   end_time?: string;
   error?: string;
+  input_data?: any;
+  output_data?: {
+    sql?: string;
+    results?: any[];
+    chart_config?: {
+      chart_type?: string;
+      [key: string]: any;
+    };
+    [key: string]: any;
+  };
 }
 
 interface QueryPlan {
@@ -113,7 +123,7 @@ const api = {
   // Database Status
   getDatabaseStatus: async (): Promise<DatabaseStatus> => {
     try {
-      const response = await fetch('/api/database/status');
+      const response = await fetch('http://localhost:8000/api/database/status');
       if (!response.ok) {
         throw new Error('Failed to fetch database status');
       }
@@ -137,8 +147,8 @@ const api = {
   },
 
   // Agent Query
-  sendQuery: async (query: string, userId: string, conversationId: string): Promise<{ plan_id: string; status: string }> => {
-    const response = await fetch('/api/agent/query', {
+  sendQuery: async (query: string, userId: string, conversationId: string): Promise<QueryPlan> => {
+    const response = await fetch('http://localhost:8000/api/agent/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
@@ -151,7 +161,7 @@ const api = {
   },
 
   getPlanStatus: async (planId: string): Promise<QueryPlan> => {
-    const response = await fetch(`/api/agent/plan/${planId}/status`);
+    const response = await fetch(`http://localhost:8000/api/agent/plan/${planId}/status`);
     return response.json();
   },
 
@@ -280,27 +290,15 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
     return () => window.removeEventListener('focus', handleFocus);
   }, []);
 
-  // Poll for plan status updates
+  // Poll for plan status updates - DISABLED since we get complete plan directly
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    // No longer needed - backend returns complete plan immediately
+    // The plan status polling was causing undefined plan_id errors
     
-    if (activePlan && activePlan.status !== 'completed' && activePlan.status !== 'failed') {
-      interval = setInterval(async () => {
-        try {
-          const statusRes = await api.getPlanStatus(activePlan.plan_id);
-          setActivePlan(statusRes);
-          
-          if (statusRes.status === 'completed' || statusRes.status === 'failed') {
-            setIsLoading(false);
-          }
-        } catch (error) {
-          console.error('Error polling plan status:', error);
-          setIsLoading(false);
-        }
-      }, 2000);
+    // Just ensure loading state is turned off when plan is set
+    if (activePlan && (activePlan.status === 'completed' || activePlan.status === 'failed')) {
+      setIsLoading(false);
     }
-    
-    return () => clearInterval(interval);
   }, [activePlan]);
 
   // Handle sending messages
@@ -322,11 +320,18 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
 
     try {
       // Send query to agent
-      const result = await api.sendQuery(currentMessage, userProfile.user_id, activeConversation.conversation_id);
+      const planResult = await api.sendQuery(currentMessage, userProfile.user_id, activeConversation.conversation_id);
       
-      // Start polling for plan updates
-      const planStatus = await api.getPlanStatus(result.plan_id);
-      setActivePlan(planStatus);
+      // Add debugging to see what we're getting
+      console.log('Received plan result:', planResult);
+      
+      // Set the plan directly since it's already the full plan object
+      setActivePlan(planResult);
+      
+      // If plan is already completed, turn off loading
+      if (planResult.status === 'completed' || planResult.status === 'failed') {
+        setIsLoading(false);
+      }
 
     } catch (error) {
       console.error('Error sending message:', error);
@@ -453,18 +458,21 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
   };
 
   // Render plan execution
-  const renderPlanExecution = (plan: QueryPlan) => (
+  const renderPlanExecution = (plan: QueryPlan) => {
+    console.log('Plan execution_steps:', plan.execution_steps);
+    
+    return (
     <div className="plan-execution">
       <div className="plan-header">
         <h4 className="plan-title">AI Agent Execution Plan</h4>
-        <span className={`plan-status ${plan.status}`}>
-          {plan.status}
+        <span className={`plan-status ${plan.status.toLowerCase()}`}>
+          {plan.status.toUpperCase()}
         </span>
       </div>
       
       {plan.reasoning_steps && plan.reasoning_steps.length > 0 && (
         <div className="reasoning-steps">
-          <p className="reasoning-title">Reasoning:</p>
+          <p className="reasoning-title"><strong>Reasoning:</strong></p>
           <ul>
             {plan.reasoning_steps.map((step, idx) => (
               <li key={idx}>{step}</li>
@@ -474,31 +482,84 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
       )}
 
       <div className="plan-steps">
-        {plan.execution_steps.map((step) => (
+        <p className="steps-title"><strong>Execution Steps:</strong></p>
+        {plan.execution_steps && plan.execution_steps.length > 0 ? plan.execution_steps.map((step, index) => (
           <div key={step.step_id} className="plan-step">
-            <div className={`step-status-icon ${step.status}`}>
-              {step.status === 'completed' && '✓'}
-              {step.status === 'executing' && <FiLoader />}
-              {step.status === 'pending' && '○'}
-              {step.status === 'error' && '!'}
+            <div className={`step-status-icon ${step.status || 'completed'}`}>
+              ✓
             </div>
             <div className="step-details">
-              <div className="step-name">{step.tool_type.replace('_', ' ')}</div>
+              <div className="step-name">
+                {index + 1}. {step.tool_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+              </div>
+              
+              {/* Show SQL queries if available */}
+              {step.output_data && step.output_data.sql && (
+                <div className="step-output">
+                  <p><strong>SQL Query:</strong></p>
+                  <pre className="sql-code">{step.output_data.sql}</pre>
+                </div>
+              )}
+              
+              {/* Show results if available */}
+              {step.output_data && step.output_data.results && (
+                <div className="step-output">
+                  <p><strong>Results:</strong></p>
+                  <div className="results-table">
+                    {Array.isArray(step.output_data.results) && step.output_data.results.length > 0 ? (
+                      <table>
+                        <thead>
+                          <tr>
+                            {Object.keys(step.output_data.results[0]).map(key => (
+                              <th key={key}>{key}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {step.output_data.results.slice(0, 5).map((row: any, idx: number) => (
+                            <tr key={idx}>
+                              {Object.values(row).map((value, vidx) => (
+                                <td key={vidx}>{String(value)}</td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <p>{JSON.stringify(step.output_data.results)}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+              
+              {/* Show charts if available */}
+              {step.output_data && step.output_data.chart_config && (
+                <div className="step-output">
+                  <p><strong>Visualization:</strong></p>
+                  <div className="chart-placeholder">
+                    📊 Chart: {step.output_data.chart_config.chart_type || 'Data Visualization'}
+                  </div>
+                </div>
+              )}
+              
               {step.error && (
                 <div className="step-description error">{step.error}</div>
               )}
             </div>
           </div>
-        ))}
+        )) : (
+          <p>No execution steps available</p>
+        )}
       </div>
 
-      {plan.estimated_cost > 0 && (
+      {plan.estimated_cost && plan.estimated_cost > 0 && (
         <div className="plan-cost">
-          Estimated cost: ${plan.estimated_cost.toFixed(3)}
+          <strong>Estimated cost:</strong> ${plan.estimated_cost.toFixed(3)}
         </div>
       )}
     </div>
-  );
+    );
+  };
 
   // Render message
   const renderMessage = (message: ChatMessage) => (

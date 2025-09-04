@@ -126,14 +126,14 @@ class DynamicAgentOrchestrator:
             
             if should_index and total_available_tables > 0:
                 print("🔄 Starting comprehensive auto-indexing with optimized chunking...")
-                await self._perform_full_database_indexing()
+                await self._perform_full_database_indexing(force_clear=True)
             else:
                 print("✅ Index appears complete, skipping auto-indexing")
                 
         except Exception as e:
             print(f"⚠️ Error checking indexing status: {e}")
             
-    async def _perform_full_database_indexing(self):
+    async def _perform_full_database_indexing(self, force_clear: bool = True):
         """Perform full database indexing with optimized chunking"""
         try:
             print("🗂️ Starting full database schema indexing with improved chunking...")
@@ -153,15 +153,28 @@ class DynamicAgentOrchestrator:
             if not self.db_connector:
                 raise Exception("Database adapter not initialized")
 
-            # Clear any existing incomplete index first to start fresh
-            try:
-                self.pinecone_store.clear_index()
-                print("🧹 Cleared existing incomplete index")
-            except Exception as e:
-                print(f"⚠️ Could not clear existing index: {e}")
+            # Clear existing index only if force_clear is True
+            if force_clear:
+                try:
+                    self.pinecone_store.clear_index()
+                    print("🧹 Cleared existing index for fresh start")
+                except Exception as e:
+                    print(f"⚠️ Could not clear existing index: {e}")
+            else:
+                print("📋 Resuming indexing - keeping existing vectors")
 
             # Index the complete database schema with new optimized chunking
-            await self.pinecone_store.index_database_schema(self.db_connector)
+            # Define a local progress callback to avoid import issues
+            def local_progress_callback(stage: str, current_table: str = "", processed: int = None, total: int = None, error: str = None):
+                try:
+                    from backend.main import update_progress
+                    update_progress(stage, current_table, processed, total, error)
+                except ImportError:
+                    print(f"Progress: {stage} - {current_table} ({processed}/{total})")
+                except Exception as e:
+                    print(f"Progress callback error: {e}")
+                
+            await self.pinecone_store.index_database_schema(self.db_connector, progress_callback=local_progress_callback)
             
             # Verify indexing completed successfully
             final_stats = self.pinecone_store.index.describe_index_stats()
@@ -169,6 +182,10 @@ class DynamicAgentOrchestrator:
             
             self._index_initialized = True
             
+        except Exception as e:
+            print(f"⚠️ Error during full database indexing: {e}")
+            import traceback
+            traceback.print_exc()
         except Exception as e:
             print(f"⚠️ Error during full database indexing: {e}")
             import traceback

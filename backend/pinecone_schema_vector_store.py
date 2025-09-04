@@ -4,6 +4,7 @@ Handles chunking, embedding, and similarity search of database schemas
 """
 import os
 import json
+import asyncio
 from pinecone import Pinecone, ServerlessSpec
 import openai
 from typing import List, Dict, Any, Optional
@@ -23,6 +24,12 @@ class SchemaChunk:
     embedding: Optional[List[float]] = None
 
 class PineconeSchemaVectorStore:
+    # Performance tuning constants
+    TABLE_BATCH_SIZE = int(os.getenv("INDEX_TABLE_BATCH_SIZE", "5"))  # Tables processed concurrently
+    EMBEDDING_BATCH_SIZE = int(os.getenv("INDEX_EMBEDDING_BATCH_SIZE", "10"))  # Embeddings per API call
+    UPSERT_BATCH_SIZE = int(os.getenv("INDEX_UPSERT_BATCH_SIZE", "100"))  # Vectors per Pinecone upsert
+    SKIP_ROW_COUNTS = os.getenv("INDEX_SKIP_ROW_COUNTS", "true").lower() == "true"  # Skip slow COUNT queries
+    
     def clear_index(self):
         """Delete all vectors from the Pinecone index"""
         self.index.delete(deleteAll=True)
@@ -61,11 +68,108 @@ class PineconeSchemaVectorStore:
         print(f"✅ Pinecone initialized: {self.index_name}")
 
     async def generate_embedding(self, text: str) -> List[float]:
+        # Validate token count before sending to API
+        estimated_tokens = self._estimate_tokens(text)
+        if estimated_tokens > 7000:  # Conservative limit
+            print(f"⚠️ Content too large ({estimated_tokens} tokens), this should have been pre-split!")
+            # This should not happen with proper chunking, but as emergency fallback
+            # Split the content and take the first valid chunk
+            chunks = self._split_content_by_tokens(text, 4000)
+            if chunks:
+                text = chunks[0]
+                print(f"   Using first chunk with {self._estimate_tokens(text)} tokens")
+        
         response = await self.openai_client.embeddings.create(
             model=self.embedding_model,
             input=text
         )
         return response.data[0].embedding
+
+    def _estimate_tokens(self, text: str) -> int:
+        """Estimate token count (rough approximation: 1 token ≈ 3 characters for safety)"""
+        return len(text) // 3
+    
+    def _split_content_by_tokens(self, content: str, max_tokens: int = 4000) -> List[str]:
+        """Split content into chunks that fit within token limits with NO DATA LOSS"""
+        if self._estimate_tokens(content) <= max_tokens:
+            return [content]
+        
+        # First try splitting by lines
+        lines = content.split('\n')
+        chunks = []
+        current_chunk = ""
+        
+        for line in lines:
+            # If adding this line would exceed limit, start new chunk
+            if current_chunk and self._estimate_tokens(current_chunk + "\n" + line) > max_tokens:
+                if current_chunk:
+                    chunks.append(current_chunk.strip())
+                    current_chunk = line
+                else:
+                    # Single line is too long, split it by words
+                    line_chunks = self._split_long_line(line, max_tokens)
+                    chunks.extend(line_chunks[:-1])
+                    current_chunk = line_chunks[-1]
+            else:
+                current_chunk += "\n" + line if current_chunk else line
+        
+        if current_chunk:
+            chunks.append(current_chunk.strip())
+        
+        # Second pass: check all chunks and split further if needed
+        final_chunks = []
+        for chunk in chunks:
+            if self._estimate_tokens(chunk) > max_tokens:
+                # Split by sentences, then words if necessary
+                sentences = chunk.replace('. ', '.\n').split('\n')
+                sentence_chunk = ""
+                
+                for sentence in sentences:
+                    if sentence_chunk and self._estimate_tokens(sentence_chunk + '\n' + sentence) > max_tokens:
+                        if sentence_chunk.strip():
+                            final_chunks.append(sentence_chunk.strip())
+                        sentence_chunk = sentence
+                    else:
+                        sentence_chunk += '\n' + sentence if sentence_chunk else sentence
+                
+                # If sentence chunk is still too big, split by words
+                if sentence_chunk and self._estimate_tokens(sentence_chunk) > max_tokens:
+                    words = sentence_chunk.split()
+                    word_chunk = ""
+                    for word in words:
+                        if word_chunk and self._estimate_tokens(word_chunk + ' ' + word) > max_tokens:
+                            if word_chunk.strip():
+                                final_chunks.append(word_chunk.strip())
+                            word_chunk = word
+                        else:
+                            word_chunk += ' ' + word if word_chunk else word
+                    if word_chunk.strip():
+                        final_chunks.append(word_chunk.strip())
+                elif sentence_chunk.strip():
+                    final_chunks.append(sentence_chunk.strip())
+            else:
+                final_chunks.append(chunk)
+        
+        return final_chunks if final_chunks else [content[:10000]]  # Last resort fallback
+    
+    def _split_long_line(self, line: str, max_tokens: int) -> List[str]:
+        """Split a very long line into smaller pieces"""
+        max_chars = max_tokens * 3  # More conservative conversion
+        chunks = []
+        
+        while len(line) > max_chars:
+            # Try to split at word boundaries
+            split_pos = line.rfind(' ', 0, max_chars)
+            if split_pos == -1:
+                split_pos = max_chars
+            
+            chunks.append(line[:split_pos])
+            line = line[split_pos:].lstrip()
+        
+        if line:
+            chunks.append(line)
+        
+        return chunks
 
     def chunk_schema_information(self, table_info: Dict[str, Any]) -> List[SchemaChunk]:
         """Create optimized schema chunks for better vector search"""
@@ -79,31 +183,36 @@ class PineconeSchemaVectorStore:
         column_names = list(columns.keys()) if columns else []
         column_types = [f"{col}: {info.get('data_type', 'unknown')}" for col, info in columns.items()] if columns else []
         
-        # Create rich table context
+        # Create rich table context - NO DATA LOSS, just split if needed
         table_chunk_content = f"""Table: {table_name}
 Schema: {table_schema}
 Description: {table_description}
 Total Columns: {len(column_names)}
-Column Names: {', '.join(column_names[:20])}
-Column Types: {', '.join(column_types[:15])}
+Column Names: {', '.join(column_names)}
+Column Types: {', '.join(column_types)}
 Business Domain: {self._extract_business_domain(table_name)}
 Data Category: {self._categorize_table(table_name, column_names)}
 Table Purpose: {self._infer_table_purpose(table_name, column_names)}
 Row Count: {table_info.get('row_count', 'unknown')}"""
         
-        chunks.append(SchemaChunk(
-            chunk_id=f"{table_name}_overview",
-            table_name=table_name,
-            table_schema=table_schema,
-            chunk_type="table_overview",
-            content=table_chunk_content,
-            metadata={
-                "total_columns": len(column_names),
-                "business_domain": self._extract_business_domain(table_name),
-                "data_category": self._categorize_table(table_name, column_names),
-                "row_count": table_info.get('row_count')
-            }
-        ))
+        # Split table overview if it's too large
+        overview_parts = self._split_content_by_tokens(table_chunk_content)
+        for i, part in enumerate(overview_parts):
+            chunk_id = f"{table_name}_overview" if len(overview_parts) == 1 else f"{table_name}_overview_{i+1}"
+            chunks.append(SchemaChunk(
+                chunk_id=chunk_id,
+                table_name=table_name,
+                table_schema=table_schema,
+                chunk_type="table_overview",
+                content=part,
+                metadata={
+                    "total_columns": len(column_names),
+                    "business_domain": self._extract_business_domain(table_name),
+                    "data_category": self._categorize_table(table_name, column_names),
+                    "row_count": table_info.get('row_count'),
+                    "part": i + 1 if len(overview_parts) > 1 else None
+                }
+            ))
         
         # 2. Column group chunks - group related columns together
         if columns:
@@ -112,26 +221,35 @@ Row Count: {table_info.get('row_count', 'unknown')}"""
                 if not group_columns:
                     continue
                     
+                # Include ALL column details - NO DATA LOSS
                 group_content = f"""Table: {table_name} - {group_name} Columns
 {', '.join([f"{col} ({info.get('data_type', 'unknown')})" for col, info in group_columns.items()])}
 Column Group: {group_name}
 Table Context: {table_description}
 Business Purpose: {self._infer_table_purpose(table_name, column_names)}"""
                 
-                chunks.append(SchemaChunk(
-                    chunk_id=f"{table_name}_columns_{group_name.lower().replace(' ', '_')}",
-                    table_name=table_name,
-                    table_schema=table_schema,
-                    chunk_type="column_group",
-                    content=group_content,
-                    metadata={
-                        "column_group": group_name,
-                        "column_count": len(group_columns),
-                        "columns": list(group_columns.keys())
-                    }
-                ))
+                # Split group content if too large
+                group_parts = self._split_content_by_tokens(group_content)
+                for i, part in enumerate(group_parts):
+                    chunk_id = f"{table_name}_columns_{group_name.lower().replace(' ', '_')}"
+                    if len(group_parts) > 1:
+                        chunk_id += f"_{i+1}"
+                    
+                    chunks.append(SchemaChunk(
+                        chunk_id=chunk_id,
+                        table_name=table_name,
+                        table_schema=table_schema,
+                        chunk_type="column_group",
+                        content=part,
+                        metadata={
+                            "column_group": group_name,
+                            "column_count": len(group_columns),
+                            "columns": list(group_columns.keys()),
+                            "part": i + 1 if len(group_parts) > 1 else None
+                        }
+                    ))
         
-        # 3. Business context chunk - semantic meaning and use cases
+        # 3. Business context chunk - ALL semantic information preserved
         business_chunk_content = f"""Business Context for {table_name}
 Business Domain: {self._extract_business_domain(table_name)}
 Likely Use Cases: {self._generate_use_cases(table_name, column_names)}
@@ -140,18 +258,23 @@ Related Concepts: {self._extract_business_concepts(table_name, column_names)}
 Table Purpose: {self._infer_table_purpose(table_name, column_names)}
 Data Analytics Focus: {self._get_analytics_focus(table_name)}"""
         
-        chunks.append(SchemaChunk(
-            chunk_id=f"{table_name}_business_context",
-            table_name=table_name,
-            table_schema=table_schema,
-            chunk_type="business_context",
-            content=business_chunk_content,
-            metadata={
-                "business_domain": self._extract_business_domain(table_name),
-                "use_cases": self._generate_use_cases(table_name, column_names),
-                "concepts": self._extract_business_concepts(table_name, column_names)
-            }
-        ))
+        # Split business context if too large
+        business_parts = self._split_content_by_tokens(business_chunk_content)
+        for i, part in enumerate(business_parts):
+            chunk_id = f"{table_name}_business_context" if len(business_parts) == 1 else f"{table_name}_business_context_{i+1}"
+            chunks.append(SchemaChunk(
+                chunk_id=chunk_id,
+                table_name=table_name,
+                table_schema=table_schema,
+                chunk_type="business_context",
+                content=part,
+                metadata={
+                    "business_domain": self._extract_business_domain(table_name),
+                    "use_cases": self._generate_use_cases(table_name, column_names),
+                    "concepts": self._extract_business_concepts(table_name, column_names),
+                    "part": i + 1 if len(business_parts) > 1 else None
+                }
+            ))
         
         return chunks
         
@@ -281,40 +404,264 @@ Data Analytics Focus: {self._get_analytics_focus(table_name)}"""
         else:
             return "Business intelligence and data analysis"
 
-    async def index_database_schema(self, db_adapter):
-        print("🚀 Indexing database schema in Pinecone...")
+    async def index_database_schema(self, db_adapter, progress_callback=None):
+        import time
+        start_time = time.time()
+        
+        print("🚀 Indexing database schema in Pinecone with optimized batch processing...")
         result = db_adapter.run("SHOW TABLES IN SCHEMA ENHANCED_NBA", dry_run=False)
         if result.error:
             raise Exception(f"Failed to get tables: {result.error}")
         all_tables = [row[1] if len(row) > 1 else str(row[0]) for row in result.rows]
         print(f"📊 Found {len(all_tables)} tables to index")
-        for table_name in all_tables:
-            try:
-                table_info = await self._get_table_info(db_adapter, table_name)
-                table_chunks = self.chunk_schema_information(table_info)
-                for chunk in table_chunks:
-                    chunk.embedding = await self.generate_embedding(chunk.content)
-                    # Upsert to Pinecone
-                    self.index.upsert([(chunk.chunk_id, chunk.embedding, {"table_name": chunk.table_name, "chunk_type": chunk.chunk_type, "metadata": json.dumps(chunk.metadata)})])
-                print(f"   ✅ Indexed {table_name}: {len(table_chunks)} chunks")
-            except Exception as e:
-                print(f"   ⚠️ Failed to process {table_name}: {e}")
+        
+        # Notify progress callback of total tables
+        if progress_callback:
+            progress_callback("start", total=len(all_tables))
+        
+        # Check existing indexed tables efficiently
+        check_start = time.time()
+        existing_tables = await self._get_indexed_tables_fast()
+        check_time = time.time() - check_start
+        print(f"📋 Found {len(existing_tables)} already indexed tables (check took {check_time:.1f}s)")
+        
+        # Filter out already indexed tables
+        tables_to_index = [table for table in all_tables if table not in existing_tables]
+        print(f"🎯 Need to index {len(tables_to_index)} new tables")
+        
+        if not tables_to_index:
+            print("✅ All tables already indexed!")
+            if progress_callback:
+                progress_callback("complete")
+            return
+        
+        # Performance configuration info
+        print(f"⚙️ Performance config: {self.TABLE_BATCH_SIZE} tables/batch, {self.EMBEDDING_BATCH_SIZE} embeddings/batch, {self.UPSERT_BATCH_SIZE} vectors/upsert")
+        
+        # Process tables in batches for optimal performance
+        batch_size = self.TABLE_BATCH_SIZE  # Configurable batch size
+        indexed_count = 0
+        total_chunks = 0
+        processed_tables = len(existing_tables)  # Start with already indexed count
+        
+        for i in range(0, len(tables_to_index), batch_size):
+            batch_start = time.time()
+            batch = tables_to_index[i:i + batch_size]
+            batch_num = i//batch_size + 1
+            total_batches = (len(tables_to_index) + batch_size - 1)//batch_size
+            
+            print(f"🔄 Processing batch {batch_num}/{total_batches}: {batch}")
+            
+            # Process each table in the batch individually for progress tracking
+            all_chunks = []
+            for table_name in batch:
+                try:
+                    if progress_callback:
+                        progress_callback("table_start", current_table=table_name)
+                    
+                    result = await self._process_table_optimized(db_adapter, table_name)
+                    if isinstance(result, Exception):
+                        print(f"   ⚠️ Failed to process {table_name}: {result}")
+                        if progress_callback:
+                            progress_callback("error", current_table=table_name, error=str(result))
+                    else:
+                        chunks = result
+                        all_chunks.extend(chunks)
+                        processed_tables += 1
+                        print(f"   ✅ Prepared {table_name}: {len(chunks)} chunks")
+                        
+                        if progress_callback:
+                            progress_callback("table_complete", current_table=table_name, processed=processed_tables, total=len(all_tables))
+                except Exception as e:
+                    print(f"   ⚠️ Failed to process {table_name}: {e}")
+                    if progress_callback:
+                        progress_callback("error", current_table=table_name, error=str(e))
+            
+            # Batch generate embeddings for all chunks
+            if all_chunks:
+                if progress_callback:
+                    progress_callback("table_start", current_table=f"Generating embeddings for batch {batch_num}")
+                
+                embed_start = time.time()
+                await self._batch_generate_embeddings(all_chunks)
+                embed_time = time.time() - embed_start
+                
+                if progress_callback:
+                    progress_callback("table_start", current_table=f"Uploading vectors for batch {batch_num}")
+                
+                # Batch upsert all chunks at once
+                upsert_start = time.time()
+                await self._batch_upsert_chunks(all_chunks)
+                upsert_time = time.time() - upsert_start
+                
+                total_chunks += len(all_chunks)
+                batch_time = time.time() - batch_start
+                
+                print(f"   📤 Batch {batch_num} complete: {len(all_chunks)} vectors (embed: {embed_time:.1f}s, upsert: {upsert_time:.1f}s, total: {batch_time:.1f}s)")
+        
+        total_time = time.time() - start_time
+        avg_time_per_table = total_time / len(tables_to_index) if tables_to_index else 0
+        
+        if progress_callback:
+            progress_callback("complete")
+        
         print(f"🎉 Pinecone schema indexing complete!")
+        print(f"📈 Performance summary:")
+        print(f"   • Indexed: {len(tables_to_index)} tables, Skipped: {len(existing_tables)}")
+        print(f"   • Total vectors: {total_chunks}")
+        print(f"   • Total time: {total_time:.1f}s")
+        print(f"   • Average: {avg_time_per_table:.1f}s per table")
+
+    async def _process_table_optimized(self, db_adapter, table_name: str):
+        """Process a single table and return chunks (without embeddings yet)"""
+        table_info = await self._get_table_info(db_adapter, table_name)
+        table_chunks = self.chunk_schema_information(table_info)
+        return table_chunks
+
+    async def _batch_generate_embeddings(self, chunks):
+        """Generate embeddings for chunks in batches"""
+        batch_size = self.EMBEDDING_BATCH_SIZE  # Configurable batch size
+        
+        for i in range(0, len(chunks), batch_size):
+            batch = chunks[i:i + batch_size]
+            contents = [chunk.content for chunk in batch]
+            
+            # Generate embeddings in batch
+            embeddings = await self._generate_embeddings_batch(contents)
+            
+            # Assign embeddings back to chunks
+            for chunk, embedding in zip(batch, embeddings):
+                chunk.embedding = embedding
+
+    async def _generate_embeddings_batch(self, contents):
+        """Generate embeddings for multiple contents at once"""
+        try:
+            from openai import AsyncOpenAI
+            client = AsyncOpenAI()
+            
+            response = await client.embeddings.create(
+                model="text-embedding-3-large",
+                input=contents,
+                dimensions=3072
+            )
+            
+            return [data.embedding for data in response.data]
+        except Exception as e:
+            print(f"⚠️ Batch embedding failed, falling back to individual: {e}")
+            # Fallback to individual embeddings
+            embeddings = []
+            for content in contents:
+                embedding = await self.generate_embedding(content)
+                embeddings.append(embedding)
+            return embeddings
+
+    async def _batch_upsert_chunks(self, chunks):
+        """Upsert multiple chunks to Pinecone in batches"""
+        batch_size = self.UPSERT_BATCH_SIZE  # Configurable batch size
+        
+        for i in range(0, len(chunks), batch_size):
+            batch = chunks[i:i + batch_size]
+            
+            # Prepare vectors for upsert
+            vectors = []
+            for chunk in batch:
+                vectors.append((
+                    chunk.chunk_id,
+                    chunk.embedding,
+                    {
+                        "table_name": chunk.table_name,
+                        "chunk_type": chunk.chunk_type,
+                        "metadata": json.dumps(chunk.metadata)
+                    }
+                ))
+            
+            # Batch upsert
+            self.index.upsert(vectors)
+
+    async def _get_indexed_tables_fast(self) -> set:
+        """Get list of tables that are already indexed in Pinecone efficiently"""
+        try:
+            # Get index stats first to check if there are any vectors
+            stats = self.index.describe_index_stats()
+            if stats.total_vector_count == 0:
+                return set()
+            
+            # Use a more efficient approach - query with namespaces or use list_ids if available
+            # For now, use a smaller query to get table names
+            dummy_vector = [0.0] * 3072
+            
+            # Query in smaller batches to get all table names
+            indexed_tables = set()
+            top_k = 1000  # Smaller batch size
+            
+            results = self.index.query(
+                vector=dummy_vector,
+                top_k=top_k,
+                include_metadata=True
+            )
+            
+            for match in results.matches:
+                table_name = match.metadata.get("table_name")
+                if table_name:
+                    indexed_tables.add(table_name)
+            
+            return indexed_tables
+        except Exception as e:
+            print(f"⚠️ Error checking indexed tables: {e}")
+            return set()  # Return empty set if error, will re-index all
 
     async def _get_table_info(self, db_adapter, table_name: str) -> Dict[str, Any]:
-        columns_result = db_adapter.run(f"DESCRIBE TABLE {table_name}", dry_run=False)
-        columns = {}
-        if not columns_result.error:
-            for row in columns_result.rows:
-                col_name = row[0]
-                col_type = row[1]
-                nullable = row[2] == 'Y'
-                columns[col_name] = {"data_type": col_type, "nullable": nullable, "description": None}
-        count_result = db_adapter.run(f"SELECT COUNT(*) FROM {table_name} LIMIT 1", dry_run=False)
-        row_count = None
-        if not count_result.error and count_result.rows:
-            row_count = count_result.rows[0][0]
-        return {"name": table_name, "schema": "ENHANCED_NBA", "table_type": "table", "columns": columns, "row_count": row_count, "description": f"Table containing {table_name.replace('_', ' ').lower()} data"}
+        """Get table information with optimized queries"""
+        try:
+            # Run both queries concurrently for faster execution
+            columns_task = asyncio.create_task(
+                asyncio.to_thread(db_adapter.run, f"DESCRIBE TABLE {table_name}", False)
+            )
+            
+            # Skip row count for faster indexing - it's not critical for schema matching
+            # count_task = asyncio.create_task(
+            #     asyncio.to_thread(db_adapter.run, f"SELECT COUNT(*) FROM {table_name} LIMIT 1", False)
+            # )
+            
+            columns_result = await columns_task
+            # count_result = await count_task
+            
+            columns = {}
+            if not columns_result.error:
+                for row in columns_result.rows:
+                    col_name = row[0]
+                    col_type = row[1]
+                    nullable = row[2] == 'Y' if len(row) > 2 else False
+                    columns[col_name] = {
+                        "data_type": col_type, 
+                        "nullable": nullable, 
+                        "description": None
+                    }
+            
+            # Set row count to None for faster processing
+            row_count = None
+            # if not count_result.error and count_result.rows:
+            #     row_count = count_result.rows[0][0]
+            
+            return {
+                "name": table_name,
+                "schema": "ENHANCED_NBA",
+                "table_type": "table",
+                "columns": columns,
+                "row_count": row_count,
+                "description": f"Table containing {table_name.replace('_', ' ').lower()} data"
+            }
+        except Exception as e:
+            print(f"⚠️ Error getting table info for {table_name}: {e}")
+            # Return minimal table info on error
+            return {
+                "name": table_name,
+                "schema": "ENHANCED_NBA",
+                "table_type": "table",
+                "columns": {},
+                "row_count": None,
+                "description": f"Table {table_name}"
+            }
 
     async def search_relevant_tables(self, query: str, top_k: int = 4) -> List[Dict[str, Any]]:
         print(f"🔍 Searching Pinecone for relevant tables: '{query}'")

@@ -1,7 +1,7 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Dict, Any
+from typing import Dict, Any, List
 import asyncio
 import json
 import time
@@ -24,6 +24,107 @@ from backend.storage.data_storage import DataStorage
 
 # Global variables
 orchestrator = None
+
+# WebSocket connections for real-time progress
+active_connections: List[WebSocket] = []
+
+# Progress tracking
+indexing_progress = {
+    "isIndexing": False,
+    "totalTables": 0,
+    "processedTables": 0,
+    "currentTable": "",
+    "stage": "",
+    "startTime": None,
+    "estimatedTimeRemaining": None,
+    "errors": [],
+    "completedTables": []
+}
+
+async def broadcast_progress():
+    """Broadcast progress to all connected WebSocket clients"""
+    if active_connections:
+        message = json.dumps({
+            "type": "indexing_progress",
+            "data": indexing_progress
+        })
+        print(f"📡 Broadcasting to {len(active_connections)} WebSocket clients: {indexing_progress['stage']}")
+        disconnected = []
+        for connection in active_connections:
+            try:
+                await connection.send_text(message)
+            except Exception as e:
+                print(f"⚠️ WebSocket send failed: {e}")
+                disconnected.append(connection)
+        # Remove disconnected clients
+        for conn in disconnected:
+            if conn in active_connections:
+                active_connections.remove(conn)
+                print(f"🔌 Removed disconnected WebSocket client")
+    else:
+        print(f"📡 No active WebSocket connections to broadcast progress")
+
+def update_progress(stage: str, current_table: str = "", processed: int = None, total: int = None, error: str = None):
+    """Update indexing progress and broadcast to clients"""
+    global indexing_progress
+    
+    print(f"📊 Progress Update: {stage} - {current_table} ({processed}/{total})")
+    
+    if stage == "start":
+        indexing_progress.update({
+            "isIndexing": True,
+            "totalTables": total or 0,
+            "processedTables": 0,
+            "currentTable": "",
+            "stage": "Starting indexing...",
+            "startTime": datetime.now().isoformat(),
+            "estimatedTimeRemaining": None,
+            "errors": [],
+            "completedTables": []
+        })
+    elif stage == "table_start":
+        indexing_progress.update({
+            "currentTable": current_table,
+            "stage": f"Processing {current_table}..."
+        })
+    elif stage == "table_complete":
+        indexing_progress["processedTables"] = processed or indexing_progress["processedTables"] + 1
+        indexing_progress["completedTables"].append(current_table)
+        
+        # Calculate estimated time remaining
+        if indexing_progress["startTime"] and indexing_progress["totalTables"] > 0:
+            elapsed = (datetime.now() - datetime.fromisoformat(indexing_progress["startTime"])).total_seconds()
+            avg_time_per_table = elapsed / indexing_progress["processedTables"]
+            remaining_tables = indexing_progress["totalTables"] - indexing_progress["processedTables"]
+            estimated_remaining = avg_time_per_table * remaining_tables
+            indexing_progress["estimatedTimeRemaining"] = estimated_remaining
+            
+        indexing_progress["stage"] = f"Completed {indexing_progress['processedTables']}/{indexing_progress['totalTables']} tables"
+    elif stage == "error":
+        if error:
+            indexing_progress["errors"].append({
+                "table": current_table,
+                "error": error,
+                "timestamp": datetime.now().isoformat()
+            })
+    elif stage == "complete":
+        indexing_progress.update({
+            "isIndexing": False,
+            "stage": "Indexing completed successfully!",
+            "currentTable": "",
+            "estimatedTimeRemaining": 0
+        })
+        print(f"🎉 Indexing completed! Final state: {indexing_progress}")
+    elif stage == "failed":
+        indexing_progress.update({
+            "isIndexing": False,
+            "stage": f"Indexing failed: {error}",
+            "currentTable": ""
+        })
+        print(f"❌ Indexing failed! Final state: {indexing_progress}")
+    
+    # Broadcast to all connected clients
+    asyncio.create_task(broadcast_progress())
 
 async def startup_tasks():
     """Initialize and auto-index on startup if needed"""
@@ -59,6 +160,28 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# WebSocket endpoint for real-time progress updates
+@app.websocket("/ws/progress")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    active_connections.append(websocket)
+    try:
+        # Send initial progress state
+        await websocket.send_text(json.dumps({
+            "type": "indexing_progress",
+            "data": indexing_progress
+        }))
+        
+        # Keep connection alive
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        if websocket in active_connections:
+            active_connections.remove(websocket)
+    except Exception as e:
+        if websocket in active_connections:
+            active_connections.remove(websocket)
 
 # --- Dynamic Agent Orchestrator Setup ---
 orchestrator = DynamicAgentOrchestrator()
@@ -487,34 +610,41 @@ async def check_pinecone_indexing_status() -> Dict[str, Any]:
         }
 
 async def perform_schema_indexing(force_reindex: bool = False):
-    """Perform the actual schema indexing with optimized chunking"""
+    """Perform the actual schema indexing with optimized chunking and progress tracking"""
     global indexing_status, pinecone_store, orchestrator
     
     try:
         indexing_status["isIndexing"] = True
         print("🚀 Starting manual schema indexing with optimized chunking...")
         
+        # Get total table count first
+        db_adapter = get_adapter("snowflake")
+        if not db_adapter:
+            raise Exception("Failed to get database adapter")
+            
+        result = db_adapter.run("SHOW TABLES IN SCHEMA ENHANCED_NBA", dry_run=False)
+        total_tables = len(result.rows) if not result.error else 0
+        
+        # Initialize progress tracking
+        update_progress("start", total=total_tables)
+        
         # Use the orchestrator's optimized indexing if available
         if orchestrator and hasattr(orchestrator, '_perform_full_database_indexing'):
-            await orchestrator._perform_full_database_indexing()
+            await orchestrator._perform_full_database_indexing(force_clear=force_reindex)
         else:
-            # Fallback to direct indexing
+            # Fallback to direct indexing with progress tracking
             print("📁 Using direct indexing fallback...")
             if not pinecone_store:
                 from backend.pinecone_schema_vector_store import PineconeSchemaVectorStore
                 pinecone_store = PineconeSchemaVectorStore()
-                
-            # Get database adapter
-            db_adapter = get_adapter("snowflake")
-            if not db_adapter:
-                raise Exception("Failed to get database adapter")
             
             # Clear existing index if force reindex
             if force_reindex:
+                update_progress("table_start", "Clearing existing index...")
                 pinecone_store.clear_index()
                 print("🧹 Cleared existing index for fresh indexing")
             
-            # Index schema with optimized chunking
+            # Index schema with optimized chunking and progress tracking
             await pinecone_store.index_database_schema(db_adapter)
         
         # Get final statistics
@@ -524,10 +654,8 @@ async def perform_schema_indexing(force_reindex: bool = False):
             
         stats = pinecone_store.index.describe_index_stats()
         
-        # Get total table count
-        db_adapter = get_adapter("snowflake")
-        result = db_adapter.run("SHOW TABLES IN SCHEMA ENHANCED_NBA", dry_run=False)
-        total_tables = len(result.rows) if not result.error else 0
+        # Update progress to complete
+        update_progress("complete")
         
         # Update status
         indexing_status.update({
@@ -544,6 +672,10 @@ async def perform_schema_indexing(force_reindex: bool = False):
         print(f"❌ Schema indexing failed: {e}")
         import traceback
         traceback.print_exc()
+        
+        # Update progress to failed
+        update_progress("failed", error=str(e))
+        
         indexing_status.update({
             "isIndexing": False,
             "error": str(e)
