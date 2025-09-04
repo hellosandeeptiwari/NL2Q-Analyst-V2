@@ -271,8 +271,8 @@ class SchemaEmbedder:
         name_lower = table_name.lower()
         
         # Quick pattern matching
-        if 'nba' in name_lower:
-            desc = f"NBA basketball data table with {len(columns)} columns"
+        if 'analytics' in name_lower or 'azure' in name_lower:
+            desc = f"Azure Analytics data table with {len(columns)} columns"
         elif 'customer' in name_lower:
             desc = f"Customer data table with {len(columns)} columns"
         elif 'order' in name_lower:
@@ -345,8 +345,8 @@ class SchemaEmbedder:
         desc = f"Table '{table_name}' "
         
         # Infer purpose from name
-        if any(word in name_parts for word in ['nba', 'basketball', 'player', 'game']):
-            desc += "containing NBA basketball data "
+        if any(word in name_parts for word in ['analytics', 'azure', 'data', 'analysis']):
+            desc += "containing Azure Analytics data "
         elif any(word in name_parts for word in ['customer', 'client', 'user']):
             desc += "containing customer/user information "
         elif any(word in name_parts for word in ['order', 'transaction', 'purchase']):

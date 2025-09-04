@@ -33,9 +33,9 @@ class FAISSTableMatcher:
         """Preprocess table name for better embeddings"""
         # Replace underscores with spaces
         processed = table_name.replace('_', ' ')
-        # Add context keywords for NBA tables
-        if 'nba' in processed.lower():
-            processed = f"NBA basketball data {processed}"
+        # Add context keywords for Analytics tables
+        if 'analytics' in processed.lower() or 'azure' in processed.lower():
+            processed = f"Azure Analytics data {processed}"
         if any(term in processed.lower() for term in ['final', 'output', 'result']):
             processed = f"final results table {processed}"
         if any(term in processed.lower() for term in ['refresh', 'update']):
@@ -160,8 +160,8 @@ class FAISSTableMatcher:
         if word_overlap > 0.5:
             confidence_score += 0.2
             
-        # NBA-specific boosting
-        if 'nba' in query.lower() and 'nba' in table_name.lower():
+        # Azure Analytics-specific boosting
+        if ('analytics' in query.lower() or 'azure' in query.lower()) and ('analytics' in table_name.lower() or 'azure' in table_name.lower()):
             confidence_score += 0.3
             
         if confidence_score >= 0.8:

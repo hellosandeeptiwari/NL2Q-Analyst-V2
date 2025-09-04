@@ -1,0 +1,255 @@
+{
+  "6758fc19-a67a-42f5-a1f4-355fe98c5a79": {
+    "user_id": "6758fc19-a67a-42f5-a1f4-355fe98c5a79",
+    "username": "analyst1",
+    "email": "analyst1@pharma.com",
+    "full_name": "Sarah Chen",
+    "role": "analyst",
+    "access_level": "advanced",
+    "department": "Commercial Analytics",
+    "therapeutic_areas": [
+      "Oncology",
+      "Diabetes"
+    ],
+    "data_access_permissions": [
+      "ENHANCED_NBA.*"
+    ],
+    "preferences": {
+      "theme": "dark",
+      "default_visualization": "bar",
+      "auto_execute_high_confidence": true,
+      "show_sql_queries": false,
+      "default_data_limit": 100,
+      "preferred_therapeutic_areas": [],
+      "notification_settings": {
+        "query_completion": true,
+        "data_updates": true,
+        "system_alerts": true
+      }
+    },
+    "created_at": "2025-09-04T18:05:30.151478",
+    "last_login": null,
+    "is_active": true,
+    "session_timeout": 3600,
+    "total_queries": 0,
+    "favorite_queries": [],
+    "recent_tables": []
+  },
+  "6a262cc7-452d-45ac-ac51-eb41855b636e": {
+    "user_id": "6a262cc7-452d-45ac-ac51-eb41855b636e",
+    "username": "medaffairs1",
+    "email": "medaffairs1@pharma.com",
+    "full_name": "Dr. Michael Roberts",
+    "role": "medical_affairs",
+    "access_level": "basic",
+    "department": "Medical Affairs",
+    "therapeutic_areas": [
+      "Oncology",
+      "Immunology"
+    ],
+    "data_access_permissions": [
+      "ENHANCED_NBA.*",
+      "CLINICAL.*",
+      "MEDICAL.*"
+    ],
+    "preferences": {
+      "theme": "dark",
+      "default_visualization": "bar",
+      "auto_execute_high_confidence": true,
+      "show_sql_queries": false,
+      "default_data_limit": 100,
+      "preferred_therapeutic_areas": [],
+      "notification_settings": {
+        "query_completion": true,
+        "data_updates": true,
+        "system_alerts": true
+      }
+    },
+    "created_at": "2025-09-04T18:05:30.151478",
+    "last_login": null,
+    "is_active": true,
+    "session_timeout": 3600,
+    "total_queries": 0,
+    "favorite_queries": [],
+    "recent_tables": []
+  },
+  "6f0a17ff-80ba-4fac-b727-3c7a19998eb2": {
+    "user_id": "6f0a17ff-80ba-4fac-b727-3c7a19998eb2",
+    "username": "datascientist1",
+    "email": "ds1@pharma.com",
+    "full_name": "Alex Kumar",
+    "role": "data_scientist",
+    "access_level": "advanced",
+    "department": "Data Science",
+    "therapeutic_areas": [
+      "All"
+    ],
+    "data_access_permissions": [
+      "ENHANCED_NBA.*"
+    ],
+    "preferences": {
+      "theme": "dark",
+      "default_visualization": "bar",
+      "auto_execute_high_confidence": true,
+      "show_sql_queries": false,
+      "default_data_limit": 100,
+      "preferred_therapeutic_areas": [],
+      "notification_settings": {
+        "query_completion": true,
+        "data_updates": true,
+        "system_alerts": true
+      }
+    },
+    "created_at": "2025-09-04T18:05:30.151478",
+    "last_login": null,
+    "is_active": true,
+    "session_timeout": 3600,
+    "total_queries": 0,
+    "favorite_queries": [],
+    "recent_tables": []
+  },
+  "53fe3c73-6628-43f5-b24c-4f53fdaaee38": {
+    "user_id": "53fe3c73-6628-43f5-b24c-4f53fdaaee38",
+    "username": "test_user",
+    "email": "test@pharma.com",
+    "full_name": "Test User",
+    "role": "analyst",
+    "access_level": "advanced",
+    "department": "Test Department",
+    "therapeutic_areas": [
+      "Oncology",
+      "Diabetes"
+    ],
+    "data_access_permissions": [
+      "ENHANCED_NBA.*"
+    ],
+    "preferences": {
+      "theme": "dark",
+      "default_visualization": "bar",
+      "auto_execute_high_confidence": false,
+      "show_sql_queries": false,
+      "default_data_limit": 100,
+      "preferred_therapeutic_areas": [],
+      "notification_settings": {
+        "query_completion": true,
+        "data_updates": true,
+        "system_alerts": true
+      }
+    },
+    "created_at": "2025-09-04T18:05:30.155092",
+    "last_login": null,
+    "is_active": true,
+    "session_timeout": 3600,
+    "total_queries": 0,
+    "favorite_queries": [],
+    "recent_tables": []
+  },
+  "566dfe27-8bd5-46ba-b995-50e6416ade2e": {
+    "user_id": "566dfe27-8bd5-46ba-b995-50e6416ade2e",
+    "username": "test_user",
+    "email": "test@pharma.com",
+    "full_name": "Test User",
+    "role": "analyst",
+    "access_level": "advanced",
+    "department": "Test Department",
+    "therapeutic_areas": [
+      "Oncology",
+      "Diabetes"
+    ],
+    "data_access_permissions": [
+      "ENHANCED_NBA.*"
+    ],
+    "preferences": {
+      "theme": "dark",
+      "default_visualization": "bar",
+      "auto_execute_high_confidence": false,
+      "show_sql_queries": false,
+      "default_data_limit": 100,
+      "preferred_therapeutic_areas": [],
+      "notification_settings": {
+        "query_completion": true,
+        "data_updates": true,
+        "system_alerts": true
+      }
+    },
+    "created_at": "2025-09-04T18:08:43.010160",
+    "last_login": null,
+    "is_active": true,
+    "session_timeout": 3600,
+    "total_queries": 0,
+    "favorite_queries": [],
+    "recent_tables": []
+  },
+  "5ae0abc8-41d5-4a6f-bd62-ef42ca610717": {
+    "user_id": "5ae0abc8-41d5-4a6f-bd62-ef42ca610717",
+    "username": "test_user",
+    "email": "test@pharma.com",
+    "full_name": "Test User",
+    "role": "analyst",
+    "access_level": "advanced",
+    "department": "Test Department",
+    "therapeutic_areas": [
+      "Oncology",
+      "Diabetes"
+    ],
+    "data_access_permissions": [
+      "ENHANCED_NBA.*"
+    ],
+    "preferences": {
+      "theme": "dark",
+      "default_visualization": "bar",
+      "auto_execute_high_confidence": false,
+      "show_sql_queries": false,
+      "default_data_limit": 100,
+      "preferred_therapeutic_areas": [],
+      "notification_settings": {
+        "query_completion": true,
+        "data_updates": true,
+        "system_alerts": true
+      }
+    },
+    "created_at": "2025-09-04T18:09:36.684476",
+    "last_login": null,
+    "is_active": true,
+    "session_timeout": 3600,
+    "total_queries": 0,
+    "favorite_queries": [],
+    "recent_tables": []
+  },
+  "ddcac1d2-9502-462b-83ef-4e0938b0d390": {
+    "user_id": "ddcac1d2-9502-462b-83ef-4e0938b0d390",
+    "username": "test_user",
+    "email": "test@pharma.com",
+    "full_name": "Test User",
+    "role": "analyst",
+    "access_level": "advanced",
+    "department": "Test Department",
+    "therapeutic_areas": [
+      "Oncology",
+      "Diabetes"
+    ],
+    "data_access_permissions": [
+      "ENHANCED_NBA.*"
+    ],
+    "preferences": {
+      "theme": "dark",
+      "default_visualization": "bar",
+      "auto_execute_high_confidence": false,
+      "show_sql_queries": false,
+      "default_data_limit": 100,
+      "preferred_therapeutic_areas": [],
+      "notification_settings": {
+        "query_completion": true,
+        "data_updates": true,
+        "system_alerts": true
+      }
+    },
+    "created_at": "2025-09-04T18:10:02.944817",
+    "last_login": null,
+    "is_active": true,
+    "session_timeout": 3600,
+    "total_queries": 0,
+    "favorite_queries": [],
+    "recent_tables": []
+  }
+}

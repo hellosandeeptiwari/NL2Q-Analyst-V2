@@ -171,11 +171,11 @@ class AgentOrchestrator:
         
         # Apply domain-specific bonuses
         query_lower = query.lower()
-        if 'nba' in query_lower:
+        if 'analytics' in query_lower or 'azure' in query_lower:
             for table_name in table_scores:
-                if 'nba' in table_name.lower():
+                if 'analytics' in table_name.lower() or 'azure' in table_name.lower():
                     table_scores[table_name]['total_score'] += 0.5
-                    table_scores[table_name]['reasons'].append("NBA domain match bonus")
+                    table_scores[table_name]['reasons'].append("Azure Analytics domain match bonus")
         
         # Convert to sorted list
         suggestions = []

@@ -69,25 +69,34 @@ Given a natural language query, suggest 2-3 rephrased or alternative queries tha
 """
 
 def generate_query_suggestions(natural_language: str, schema_snapshot: dict = None) -> list[str]:
+    from openai import OpenAI
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    
     schema_info = f"Schema: {schema_snapshot}" if schema_snapshot else ""
     prompt = REFINEMENT_PROMPT + f"\n{schema_info}\nOriginal Query: {natural_language}\nSuggestions:"
-    response = openai.ChatCompletion.create(
-        model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
+    response = client.chat.completions.create(
+        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
         messages=[{"role": "user", "content": prompt}]
     )
-    suggestions_text = response["choices"][0]["message"]["content"].strip()
+    suggestions_text = response.choices[0].message.content.strip()
     # Parse into list, assuming comma-separated or numbered
     suggestions = [s.strip() for s in suggestions_text.split('\n') if s.strip()]
     return suggestions[:3]  # Limit to 3
 
 
 def generate_sql(natural_language: str, schema_snapshot: dict, constraints: GuardrailConfig) -> GeneratedSQL:
+    from openai import OpenAI
+    client = OpenAI(
+        api_key=os.getenv("OPENAI_API_KEY"),
+        timeout=30.0  # 30 second timeout
+    )
+    
     prompt = SYSTEM_PROMPT + f"\nSchema: {schema_snapshot}\nNL: {natural_language}\nSQL:"
-    response = openai.ChatCompletion.create(
-        model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
+    response = client.chat.completions.create(
+        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
         messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}]
     )
-    sql = response["choices"][0]["message"]["content"].strip()
+    sql = response.choices[0].message.content.strip()
     safe_sql, added_limit = sanitize_sql(sql, constraints)
     rationale = "Generated with schema priming and guardrails."
     suggestions = generate_query_suggestions(natural_language, schema_snapshot)

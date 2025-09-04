@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 import os
 
 # Load environment variables from .env file
-load_dotenv()
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 from backend.db.engine import get_adapter
 from backend.db.schema import get_schema_cache
@@ -21,6 +21,7 @@ from backend.storage.data_storage import DataStorage
 from backend.history.query_history import save_query_history, get_recent_queries
 from backend.analytics.usage import log_usage
 from backend.errors.error_reporting import report_error, get_error_reports
+from backend.agents.agentic_orchestrator import AgenticOrchestrator, PlanStatus
 
 app = FastAPI()
 
@@ -31,6 +32,65 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- Agentic Orchestrator Setup ---
+orchestrator = AgenticOrchestrator()
+
+@app.post("/api/agent/query")
+async def agent_query(request: Request):
+    """
+    Process a natural language query using the agentic orchestrator.
+    """
+    try:
+        body = await request.json()
+        user_query = body.get("query")
+        user_id = body.get("user_id", "default_user")
+        session_id = body.get("session_id", "default_session")
+        
+        if not user_query:
+            return JSONResponse(status_code=400, content={"error": "Query is required"})
+
+        plan = await orchestrator.process_query(
+            user_query=user_query,
+            user_id=user_id,
+            session_id=session_id
+        )
+        
+        return JSONResponse(content=plan.to_dict())
+    except Exception as e:
+        report_error("agent_query", str(e))
+        return JSONResponse(status_code=500, content={"error": f"An error occurred: {str(e)}"})
+
+@app.get("/api/agent/plan/{plan_id}")
+async def get_plan_status(plan_id: str):
+    """
+    Get the status of an ongoing query plan.
+    """
+    status = await orchestrator.get_plan_status(plan_id)
+    if not status:
+        return JSONResponse(status_code=404, content={"error": "Plan not found"})
+    return JSONResponse(content=status)
+
+@app.post("/api/agent/plan/{plan_id}/approve")
+async def approve_plan(plan_id: str, request: Request):
+    """
+    Approve a plan that requires human intervention.
+    """
+    try:
+        body = await request.json()
+        approver_id = body.get("approver_id", "admin") # In a real app, get this from auth
+        
+        success = await orchestrator.approve_plan(plan_id, approver_id)
+        
+        if success:
+            return JSONResponse(content={"status": "approved", "plan_id": plan_id})
+        else:
+            return JSONResponse(status_code=400, content={"error": "Failed to approve plan. It may not be in a state that requires approval."})
+            
+    except Exception as e:
+        report_error("approve_plan", str(e))
+        return JSONResponse(status_code=500, content={"error": f"An error occurred: {str(e)}"})
+
 
 adapter = get_adapter()
 # Initialize empty schema cache, will load on first request
@@ -79,13 +139,74 @@ def refresh_schema():
             "status": "success", 
             "tables_count": len(schema_cache),
             "sample_tables": list(schema_cache.keys())[:5],
-            "nba_tables": [t for t in tables if 'nba' in t.lower()]
+            "azure_tables": [t for t in tables if 'azure' in t.lower() or 'analytics' in t.lower()]
         }
     except Exception as e:
         print(f"❌ Schema refresh failed: {e}")
         import traceback
         traceback.print_exc()
         return {"status": "error", "error": str(e)}
+
+@app.post("/api/test-connection")
+async def test_connection(request: Request):
+    """Test database connection with provided credentials"""
+    try:
+        body = await request.json()
+        db_type = body.get("type")
+        host = body.get("host")
+        database = body.get("database")
+        username = body.get("username")
+        password = body.get("password")
+        warehouse = body.get("warehouse")
+        schema = body.get("schema")
+        port = body.get("port")
+        
+        # Test connection based on database type
+        if db_type == "snowflake":
+            import snowflake.connector
+            conn = snowflake.connector.connect(
+                user=username,
+                password=password,
+                account=host,
+                warehouse=warehouse,
+                database=database,
+                schema=schema
+            )
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1")
+            result = cursor.fetchone()
+            cursor.close()
+            conn.close()
+            
+        elif db_type == "postgresql":
+            import psycopg2
+            conn = psycopg2.connect(
+                host=host,
+                port=port or 5432,
+                database=database,
+                user=username,
+                password=password
+            )
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1")
+            result = cursor.fetchone()
+            cursor.close()
+            conn.close()
+            
+        elif db_type == "azure-sql":
+            import pyodbc
+            connection_string = f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={host};DATABASE={database};UID={username};PWD={password}"
+            conn = pyodbc.connect(connection_string)
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1")
+            result = cursor.fetchone()
+            cursor.close()
+            conn.close()
+        
+        return {"success": True, "message": "Connection successful"}
+        
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 @app.post("/query")
 async def query(request: Request):
@@ -131,45 +252,45 @@ async def table_suggestions(request: Request):
     body = await request.json()
     query = body.get("query", "")
     try:
-        # Get all tables from schema, with fallback to known NBA tables
+        # Get all tables from schema, with fallback to known Azure Analytics tables
         tables = list(schema_cache.keys()) if schema_cache else []
         
-        # Fallback NBA tables if schema cache is empty
+        # Fallback Azure Analytics tables if schema cache is empty
         if not tables:
-            print("⚠️ Schema cache empty, using fallback NBA tables")
+            print("⚠️ Schema cache empty, using fallback Azure Analytics tables")
             tables = [
-                "Final_NBA_Output_python",
-                "FINAL_NBA_OUTPUT_PYTHON", 
-                "final_nba_output_python",
-                "NBA_Output_Final",
-                "NBA_FINAL_OUTPUT"
+                "Final_Analytics_Output_python",
+                "FINAL_ANALYTICS_OUTPUT_PYTHON", 
+                "final_analytics_output_python",
+                "Analytics_Output_Final",
+                "AZURE_FINAL_OUTPUT"
             ]
         
         print(f"🔍 Table suggestion for query: '{query}' - Found {len(tables)} total tables")
         
-        # Smart NBA table matching
+        # Smart Analytics table matching
         query_lower = query.lower()
         suggestions = []
         
-        # Look for NBA-related tables
-        if any(word in query_lower for word in ['nba', 'basketball', 'final', 'output', 'python']):
-            nba_tables = [t for t in tables if 'nba' in t.lower() or 'final' in t.lower()]
-            print(f"🏀 Found {len(nba_tables)} NBA-related tables: {nba_tables}")
+        # Look for Analytics-related tables
+        if any(word in query_lower for word in ['analytics', 'azure', 'final', 'output', 'python']):
+            analytics_tables = [t for t in tables if 'analytics' in t.lower() or 'azure' in t.lower() or 'final' in t.lower()]
+            print(f"☁️ Found {len(analytics_tables)} Analytics-related tables: {analytics_tables}")
             
-            for table in nba_tables:
+            for table in analytics_tables:
                 similarity = 1.0
                 # Higher score for exact matches
-                if 'final_nba_output_python' in table.lower():
+                if 'final_analytics_output_python' in table.lower():
                     similarity = 1.0
-                elif 'final' in table.lower() and 'nba' in table.lower():
+                elif 'final' in table.lower() and 'analytics' in table.lower():
                     similarity = 0.95
-                elif 'nba' in table.lower():
+                elif 'analytics' in table.lower() or 'azure' in table.lower():
                     similarity = 0.9
                     
                 suggestions.append({
                     "table_name": table,
                     "similarity_score": similarity,
-                    "reason": f"NBA table matching query: {query}"
+                    "reason": f"Analytics table matching query: {query}"
                 })
         
         # Fallback to general matching
@@ -234,22 +355,54 @@ async def query_with_table(request: Request):
         try:
             print(f"🔍 Step 1: Query Analysis - '{nl}' (Starting at {time.strftime('%H:%M:%S')})")
             
-            # Import the sophisticated vector matcher
+            # Import the sophisticated vector matcher and optimization tools
             from backend.agents.openai_vector_matcher import OpenAIVectorMatcher
             from backend.agents.schema_embedder import SchemaEmbedder
+            from backend.utils.smart_schema_manager import SmartSchemaManager
             
             # Initialize vector matcher with performance settings
             vector_matcher = OpenAIVectorMatcher()
             schema_embedder = SchemaEmbedder(batch_size=100, max_workers=3)  # Optimized for speed
+            schema_manager = SmartSchemaManager()
             
             init_time = time.time()
             print(f"🏗️ Step 2: Loading schema embeddings... ({init_time - start_time:.2f}s)")
             
-            # Load existing embeddings or initialize from database
+            # Load existing embeddings or initialize from database with optimization
             cache_start = time.time()
             if not vector_matcher._load_cached_embeddings():
                 print(f"🔧 Building schema embeddings from database...")
-                vector_matcher.initialize_from_database(adapter, force_rebuild=False)
+                
+                # Check if we need optimized processing for large schemas
+                try:
+                    # Quick table count check
+                    test_result = adapter.run("SELECT COUNT(*) as table_count FROM INFORMATION_SCHEMA.TABLES")
+                    if test_result and test_result.rows:
+                        total_tables = test_result.rows[0][0] if test_result.rows[0] else 0
+                    else:
+                        total_tables = 0
+                except:
+                    total_tables = 0  # Fallback if count fails
+                
+                if total_tables > 50:
+                    print(f"📊 Large schema detected ({total_tables} tables) - using optimizations")
+                    
+                    # Define important tables for your Azure Analytics analysis
+                    important_tables = [
+                        'AZURE_FINAL_OUTPUT_PYTHON_DF',
+                        # Add other important table names here
+                    ]
+                    
+                    # Use optimized initialization with limits
+                    vector_matcher.initialize_from_database(
+                        adapter, 
+                        force_rebuild=False,
+                        max_tables=100,  # Limit to 100 most important tables
+                        important_tables=important_tables
+                    )
+                else:
+                    # Standard processing for smaller schemas
+                    vector_matcher.initialize_from_database(adapter, force_rebuild=False)
             else:
                 print(f"✅ Loaded cached embeddings successfully")
             
@@ -271,6 +424,35 @@ async def query_with_table(request: Request):
             print(f"🎯 Step 4: Analyzing search results... (Search took: {search_time:.2f}s)")
             print(f"   📋 Found {len(search_results.get('tables', []))} similar tables")
             print(f"   🗂️ Found {len(search_results.get('columns', []))} relevant columns")
+            
+            # Check if vector search failed and add fallback
+            if len(search_results.get('columns', [])) == 0:
+                print(f"⚠️ No columns found from vector search - using database schema fallback")
+                # Get actual schema immediately as fallback
+                schema_sql = f'SELECT * FROM "{table_name}" LIMIT 1'
+                schema_result = adapter.run(schema_sql)
+                
+                if not schema_result.error and schema_result.rows:
+                    actual_columns = []
+                    if isinstance(schema_result.rows[0], dict):
+                        actual_columns = list(schema_result.rows[0].keys())
+                        print(f"🔧 Fallback: Using {len(actual_columns)} actual columns from database")
+                        print(f"📋 Actual columns: {actual_columns}")
+                        
+                        # Create fallback column objects with default confidence
+                        search_results['columns'] = [
+                            {
+                                'column_name': col,
+                                'table_name': table_name,
+                                'confidence': 0.5,  # Default confidence
+                                'match_type': 'database_fallback'
+                            }
+                            for col in actual_columns
+                        ]
+                    else:
+                        print(f"🔧 Fallback: Row format is {type(schema_result.rows[0])}, cannot extract column names")
+                else:
+                    print(f"❌ Fallback failed: {schema_result.error}")
             
             # Performance optimization: limit processing to most relevant results
             max_tables_to_process = 3  # Limit for speed
@@ -338,77 +520,134 @@ async def query_with_table(request: Request):
                         print(f"   🔄 '{col_name}' → '{lower_match}' - case corrected")
             
             validation_time = time.time() - validation_start
-            print(f"🎯 Step 8: SQL generation with validated columns... (validation took {validation_time:.2f}s)")
+            print(f"🎯 Step 8: GPT-4o-mini grounding with schema vectors... (validation took {validation_time:.2f}s)")
             
-            # Intelligent SQL generation based on query intent and matched columns
-            sql_start = time.time()
-            if "frequency" in nl.lower() and validated_columns:
-                # Find the best columns for frequency analysis (optimized selection)
-                frequency_columns = []
+            # 🧠 ENHANCED: Use GPT-4o-mini for grounding with vector context
+            from backend.nl2sql.enhanced_generator import generate_enhanced_sql
+            
+            # Prepare rich schema context from vector search results
+            schema_context = {
+                "tables": {},
+                "vector_insights": {
+                    "query_intent": nl,
+                    "confidence_score": confidence_score,
+                    "selected_table": best_table,
+                    "validated_columns": validated_columns[:max_columns_to_process],
+                    "analysis_type": "frequency_analysis" if "frequency" in nl.lower() else "general_analysis"
+                }
+            }
+            
+            # Add actual schema information
+            if actual_columns:
+                schema_context["tables"][best_table] = {
+                    "columns": actual_columns,
+                    "description": f"Azure Analytics provider data with {len(actual_columns)} columns",
+                    "row_count": "large_dataset",
+                    "validated_matches": validated_columns
+                }
+            
+            # Generate SQL using GPT-4o-mini with vector grounding
+            try:
+                llm_start = time.time()
+                print(f"🤖 Calling GPT-4o-mini with vector-grounded schema context...")
+                print(f"📊 Schema context: {schema_context}")
+                print(f"🎯 Validated columns: {[col['column_name'] for col in validated_columns[:5]]}")
                 
-                # Pre-compiled priority patterns for performance
-                priority_keywords = ['message', 'provider', 'input', 'output', 'recommend', 'suggestion']
+                enhanced_result = generate_enhanced_sql(
+                    natural_language=nl,
+                    schema_context=schema_context,
+                    database_type="snowflake",
+                    limit=10
+                )
                 
-                for col_info in validated_columns[:5]:  # Limit to top 5 for speed
-                    col_name = col_info['column_name']
-                    col_lower = col_name.lower()
-                    
-                    # Optimized keyword matching
-                    keyword_match = any(keyword in col_lower for keyword in priority_keywords)
-                    high_confidence = col_info['confidence'] >= 0.7
-                    
-                    if keyword_match and high_confidence:
-                        frequency_columns.append(col_info)
-                        print(f"   🎯 Selected '{col_name}' for frequency analysis (confidence: {col_info['confidence']:.1%})")
+                llm_time = time.time() - llm_start
+                print(f"✅ GPT-4o-mini response received in {llm_time:.2f}s")
+                print(f"🔍 Enhanced result: {enhanced_result}")
                 
-                # Fallback to top 2 validated columns if no specific matches
-                if not frequency_columns:
-                    frequency_columns = validated_columns[:2]
-                    print(f"   🔄 Using top {len(frequency_columns)} columns as fallback")
-                
-                # Generate optimized SQL based on number of columns
-                if len(frequency_columns) >= 2:
-                    col1, col2 = frequency_columns[0]['column_name'], frequency_columns[1]['column_name']
-                    sql = f'''
-                    SELECT 
-                        "{col1}",
-                        "{col2}",
-                        COUNT(*) as frequency
-                    FROM "{best_table}" 
-                    WHERE "{col1}" IS NOT NULL 
-                      AND "{col2}" IS NOT NULL
-                    GROUP BY "{col1}", "{col2}"
-                    ORDER BY frequency DESC
-                    LIMIT 10
-                    '''
-                    analysis_type = "multi_column_frequency"
-                    
-                elif len(frequency_columns) == 1:
-                    col1 = frequency_columns[0]['column_name']
-                    sql = f'''
-                    SELECT 
-                        "{col1}",
-                        COUNT(*) as frequency
-                    FROM "{best_table}" 
-                    WHERE "{col1}" IS NOT NULL
-                    GROUP BY "{col1}"
-                    ORDER BY frequency DESC
-                    LIMIT 10
-                    '''
-                    analysis_type = "single_column_frequency"
+                if enhanced_result and enhanced_result.get('sql'):
+                    sql = enhanced_result['sql']
+                    analysis_type = "llm_grounded_vector_analysis"
+                    print(f"🧠 Using LLM-generated SQL with vector grounding: {sql}")
                 else:
-                    # Fallback to sample data
+                    print(f"⚠️ LLM generation failed, falling back to template")
+                    raise Exception("LLM generation failed")
+                    
+            except Exception as llm_error:
+                print(f"⚠️ GPT-4o-mini grounding failed: {llm_error}")
+                print(f"🔄 Falling back to vector-informed template generation...")
+                
+                # Intelligent SQL generation based on query intent and matched columns
+                template_start = time.time()
+                if "frequency" in nl.lower() and validated_columns:
+                    # Find the best columns for frequency analysis (optimized selection)
+                    frequency_columns = []
+                    
+                    # Pre-compiled priority patterns for performance
+                    priority_keywords = ['message', 'provider', 'input', 'output', 'recommend', 'suggestion']
+                    
+                    for col_info in validated_columns[:5]:  # Limit to top 5 for speed
+                        col_name = col_info['column_name']
+                        col_lower = col_name.lower()
+                        
+                        # Optimized keyword matching
+                        keyword_match = any(keyword in col_lower for keyword in priority_keywords)
+                        high_confidence = col_info['confidence'] >= 0.7
+                        
+                        if keyword_match and high_confidence:
+                            frequency_columns.append(col_info)
+                            print(f"   🎯 Selected '{col_name}' for frequency analysis (confidence: {col_info['confidence']:.1%})")
+                    
+                    # Fallback to top 2 validated columns if no specific matches
+                    if not frequency_columns:
+                        frequency_columns = validated_columns[:2]
+                        print(f"   🔄 Using top {len(frequency_columns)} columns as fallback")
+                    
+                    # Generate optimized SQL based on number of columns
+                    if len(frequency_columns) >= 2:
+                        col1, col2 = frequency_columns[0]['column_name'], frequency_columns[1]['column_name']
+                        sql = f'''
+                        SELECT 
+                            "{col1}",
+                            "{col2}",
+                            COUNT(*) as frequency
+                        FROM "{best_table}" 
+                        WHERE "{col1}" IS NOT NULL 
+                          AND "{col2}" IS NOT NULL
+                        GROUP BY "{col1}", "{col2}"
+                        ORDER BY frequency DESC
+                        LIMIT 10
+                        '''
+                        analysis_type = "multi_column_frequency"
+                        
+                    elif len(frequency_columns) == 1:
+                        col1 = frequency_columns[0]['column_name']
+                        sql = f'''
+                        SELECT 
+                            "{col1}",
+                            COUNT(*) as frequency
+                        FROM "{best_table}" 
+                        WHERE "{col1}" IS NOT NULL
+                        GROUP BY "{col1}"
+                        ORDER BY frequency DESC
+                        LIMIT 10
+                        '''
+                        analysis_type = "single_column_frequency"
+                    else:
+                        # Fallback to sample data
+                        sql = f'SELECT * FROM "{best_table}" LIMIT 5'
+                        analysis_type = "sample_data"
+                else:
+                    # Default to sample data for non-frequency queries
                     sql = f'SELECT * FROM "{best_table}" LIMIT 5'
-                    analysis_type = "sample_data"
-            else:
-                # Default to sample data for non-frequency queries
-                sql = f'SELECT * FROM "{best_table}" LIMIT 5'
-                analysis_type = "sample_data"
+                    analysis_type = "template_fallback_sample_data"
+                
+                template_time = time.time() - template_start
+                print(f"🔧 Template fallback completed in {template_time:.2f}s")
             
-            sql_time = time.time() - sql_start
+            sql_time = time.time() - llm_start if 'llm_start' in locals() else time.time() - template_start
             total_pipeline_time = time.time() - start_time
             print(f"⚡ Vector matching pipeline completed in {total_pipeline_time:.2f}s (SQL gen: {sql_time:.3f}s)")
-                
+            
         except Exception as schema_error:
             fallback_start = time.time()
             print(f"⚠️ Vector matching failed, using fast fallback: {schema_error}")
@@ -541,7 +780,7 @@ async def query_with_table(request: Request):
                             data_insights.append(f"🏆 Top category: {top_item[0]} with {top_item[-1]:,.0f} occurrences")
             else:
                 # General data insights
-                data_insights.append(f"📋 Retrieved {total_rows} records from NBA dataset")
+                data_insights.append(f"📋 Retrieved {total_rows} records from Azure Analytics dataset")
                 if column_names:
                     data_insights.append(f"🗂️ Data includes {len(column_names)} attributes: {', '.join(column_names[:3])}{'...' if len(column_names) > 3 else ''}")
         
@@ -589,7 +828,7 @@ async def query_with_table(request: Request):
                     return f"{formatted[:17]}..."
                 return formatted
             
-            # For the NBA data shown in your screenshot, let's create a more appropriate frequency analysis
+            # For the Azure Analytics data shown, let's create a more appropriate frequency analysis
             # The data appears to be healthcare provider success rates
             if len(df.columns) >= 3:
                 # Create visualization based on Provider Type vs Success Rates
@@ -696,7 +935,7 @@ async def query_with_table(request: Request):
                     }],
                     "layout": {
                         "title": {
-                            "text": f"NBA Data Distribution Analysis",
+                            "text": f"Azure Analytics Data Distribution Analysis",
                             "x": 0.5,
                             "font": {"size": 18, "color": "#2c3e50"}
                         },
@@ -750,20 +989,18 @@ async def query_with_table(request: Request):
                 else:
                     column_names = [f"Column_{i+1}" for i in range(len(sample_row))]
         
-        # Format the data for better presentation
+        # Format the data for better presentation while preserving actual column names
         formatted_rows = []
         if result.rows:
             for row in result.rows:
                 if isinstance(row, dict):
                     formatted_row = {}
                     for key, value in row.items():
-                        # Create more readable column names
-                        readable_key = key.replace('_', ' ').replace('success_c', 'Success Rate').replace('HCP_', 'Healthcare ').title()
-                        
+                        # Keep original column names but format values for readability
                         # Format numeric values for better readability
                         if isinstance(value, (int, float)):
-                            if key.lower().endswith('_c') or 'success' in key.lower():
-                                # Format as percentage if it looks like a rate
+                            if 'success' in key.lower() or 'rate' in key.lower() or '_c' in key.lower():
+                                # Format as percentage if it looks like a rate and is between 0-1
                                 if 0 <= value <= 1:
                                     formatted_value = f"{value:.2%}"
                                 else:
@@ -773,88 +1010,43 @@ async def query_with_table(request: Request):
                         else:
                             formatted_value = str(value)
                         
-                        formatted_row[readable_key] = formatted_value
+                        # Use actual column name
+                        formatted_row[key] = formatted_value
                     formatted_rows.append(formatted_row)
                 else:
-                    # Handle tuple/list format with improved formatting
+                    # Handle tuple/list format - use actual column names from database
                     formatted_row = {}
                     for i, value in enumerate(row):
                         column_name = column_names[i] if i < len(column_names) else f"Column_{i+1}"
                         
-                        # Create more descriptive column names based on position and content
-                        if i == 0:
-                            readable_key = "Instance ID"
-                        elif i == 1:
-                            readable_key = "Status Code"
-                        elif i == 2:
-                            readable_key = "Provider Service Type"
-                        elif i == 3:
-                            readable_key = "Primary Success Rate"
-                        elif i == 4:
-                            readable_key = "Secondary Success Rate"
-                        elif i == 5:
-                            readable_key = "Additional Data"
-                        elif i == 6:
-                            readable_key = "Sequence Number"
-                        else:
-                            readable_key = column_name.replace('_', ' ').title()
-                        
-                        # Format values based on their characteristics and position
+                        # Format numeric values for better readability
                         if isinstance(value, (int, float)):
-                            if i in [3, 4]:  # Success rate columns
+                            if 'success' in column_name.lower() or 'rate' in column_name.lower():
+                                # Format as percentage if it looks like a rate and is between 0-1
                                 if 0 <= value <= 1:
                                     formatted_value = f"{value:.2%}"
                                 else:
-                                    formatted_value = f"{value:.3f}"
-                            elif i == 1:  # Status code
-                                formatted_value = f"{value:.0f}"
-                            elif i == 6:  # Sequence number
-                                formatted_value = f"{value:,.0f}"
+                                    formatted_value = f"{value:,.0f}" if value >= 1000 else f"{value:.3f}"
                             else:
-                                formatted_value = f"{value:.3f}" if value != 0 else "0.000"
+                                formatted_value = f"{value:,.0f}" if value >= 1000 else f"{value:.3f}"
                         else:
-                            # Clean up service type names
-                            if i == 2 and isinstance(value, str):
-                                cleaned_value = str(value).replace('HCP_', '').replace('_success_c', '').replace('_', ' ').title()
-                                formatted_value = cleaned_value
-                            else:
-                                formatted_value = str(value)
+                            formatted_value = str(value)
                         
-                        formatted_row[readable_key] = formatted_value
+                        # Use actual column name without transformation
+                        formatted_row[column_name] = formatted_value
                     formatted_rows.append(formatted_row)
-
-        # Create readable column headers for display
-        display_columns = []
-        for i, col in enumerate(column_names):
-            if i == 0:
-                display_columns.append("Instance ID")
-            elif i == 1:
-                display_columns.append("Status Code")
-            elif i == 2:
-                display_columns.append("Provider Service Type")
-            elif i == 3:
-                display_columns.append("Primary Success Rate")
-            elif i == 4:
-                display_columns.append("Secondary Success Rate")
-            elif i == 5:
-                display_columns.append("Additional Data")
-            elif i == 6:
-                display_columns.append("Sequence Number")
-            else:
-                readable_col = col.replace('_', ' ').title()
-                display_columns.append(readable_col)
 
         response = {
             "job_id": job_id,
             "sql": sql,
             "rows": formatted_rows,  # Use formatted rows instead of raw data
             "raw_rows": result.rows,  # Keep raw data for any backend processing
-            "columns": display_columns,  # Use properly formatted column names
+            "columns": column_names,  # Use actual database column names
             "raw_columns": column_names,  # Keep original column names
             "raw_columns": column_names,
             "table_name": table_name,
             "plotly_spec": plotly_spec,
-            "message": f"✅ Enhanced NBA analysis completed for {table_name} with improved formatting",
+            "message": f"✅ Enhanced Azure Analytics analysis completed for {table_name} with improved formatting",
             "execution_time": result.execution_time,
             "analysis_insights": analysis_insights,
             "performance_metrics": {
@@ -879,11 +1071,11 @@ async def query_with_table(request: Request):
                 "performance_optimized": True
             },
             "executive_summary": {
-                "query_intent": "NBA healthcare provider performance analysis with frequency distribution",
+                "query_intent": "Azure Analytics provider performance analysis with frequency distribution",
                 "data_source": f"Table: {table_name}",
                 "key_findings": data_insights[:3] if data_insights else ["Analysis completed successfully"],
                 "visualization_available": bool(plotly_spec),
-                "recommendation": "Review the frequency distribution to identify patterns in healthcare provider success metrics"
+                "recommendation": "Review the frequency distribution to identify patterns in analytics provider success metrics"
             }
         }
         

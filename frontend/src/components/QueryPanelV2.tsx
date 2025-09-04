@@ -53,16 +53,16 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
       
       console.log('📋 Table suggestions response:', suggestionsRes.data);
       
-      // Handle NBA agent server response format
+      // Handle Azure Analytics agent server response format
       if (suggestionsRes.data.user_guidance?.should_provide_suggestions && suggestionsRes.data.suggestions?.length > 0) {
-        // Convert NBA agent format to frontend format
-        const nbaResponse = suggestionsRes.data;
-        const tableNames = nbaResponse.suggestions.map((s: any) => s.table_name || s);
+        // Convert Azure Analytics agent format to frontend format
+        const analyticsResponse = suggestionsRes.data;
+        const tableNames = analyticsResponse.suggestions.map((s: any) => s.table_name || s);
         
         const convertedSuggestions = {
           suggested_tables: tableNames,
           all_tables: tableNames, // For now, use the same list
-          message: nbaResponse.user_guidance.message || 'Please select tables for your query',
+          message: analyticsResponse.user_guidance.message || 'Please select tables for your query',
           query: nl
         };
         
@@ -214,7 +214,7 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
             fontWeight: '700',
             textAlign: 'center'
           }}>
-            🏀 NBA Data Intelligence System
+            ☁️ Azure Analytics Intelligence System
           </h2>
           <p style={{ 
             color: 'rgba(255,255,255,0.9)', 
@@ -222,7 +222,7 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
             textAlign: 'center',
             fontSize: '14px'
           }}>
-            Ask questions about NBA data in natural language and get intelligent insights
+            Ask questions about Azure Analytics data in natural language and get intelligent insights
           </p>
         </div>
         
@@ -243,7 +243,7 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
               <textarea
                 value={nl}
                 onChange={e => setNl(e.target.value)}
-                placeholder="Example queries:&#10;• 'read table final nba output python and fetch top 5 rows'&#10;• 'create a visualization with frequency of recommended message'&#10;• 'show me NBA player performance data with charts'"
+                placeholder="Example queries:&#10;• 'read table final azure analytics output and fetch top 5 rows'&#10;• 'create a visualization with frequency of recommended message'&#10;• 'show me Azure Analytics performance data with charts'"
                 style={{ 
                   width: '100%', 
                   padding: '16px 20px', 
@@ -331,7 +331,7 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
                 }
               }}
             >
-              {loading ? '🔄 Analyzing...' : '🚀 Query NBA Data'}
+              {loading ? '🔄 Analyzing...' : '🚀 Query Azure Analytics'}
             </button>
           </div>
         </div>
@@ -716,7 +716,7 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
           {response.rows && response.rows.length > 0 && (
             <div style={{ marginBottom: '2rem' }}>
               <h4 style={{ color: '#495057', marginBottom: '1rem' }}>
-                📊 NBA Data Results ({response.rows.length} records)
+                📊 Azure Analytics Results ({response.rows.length} records)
               </h4>
               
               {/* Executive Summary if available */}

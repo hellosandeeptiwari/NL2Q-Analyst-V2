@@ -1,2 +1,2 @@
-// Empty backup file - kept for reference
+// This file is currently empty but needs to be a module
 export {};

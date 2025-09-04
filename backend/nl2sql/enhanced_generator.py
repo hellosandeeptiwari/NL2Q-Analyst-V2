@@ -140,7 +140,90 @@ def generate_query_suggestions(natural_language: str, schema_snapshot: dict = No
         print(f"Error generating suggestions: {e}")
         return []
 
-def generate_sql_with_enhanced_schema(natural_language: str, enhanced_schema: dict, constraints: GuardrailConfig) -> GeneratedSQL:
+def generate_enhanced_sql(natural_language: str, schema_context: dict, database_type: str = "snowflake", limit: int = 10) -> dict:
+    """Generate SQL using enhanced schema with vector grounding context"""
+    
+    try:
+        # Extract vector insights
+        vector_insights = schema_context.get('vector_insights', {})
+        tables_info = schema_context.get('tables', {})
+        
+        # Build enhanced prompt with vector context
+        enhanced_prompt = f"""
+{ENHANCED_SYSTEM_PROMPT}
+
+VECTOR SEARCH CONTEXT:
+- Query Intent: {vector_insights.get('query_intent', natural_language)}
+- AI Confidence: {vector_insights.get('confidence_score', 0.8):.1%}
+- Selected Table: {vector_insights.get('selected_table', 'unknown')}
+- Analysis Type: {vector_insights.get('analysis_type', 'general')}
+
+VALIDATED SCHEMA INFORMATION:
+"""
+        
+        # Add table information
+        for table_name, table_info in tables_info.items():
+            enhanced_prompt += f"""
+Table: {table_name}
+Description: {table_info.get('description', 'No description')}
+Available Columns: {', '.join(table_info.get('columns', []))}
+"""
+            
+            # Add vector-validated column matches
+            validated_cols = table_info.get('validated_matches', [])
+            if validated_cols:
+                enhanced_prompt += f"Vector-Matched Columns (with confidence):\n"
+                for col in validated_cols:
+                    enhanced_prompt += f"  - {col.get('column_name', 'unknown')}: {col.get('confidence', 0):.1%} confidence\n"
+        
+        enhanced_prompt += f"""
+
+GENERATION GUIDELINES:
+- Use case-sensitive column/table names with quotes: "{vector_insights.get('selected_table', 'TABLE_NAME')}"
+- Focus on the vector-matched high-confidence columns
+- Generate {vector_insights.get('analysis_type', 'analysis')} appropriate for the query intent
+- Limit results to {limit} rows for performance
+- Use Snowflake-compatible SQL syntax
+
+User Query: {natural_language}
+
+Generate the SQL query:"""
+
+        # Call GPT-4o-mini
+        import openai
+        import os
+        
+        response = openai.chat.completions.create(
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            messages=[
+                {"role": "user", "content": enhanced_prompt}
+            ],
+            max_completion_tokens=800,
+            temperature=0.1
+        )
+        
+        sql = response.choices[0].message.content.strip()
+        
+        # Clean up SQL formatting
+        if "```sql" in sql:
+            sql = sql.split("```sql")[1].split("```")[0].strip()
+        elif "```" in sql:
+            sql = sql.split("```")[1].strip()
+        
+        return {
+            "sql": sql,
+            "confidence": vector_insights.get('confidence_score', 0.8),
+            "analysis_type": vector_insights.get('analysis_type', 'general'),
+            "vector_grounded": True,
+            "model_used": "gpt-4o-mini",
+            "table_used": vector_insights.get('selected_table'),
+            "matched_columns": [col.get('column_name') for col in vector_insights.get('validated_columns', [])]
+        }
+        
+    except Exception as e:
+        print(f"❌ Enhanced SQL generation failed: {e}")
+        return None
+
     """Generate SQL using enhanced schema with rich metadata"""
     
     # Format schema for LLM

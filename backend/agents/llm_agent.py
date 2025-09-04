@@ -23,7 +23,7 @@ class LLMAgent:
                 'role': 'You are an expert data analyst who specializes in understanding user queries and selecting the most relevant database tables.',
                 'instructions': [
                     'Analyze the user query to understand what data they need',
-                    'Consider NBA data context when relevant',
+                    'Consider Azure Analytics data context when relevant',
                     'Prioritize tables that match the query intent',
                     'Explain your reasoning for table selection'
                 ]
@@ -468,15 +468,15 @@ Respond in JSON format:
         elif any(word in query_lower for word in ['top', 'bottom', 'highest', 'lowest']):
             intent = "ranking_analysis"
             
-        # Find NBA tables
-        nba_tables = [t for t in available_tables if 'nba' in t.lower()][:3]
+        # Find Azure Analytics tables
+        analytics_tables = [t for t in available_tables if 'analytics' in t.lower() or 'azure' in t.lower()][:3]
         
         return {
             "intent": intent,
-            "data_requirements": ["NBA data analysis"],
+            "data_requirements": ["Azure Analytics data analysis"],
             "recommended_tables": [
-                {"table": table, "reason": "Contains NBA data", "confidence": "medium"}
-                for table in nba_tables
+                {"table": table, "reason": "Contains Azure Analytics data", "confidence": "medium"}
+                for table in analytics_tables
             ],
             "query_type": intent,
             "analysis_approach": "Basic data analysis with simple aggregations"
