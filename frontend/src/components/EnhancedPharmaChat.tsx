@@ -71,7 +71,8 @@ interface QueryPlan {
   progress: number;
   current_step: string;
   reasoning_steps: string[];
-  execution_steps: PlanStep[];
+  tasks: PlanStep[];  // Backend returns 'tasks', not 'execution_steps'
+  results: { [key: string]: any };  // Backend returns results object
   estimated_cost: number;
   actual_cost: number;
   context?: any;
@@ -459,7 +460,8 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
 
   // Render plan execution
   const renderPlanExecution = (plan: QueryPlan) => {
-    console.log('Plan execution_steps:', plan.execution_steps);
+    console.log('Plan tasks:', plan.tasks);
+    console.log('Plan results:', plan.results);
     
     return (
     <div className="plan-execution">
@@ -483,71 +485,178 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
 
       <div className="plan-steps">
         <p className="steps-title"><strong>Execution Steps:</strong></p>
-        {plan.execution_steps && plan.execution_steps.length > 0 ? plan.execution_steps.map((step, index) => (
-          <div key={step.step_id} className="plan-step">
-            <div className={`step-status-icon ${step.status || 'completed'}`}>
-              ✓
-            </div>
-            <div className="step-details">
-              <div className="step-name">
-                {index + 1}. {step.tool_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+        {plan.tasks && plan.tasks.length > 0 ? plan.tasks.map((task: any, index: number) => {
+          // Fix the result key mapping to match backend format
+          const taskTypeMap: { [key: string]: string } = {
+            'schema_discovery': 'discover_schema',
+            'semantic_understanding': 'semantic_analysis', 
+            'similarity_matching': 'similarity_matching',
+            'user_interaction': 'user_verification',
+            'query_generation': 'query_generation',
+            'execution': 'query_execution',
+            'visualization': 'visualization'
+          };
+          
+          const resultKey = `${index + 1}_${taskTypeMap[task.task_type] || task.task_type}`;
+          const stepResult = plan.results ? plan.results[resultKey] : null;
+          
+          console.log(`Step ${index + 1}: ${task.task_type} -> ${resultKey}`, stepResult);
+          
+          return (
+            <div key={`${task.task_type}_${index}`} className="plan-step">
+              <div className={`step-status-icon ${stepResult?.status === 'failed' ? 'failed' : 'completed'}`}>
+                {stepResult?.status === 'failed' ? '!' : '✓'}
               </div>
-              
-              {/* Show SQL queries if available */}
-              {step.output_data && step.output_data.sql && (
-                <div className="step-output">
-                  <p><strong>SQL Query:</strong></p>
-                  <pre className="sql-code">{step.output_data.sql}</pre>
+              <div className="step-details">
+                <div className="step-name">
+                  {index + 1}. {task.task_type.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())}
                 </div>
-              )}
-              
-              {/* Show results if available */}
-              {step.output_data && step.output_data.results && (
-                <div className="step-output">
-                  <p><strong>Results:</strong></p>
-                  <div className="results-table">
-                    {Array.isArray(step.output_data.results) && step.output_data.results.length > 0 ? (
-                      <table>
-                        <thead>
-                          <tr>
-                            {Object.keys(step.output_data.results[0]).map(key => (
-                              <th key={key}>{key}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {step.output_data.results.slice(0, 5).map((row: any, idx: number) => (
-                            <tr key={idx}>
-                              {Object.values(row).map((value, vidx) => (
-                                <td key={vidx}>{String(value)}</td>
-                              ))}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                
+                {/* Show step results */}
+                {stepResult && (
+                  <div className="step-output">
+                    <p><strong>Result:</strong></p>
+                    {stepResult.error ? (
+                      <div className="step-error">
+                        <p style={{color: '#dc2626'}}><strong>Error:</strong> {stepResult.error}</p>
+                      </div>
                     ) : (
-                      <p>{JSON.stringify(step.output_data.results)}</p>
+                      <div className="step-success">
+                        {/* Show discovered tables */}
+                        {stepResult.discovered_tables && (
+                          <div>
+                            <p><strong>Discovered Tables ({stepResult.discovered_tables.length}):</strong></p>
+                            <ul>
+                              {stepResult.discovered_tables.map((table: string, idx: number) => (
+                                <li key={idx}>{table}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        
+                        {/* Show table suggestions */}
+                        {stepResult.table_suggestions && (
+                          <div>
+                            <p><strong>Table Suggestions ({stepResult.table_suggestions.length}):</strong></p>
+                            <small style={{color: '#6b7280', fontStyle: 'italic'}}>
+                              * Empty tables (0 rows) are automatically filtered out
+                            </small>
+                            <ul>
+                              {stepResult.table_suggestions.map((suggestion: any, idx: number) => (
+                                <li key={idx}>
+                                  <strong>{suggestion.rank}. {suggestion.table_name}</strong> 
+                                  (Relevance: {suggestion.estimated_relevance} - {(suggestion.relevance_score * 100).toFixed(1)}%)
+                                  {suggestion.row_count && suggestion.row_count !== "Unknown" && (
+                                    <span style={{color: '#059669'}}> - {suggestion.row_count.toLocaleString()} records</span>
+                                  )}
+                                  {suggestion.row_count === "Unknown" && (
+                                    <span style={{color: '#f59e0b'}}> - Row count unavailable</span>
+                                  )}
+                                  <br/>
+                                  <small>{suggestion.description}</small>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        
+                        {/* Show approved tables */}
+                        {stepResult.approved_tables && (
+                          <div>
+                            <p><strong>Selected Tables ({stepResult.approved_tables.length}):</strong></p>
+                            <ul>
+                              {stepResult.approved_tables.map((table: string, idx: number) => (
+                                <li key={idx} style={{color: '#059669', fontWeight: 'bold'}}>{table}</li>
+                              ))}
+                            </ul>
+                            <p><small>Selection Method: {stepResult.selection_method} (Confidence: {stepResult.confidence})</small></p>
+                          </div>
+                        )}
+                        
+                        {/* Show semantic analysis */}
+                        {stepResult.intent && (
+                          <div>
+                            <p><strong>Query Intent:</strong> {stepResult.intent}</p>
+                            <p><strong>Complexity Score:</strong> {stepResult.complexity_score}</p>
+                            {stepResult.entities && stepResult.entities.length > 0 && (
+                              <p><strong>Entities Found:</strong> {stepResult.entities.join(', ')}</p>
+                            )}
+                          </div>
+                        )}
+                        
+                        {/* Show similarity matching */}
+                        {stepResult.matched_tables && (
+                          <div>
+                            <p><strong>Matched Tables ({stepResult.matched_tables.length}):</strong></p>
+                            <ul>
+                              {stepResult.matched_tables.map((table: string, idx: number) => (
+                                <li key={idx}>{table} (Score: {stepResult.similarity_scores[idx]})</li>
+                              ))}
+                            </ul>
+                            <p><strong>Confidence:</strong> {stepResult.confidence}</p>
+                          </div>
+                        )}
+                        
+                        {/* Show SQL query if available */}
+                        {stepResult.sql && (
+                          <div>
+                            <p><strong>Generated SQL:</strong></p>
+                            <pre className="sql-code">{stepResult.sql}</pre>
+                          </div>
+                        )}
+                        
+                        {/* Show data results if available */}
+                        {stepResult.data && Array.isArray(stepResult.data) && stepResult.data.length > 0 && (
+                          <div>
+                            <p><strong>Query Results ({stepResult.data.length} rows):</strong></p>
+                            <div className="results-table">
+                              <table>
+                                <thead>
+                                  <tr>
+                                    {Object.keys(stepResult.data[0]).map((key: string) => (
+                                      <th key={key}>{key}</th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {stepResult.data.slice(0, 5).map((row: any, idx: number) => (
+                                    <tr key={idx}>
+                                      {Object.values(row).map((value, vidx) => (
+                                        <td key={vidx}>{String(value)}</td>
+                                      ))}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                              {stepResult.data.length > 5 && (
+                                <p style={{fontSize: '12px', color: '#6b7280'}}>... and {stepResult.data.length - 5} more rows</p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Show visualization info */}
+                        {stepResult.chart_config && (
+                          <div>
+                            <p><strong>Visualization Created:</strong></p>
+                            <div className="chart-placeholder">
+                              📊 Chart Type: {stepResult.chart_config.chart_type || 'Data Visualization'}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Show general status */}
+                        {stepResult.status && stepResult.status === 'completed' && !stepResult.error && (
+                          <p style={{color: '#059669'}}>✅ Step completed successfully</p>
+                        )}
+                      </div>
                     )}
                   </div>
-                </div>
-              )}
-              
-              {/* Show charts if available */}
-              {step.output_data && step.output_data.chart_config && (
-                <div className="step-output">
-                  <p><strong>Visualization:</strong></p>
-                  <div className="chart-placeholder">
-                    📊 Chart: {step.output_data.chart_config.chart_type || 'Data Visualization'}
-                  </div>
-                </div>
-              )}
-              
-              {step.error && (
-                <div className="step-description error">{step.error}</div>
-              )}
+                )}
+              </div>
             </div>
-          </div>
-        )) : (
+          );
+        }) : (
           <p>No execution steps available</p>
         )}
       </div>

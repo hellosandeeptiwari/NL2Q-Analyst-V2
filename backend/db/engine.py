@@ -95,14 +95,26 @@ class SnowflakeAdapter:
 
     def connect(self):
         self.conn = snowflake.connector.connect(**self.config)
-        # Try to set the database and schema context, but don't fail if they don't exist
+        # Try to set the database, schema, and role context
         try:
+            cur = self.conn.cursor()
+            
+            # Set role first if specified
+            if 'role' in self.config and self.config['role']:
+                cur.execute(f"USE ROLE {self.config['role']}")
+                print(f"✅ Set Snowflake role: {self.config['role']}")
+            
+            # Set database context
             if 'database' in self.config and self.config['database']:
-                cur = self.conn.cursor()
                 cur.execute(f"USE DATABASE {self.config['database']}")
+                print(f"✅ Set Snowflake database: {self.config['database']}")
+                
+                # Set schema context
                 if 'schema' in self.config and self.config['schema']:
                     cur.execute(f"USE SCHEMA {self.config['schema']}")
-                cur.close()
+                    print(f"✅ Set Snowflake schema: {self.config['schema']}")
+            
+            cur.close()
         except Exception as e:
             # Log but don't fail - we can still work without setting the database context
             print(f"Warning: Could not set database context: {e}")
@@ -289,7 +301,8 @@ def get_adapter(db_engine=None):
             "account": os.getenv("SNOWFLAKE_ACCOUNT"),
             "warehouse": os.getenv("SNOWFLAKE_WAREHOUSE"),
             "database": os.getenv("SNOWFLAKE_DATABASE"),
-            "schema": os.getenv("SNOWFLAKE_SCHEMA")
+            "schema": os.getenv("SNOWFLAKE_SCHEMA"),
+            "role": os.getenv("SNOWFLAKE_ROLE")
         }
         adapter = SnowflakeAdapter(config)
         adapter.connect()
