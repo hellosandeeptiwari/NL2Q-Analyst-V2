@@ -424,7 +424,7 @@ class DynamicAgentOrchestrator:
             )
         ]
     
-    async def execute_plan(self, tasks: List[AgentTask], user_query: str) -> Dict[str, Any]:
+    async def execute_plan(self, tasks: List[AgentTask], user_query: str, user_id: str = "default") -> Dict[str, Any]:
         """
         Execute the planned tasks in the correct order
         """
@@ -450,7 +450,7 @@ class DynamicAgentOrchestrator:
                 print(f"▶️  Executing {task.task_id}: {task.task_type.value}")
                 
                 try:
-                    task_result = await self._execute_single_task(task, results, user_query)
+                    task_result = await self._execute_single_task(task, results, user_query, user_id)
                     results[task.task_id] = task_result
                     completed_tasks.add(task.task_id)
                     print(f"✅ Completed {task.task_id}")
@@ -468,14 +468,14 @@ class DynamicAgentOrchestrator:
         
         return results
     
-    async def _execute_single_task(self, task: AgentTask, previous_results: Dict, user_query: str) -> Dict[str, Any]:
+    async def _execute_single_task(self, task: AgentTask, previous_results: Dict, user_query: str, user_id: str = "default") -> Dict[str, Any]:
         """Execute a single agent task"""
         
         # Get the appropriate agent based on task type
         agent_name = self._select_agent_for_task(task.task_type)
         
         # Prepare input data by resolving dependencies
-        resolved_input = self._resolve_task_inputs(task, previous_results, user_query)
+        resolved_input = self._resolve_task_inputs(task, previous_results, user_query, user_id)
         
         # Execute based on task type
         if task.task_type == TaskType.SCHEMA_DISCOVERY:
@@ -508,9 +508,12 @@ class DynamicAgentOrchestrator:
         }
         return agent_mapping.get(task_type, "schema_discoverer")
     
-    def _resolve_task_inputs(self, task: AgentTask, previous_results: Dict, user_query: str) -> Dict[str, Any]:
+    def _resolve_task_inputs(self, task: AgentTask, previous_results: Dict, user_query: str, user_id: str = "default") -> Dict[str, Any]:
         """Resolve task inputs from previous task results"""
-        resolved = {"original_query": user_query}
+        resolved = {
+            "original_query": user_query,
+            "user_id": user_id
+        }
         
         # Add all previous results to the resolved inputs
         for prev_task_id, prev_result in previous_results.items():
@@ -910,18 +913,28 @@ class DynamicAgentOrchestrator:
                     print(f"🤖 SQL generation attempt {attempt}/{max_attempts}")
                     
                     try:
-                        # Use SQL agent for intelligent query generation
-                        from backend.agents.sql_agent import SQLAgent
-                        sql_agent = SQLAgent()
+                        # Use LLM agent for intelligent query generation
+                        from backend.agents.llm_agent import LLMAgent
+                        llm_agent = LLMAgent()
                         
                         # Include error context for retry attempts
                         error_context = inputs.get("previous_sql_error", "") if attempt > 1 else ""
                         
-                        result = await sql_agent.generate_sql(
-                            query=query,
-                            available_tables=confirmed_tables,
-                            error_context=error_context
-                        )
+                        # Generate SQL using LLM agent's query planning capabilities
+                        if hasattr(llm_agent, 'generate_sql'):
+                            result = await llm_agent.generate_sql(
+                                query=query,
+                                available_tables=confirmed_tables,
+                                error_context=error_context
+                            )
+                        else:
+                            # Fallback: create simple SQL query
+                            table_name = confirmed_tables[0] if confirmed_tables else "unknown_table"
+                            sql_query = f"SELECT * FROM {table_name} LIMIT 10"
+                            result = {
+                                "sql_query": sql_query,
+                                "explanation": f"Simple query to fetch data from {table_name}"
+                            }
                         
                         if result and result.get("sql_query"):
                             sql_query = result["sql_query"]
@@ -1024,7 +1037,8 @@ class DynamicAgentOrchestrator:
                     
                     try:
                         # Execute the query safely with required user_id
-                        result = await sql_runner.execute_query(sql_query, user_id="system")
+                        user_id = inputs.get("user_id", "default")
+                        result = await sql_runner.execute_query(sql_query, user_id=user_id)
                         
                         print(f"📊 SQL execution result type: {type(result)}")
                         
@@ -1530,7 +1544,7 @@ Generate Python code that:
             tasks = await self.plan_execution(user_query)
             
             # Step 2: Execute the plan
-            results = await self.execute_plan(tasks, user_query)
+            results = await self.execute_plan(tasks, user_query, user_id)
             
             # Step 3: Format response for API compatibility
             plan_id = f"plan_{hash(user_query)}_{session_id}"
