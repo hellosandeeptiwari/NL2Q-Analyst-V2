@@ -108,7 +108,10 @@ DATABASE_DIALECTS = {
             "time_travel": "SELECT * FROM table AT(TIMESTAMP => '2024-01-01 12:00:00')",
             "pivot": "SELECT * FROM (SELECT...) PIVOT(SUM(amount) FOR category IN ('A', 'B', 'C'))",
             "json_query": "SELECT value:name::string FROM table, LATERAL FLATTEN(input => json_column)",
-            "window_function": "SELECT *, ROW_NUMBER() OVER (PARTITION BY category ORDER BY date) FROM table"
+            "window_function": "SELECT *, ROW_NUMBER() OVER (PARTITION BY category ORDER BY date) FROM table",
+            "quoted_identifiers": "SELECT * FROM \"Table_With_Numbers_123\" WHERE \"Column_Name\" = 'value'",
+            "mixed_case": "SELECT \"CamelCaseColumn\" FROM \"Mixed_Case_Table_456\"",
+            "numbers_in_names": "SELECT * FROM \"Final_NBA_Output_python_06042025\" LIMIT 10"
         },
         performance_tips=[
             "Use clustering keys for large tables",

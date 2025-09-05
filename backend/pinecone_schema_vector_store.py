@@ -8,6 +8,10 @@ import asyncio
 from pinecone import Pinecone, ServerlessSpec
 import openai
 from typing import List, Dict, Any, Optional
+from dotenv import load_dotenv
+
+# Ensure environment variables are loaded
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 from dataclasses import dataclass
 from dotenv import load_dotenv
 

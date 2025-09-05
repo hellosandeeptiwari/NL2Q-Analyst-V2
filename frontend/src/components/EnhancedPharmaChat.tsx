@@ -168,7 +168,7 @@ const api = {
 
   // Mock functions for development
   mockGetUserProfile: (): UserProfile => ({
-    user_id: "user_123",
+    user_id: "default_user",
     username: "analyst1",
     full_name: "Dr. Sarah Chen",
     email: "sarah.chen@pharma.com",
@@ -220,6 +220,7 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
   const [activePlan, setActivePlan] = useState<QueryPlan | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showProfile, setShowProfile] = useState(false);
+  const [expandedSteps, setExpandedSteps] = useState<{[key: string]: boolean}>({});
   const [databaseStatus, setDatabaseStatus] = useState<DatabaseStatus>({
     isConnected: false,
     databaseType: 'Unknown',
@@ -237,6 +238,14 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
+
+  // Toggle step expansion
+  const toggleStepExpansion = (messageId: string) => {
+    setExpandedSteps(prev => ({
+      ...prev,
+      [messageId]: !prev[messageId]
+    }));
+  };
 
   useEffect(() => {
     scrollToBottom();
@@ -329,9 +338,28 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
       // Set the plan directly since it's already the full plan object
       setActivePlan(planResult);
       
-      // If plan is already completed, turn off loading
+      // If plan is completed, add assistant response to messages and clear active plan
       if (planResult.status === 'completed' || planResult.status === 'failed') {
         setIsLoading(false);
+        
+        // Create assistant response message
+        const assistantMessage: ChatMessage = {
+          message_id: `msg_${Date.now()}_assistant`,
+          conversation_id: activeConversation.conversation_id,
+          message_type: 'system_response',
+          content: planResult.status === 'completed' ? 
+            'Analysis completed successfully. See results below.' : 
+            'Analysis completed with some issues. See details below.',
+          timestamp: new Date().toISOString(),
+          status: planResult.status === 'failed' ? 'error' : planResult.status
+        };
+        
+        // Add assistant message and clear active plan after a short delay
+        setTimeout(() => {
+          setMessages(prev => [...prev, assistantMessage]);
+          // Keep the plan visible for results, but don't show it in the main flow
+          // setActivePlan(null);
+        }, 500);
       }
 
     } catch (error) {
@@ -424,7 +452,11 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
   // Switch conversation
   const handleConversationSelect = (conversation: Conversation) => {
     setActiveConversation(conversation);
-    setMessages(conversation.messages || []);
+    // Sort messages by timestamp to ensure correct order
+    const sortedMessages = (conversation.messages || []).sort((a, b) => 
+      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+    setMessages(sortedMessages);
     setActivePlan(null);
   };
 
@@ -463,6 +495,10 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
     console.log('Plan tasks:', plan.tasks);
     console.log('Plan results:', plan.results);
     
+    // Separate intermediate steps (1-6) from final display step (7)
+    const intermediateTasks = plan.tasks ? plan.tasks.filter((task, index) => index < plan.tasks.length - 1) : [];
+    const finalTask = plan.tasks && plan.tasks.length > 0 ? plan.tasks[plan.tasks.length - 1] : null;
+    
     return (
     <div className="plan-execution">
       <div className="plan-header">
@@ -483,9 +519,28 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
         </div>
       )}
 
-      <div className="plan-steps">
-        <p className="steps-title"><strong>Execution Steps:</strong></p>
-        {plan.tasks && plan.tasks.length > 0 ? plan.tasks.map((task: any, index: number) => {
+      {/* Collapsible Intermediate Steps (1-6) */}
+      {intermediateTasks.length > 0 && (
+        <div className="plan-steps">
+          <div className="steps-header" onClick={() => toggleStepExpansion(plan.plan_id)}>
+            <p className="steps-title">
+              <strong>Processing Steps ({intermediateTasks.length})</strong>
+              {!expandedSteps[plan.plan_id] && (
+                <span className="steps-summary">
+                  {' '}- {plan.status === 'completed' ? '✅ All steps completed' : 
+                        plan.status === 'failed' ? '❌ Execution failed' :
+                        plan.status === 'executing' ? '⚙️ Processing...' : '⏳ Pending'}
+                </span>
+              )}
+            </p>
+            <span className={`steps-toggle ${expandedSteps[plan.plan_id] ? 'expanded' : 'collapsed'}`}>
+              {expandedSteps[plan.plan_id] ? '▼' : '▶'}
+            </span>
+          </div>
+          
+          {expandedSteps[plan.plan_id] && (
+            <div className="steps-content">
+              {intermediateTasks.map((task: any, index: number) => {
           // Fix the result key mapping to match backend format
           const taskTypeMap: { [key: string]: string } = {
             'schema_discovery': 'discover_schema',
@@ -497,7 +552,7 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
             'visualization': 'visualization'
           };
           
-          const resultKey = `${index + 1}_${taskTypeMap[task.task_type] || task.task_type}`;
+          const resultKey = `${index + 1}_${taskTypeMap[task.tool_type] || task.tool_type}`;
           const stepResult = plan.results ? plan.results[resultKey] : null;
           
           console.log(`Step ${index + 1}: ${task.task_type} -> ${resultKey}`, stepResult);
@@ -605,33 +660,64 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                           </div>
                         )}
                         
-                        {/* Show data results if available */}
-                        {stepResult.data && Array.isArray(stepResult.data) && stepResult.data.length > 0 && (
+                        {/* Show data results if available - check multiple possible result keys */}
+                        {(stepResult.data || stepResult.results) && Array.isArray(stepResult.data || stepResult.results) && (stepResult.data || stepResult.results).length > 0 && (
                           <div>
-                            <p><strong>Query Results ({stepResult.data.length} rows):</strong></p>
-                            <div className="results-table">
-                              <table>
-                                <thead>
-                                  <tr>
-                                    {Object.keys(stepResult.data[0]).map((key: string) => (
-                                      <th key={key}>{key}</th>
-                                    ))}
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {stepResult.data.slice(0, 5).map((row: any, idx: number) => (
-                                    <tr key={idx}>
-                                      {Object.values(row).map((value, vidx) => (
-                                        <td key={vidx}>{String(value)}</td>
-                                      ))}
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                              {stepResult.data.length > 5 && (
-                                <p style={{fontSize: '12px', color: '#6b7280'}}>... and {stepResult.data.length - 5} more rows</p>
-                              )}
-                            </div>
+                            {(() => {
+                              const dataArray = stepResult.data || stepResult.results;
+                              return (
+                                <>
+                                  <p><strong>Query Results ({dataArray.length} rows):</strong></p>
+                                  <div className="results-table" style={{
+                                    maxHeight: '400px', 
+                                    overflowY: 'auto', 
+                                    border: '1px solid #e0e0e0', 
+                                    borderRadius: '4px',
+                                    marginTop: '10px'
+                                  }}>
+                                    <table style={{width: '100%', borderCollapse: 'collapse'}}>
+                                      <thead style={{background: '#f8f9fa', position: 'sticky', top: 0}}>
+                                        <tr>
+                                          {Object.keys(dataArray[0]).map((key: string) => (
+                                            <th key={key} style={{
+                                              padding: '8px 12px', 
+                                              borderBottom: '2px solid #dee2e6',
+                                              fontWeight: 'bold',
+                                              textAlign: 'left'
+                                            }}>{key}</th>
+                                          ))}
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {dataArray.slice(0, 10).map((row: any, idx: number) => (
+                                          <tr key={idx} style={{borderBottom: '1px solid #e9ecef'}}>
+                                            {Object.values(row).map((value, vidx) => (
+                                              <td key={vidx} style={{
+                                                padding: '8px 12px',
+                                                maxWidth: '200px',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap'
+                                              }}>{String(value)}</td>
+                                            ))}
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                    {dataArray.length > 10 && (
+                                      <p style={{
+                                        fontSize: '12px', 
+                                        color: '#6b7280', 
+                                        padding: '10px',
+                                        margin: 0,
+                                        background: '#f8f9fa',
+                                        borderTop: '1px solid #e9ecef'
+                                      }}>... and {dataArray.length - 10} more rows</p>
+                                    )}
+                                  </div>
+                                </>
+                              );
+                            })()}
                           </div>
                         )}
                         
@@ -656,10 +742,192 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
               </div>
             </div>
           );
-        }) : (
-          <p>No execution steps available</p>
-        )}
-      </div>
+        })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Always Visible Final Step (Visualization/Results) */}
+      {finalTask && (
+        <div className="final-step">
+          <div className="final-step-header">
+            <h5><strong>📊 Results & Visualization</strong></h5>
+          </div>
+          <div className="final-step-content">
+            {(() => {
+              // Fix the result key mapping for final step
+              const taskTypeMap: { [key: string]: string } = {
+                'schema_discovery': 'discover_schema',
+                'semantic_understanding': 'semantic_analysis', 
+                'similarity_matching': 'similarity_matching',
+                'user_interaction': 'user_verification',
+                'query_generation': 'query_generation',
+                'execution': 'query_execution',
+                'visualization': 'visualization'
+              };
+              
+              const finalIndex = plan.tasks.length - 1;
+              const resultKey = `${finalIndex + 1}_${taskTypeMap[finalTask.tool_type] || finalTask.tool_type}`;
+              const stepResult = plan.results?.[resultKey];
+              
+              // Debug logging
+              console.log('Final step debugging:', {
+                finalIndex,
+                finalTaskType: finalTask.tool_type,
+                resultKey,
+                stepResult,
+                allResultKeys: Object.keys(plan.results || {})
+              });
+              
+              return (
+                <div className="step-result">
+                  {stepResult?.error ? (
+                    <div className="step-error">
+                      <p style={{color: '#DC2626'}}>❌ {stepResult.error}</p>
+                    </div>
+                  ) : stepResult ? (
+                    <div>
+                      {/* Show visualization */}
+                      {stepResult.chart_config && (
+                        <div>
+                          <p><strong>Visualization Created:</strong></p>
+                          <div className="chart-placeholder">
+                            📊 Chart Type: {stepResult.chart_config.chart_type || 'Data Visualization'}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Show final results with actual chart rendering */}
+                      {stepResult.charts && Array.isArray(stepResult.charts) && stepResult.charts.length > 0 && (
+                        <div>
+                          <p><strong>Generated Visualizations ({stepResult.charts.length}):</strong></p>
+                          {stepResult.charts.map((chart: any, idx: number) => (
+                            <div key={idx} className="chart-item" style={{marginBottom: '20px', border: '1px solid #e0e0e0', borderRadius: '8px', padding: '15px'}}>
+                              <p style={{marginBottom: '10px', fontWeight: 'bold'}}>📈 {chart.type} - {chart.title || 'Visualization'}</p>
+                              
+                              {/* Render matplotlib charts (base64 images) */}
+                              {chart.type === 'matplotlib' && chart.data && (
+                                <img 
+                                  src={chart.data} 
+                                  alt={chart.title || 'Visualization'}
+                                  style={{maxWidth: '100%', height: 'auto', borderRadius: '4px'}}
+                                />
+                              )}
+                              
+                              {/* Render plotly charts */}
+                              {chart.type === 'plotly' && chart.data && (
+                                <div style={{width: '100%', height: '400px'}}>
+                                  <Plot
+                                    data={chart.data.data || []}
+                                    layout={{
+                                      ...(chart.data.layout || {}),
+                                      autosize: true,
+                                      margin: { t: 40, r: 20, b: 40, l: 40 }
+                                    }}
+                                    config={{
+                                      displayModeBar: true,
+                                      responsive: true,
+                                      displaylogo: false,
+                                      modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
+                                    }}
+                                    style={{width: '100%', height: '100%'}}
+                                  />
+                                </div>
+                              )}
+                              
+                              {/* Fallback for other chart types */}
+                              {!['matplotlib', 'plotly'].includes(chart.type) && (
+                                <div style={{
+                                  background: '#f8f9fa', 
+                                  padding: '15px', 
+                                  borderRadius: '4px',
+                                  color: '#6c757d'
+                                }}>
+                                  Chart data available ({chart.type})
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      
+                      {/* Show summary */}
+                      {stepResult.summary && (
+                        <div>
+                          <p><strong>Summary:</strong></p>
+                          <p>{stepResult.summary}</p>
+                        </div>
+                      )}
+                      
+                      {/* Show final status */}
+                      {stepResult.status === 'completed' && (
+                        <p style={{color: '#059669'}}>✅ Analysis completed successfully</p>
+                      )}
+                    </div>
+                  ) : (
+                    <p style={{color: '#6B7280'}}>⏳ Generating results...</p>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* Final Visualization Display - After all steps complete */}
+      {plan.context?.visualizations?.charts && Array.isArray(plan.context.visualizations.charts) && plan.context.visualizations.charts.length > 0 && (
+        <div style={{marginTop: '20px', padding: '20px', backgroundColor: '#f8f9fa', borderRadius: '8px', border: '2px solid #4CAF50'}}>
+          <h3 style={{margin: '0 0 15px 0', color: '#2563eb'}}>📊 Final Visualization Results</h3>
+          {plan.context.visualizations.charts.map((chart: any, idx: number) => (
+            <div key={idx} className="chart-item" style={{marginBottom: '20px', border: '1px solid #e0e0e0', borderRadius: '8px', padding: '15px', backgroundColor: 'white'}}>
+              <p style={{marginBottom: '10px', fontWeight: 'bold'}}>📈 {chart.type} - {chart.title || 'Visualization'}</p>
+              
+              {/* Render matplotlib charts (base64 images) */}
+              {chart.type === 'matplotlib' && chart.data && (
+                <img 
+                  src={chart.data} 
+                  alt={chart.title || 'Visualization'}
+                  style={{maxWidth: '100%', height: 'auto', borderRadius: '4px'}}
+                />
+              )}
+              
+              {/* Render plotly charts */}
+              {chart.type === 'plotly' && chart.data && (
+                <div style={{width: '100%', height: '400px'}}>
+                  <Plot
+                    data={chart.data.data || []}
+                    layout={{
+                      ...(chart.data.layout || {}),
+                      autosize: true,
+                      margin: { t: 40, r: 20, b: 40, l: 40 }
+                    }}
+                    config={{
+                      displayModeBar: true,
+                      responsive: true,
+                      displaylogo: false,
+                      modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
+                    }}
+                    style={{width: '100%', height: '100%'}}
+                  />
+                </div>
+              )}
+              
+              {/* Debug info */}
+              {!['matplotlib', 'plotly'].includes(chart.type) && (
+                <div style={{
+                  background: '#f8f9fa', 
+                  padding: '15px', 
+                  borderRadius: '4px',
+                  color: '#6c757d'
+                }}>
+                  Chart data available ({chart.type}) - {JSON.stringify(chart).substring(0, 100)}...
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {plan.estimated_cost && plan.estimated_cost > 0 && (
         <div className="plan-cost">

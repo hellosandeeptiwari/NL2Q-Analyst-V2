@@ -4,13 +4,19 @@ import psycopg2
 import snowflake.connector
 import sqlite3
 import threading
+import os
+from dotenv import load_dotenv
+
+# Ensure environment variables are loaded
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
 
 class RunResult:
-    def __init__(self, rows, execution_time, error=None, plotly_spec=None):
+    def __init__(self, rows, execution_time, error=None, plotly_spec=None, columns=None):
         self.rows = rows
         self.execution_time = execution_time
         self.error = error
         self.plotly_spec = plotly_spec
+        self.columns = columns
 
 class DBAdapter(Protocol):
     def connect(self) -> None: ...
@@ -64,11 +70,13 @@ class PostgresAdapter:
                     if dry_run:
                         cur.execute(f"EXPLAIN {sql}")
                         rows = cur.fetchall()
+                        columns = [desc[0] for desc in cur.description] if cur.description else []
                     else:
                         cur.execute(sql)
                         rows = cur.fetchall()
+                        columns = [desc[0] for desc in cur.description] if cur.description else []
                 execution_time = time.time() - start
-                return RunResult(rows, execution_time)
+                return RunResult(rows, execution_time, columns=columns)
             except Exception as e:
                 return RunResult([], 0, error=str(e))
 
@@ -102,17 +110,23 @@ class SnowflakeAdapter:
             # Set role first if specified
             if 'role' in self.config and self.config['role']:
                 cur.execute(f"USE ROLE {self.config['role']}")
-                print(f"✅ Set Snowflake role: {self.config['role']}")
             
             # Set database context
             if 'database' in self.config and self.config['database']:
                 cur.execute(f"USE DATABASE {self.config['database']}")
-                print(f"✅ Set Snowflake database: {self.config['database']}")
                 
                 # Set schema context
                 if 'schema' in self.config and self.config['schema']:
                     cur.execute(f"USE SCHEMA {self.config['schema']}")
-                    print(f"✅ Set Snowflake schema: {self.config['schema']}")
+            
+            # CRITICAL: Set quoted identifiers to FALSE for proper name handling
+            cur.execute("ALTER SESSION SET QUOTED_IDENTIFIERS_IGNORE_CASE = FALSE")
+            
+            # Only print once when connection is established
+            if not hasattr(self, '_context_set'):
+                # Reduced logging to prevent spam in terminal
+                # print(f"✅ Snowflake context: {self.config.get('role', 'default')}/{self.config.get('database', 'default')}/{self.config.get('schema', 'default')}")
+                self._context_set = True
             
             cur.close()
         except Exception as e:
@@ -150,14 +164,22 @@ class SnowflakeAdapter:
             try:
                 start = time.time()
                 cur = self.conn.cursor()
+                
+                # Ensure quoted identifiers are handled properly for each query
+                cur.execute("ALTER SESSION SET QUOTED_IDENTIFIERS_IGNORE_CASE = FALSE")
+                
                 if dry_run:
                     cur.execute(f"EXPLAIN {sql}")
                     rows = cur.fetchall()
+                    columns = [desc[0] for desc in cur.description] if cur.description else []
                 else:
                     cur.execute(sql)
                     rows = cur.fetchall()
+                    columns = [desc[0] for desc in cur.description] if cur.description else []
+                
                 execution_time = time.time() - start
-                return RunResult(rows, execution_time)
+                cur.close()  # Close the cursor to prevent connection issues
+                return RunResult(rows, execution_time, columns=columns)
             except Exception as e:
                 return RunResult([], 0, error=str(e))
 

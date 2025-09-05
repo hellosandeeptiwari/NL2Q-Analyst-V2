@@ -187,6 +187,68 @@ class RBACManager:
             conditions={"cost_threshold": 100.0},
             priority=50
         )
+        
+        # Default users for testing
+        self._initialize_default_users()
+    
+    def _initialize_default_users(self):
+        """Initialize default users for testing and development"""
+        
+        # Default admin user
+        admin_user = User(
+            user_id="admin",
+            email="admin@company.com",
+            roles=["admin"],
+            department="IT",
+            cost_limit=1000.0,
+            data_classification_access=["public", "confidential", "restricted"],
+            attributes={"clearance_level": "admin"},
+            active=True,
+            created_at=datetime.now()
+        )
+        self.users[admin_user.user_id] = admin_user
+        
+        # Default test user (for testing)
+        test_user = User(
+            user_id="test_user",
+            email="test@company.com", 
+            roles=["data_scientist"],
+            department="Analytics",
+            cost_limit=200.0,
+            data_classification_access=["public", "confidential"],
+            attributes={"clearance_level": "standard"},
+            active=True,
+            created_at=datetime.now()
+        )
+        self.users[test_user.user_id] = test_user
+        
+        # Default analyst user
+        analyst_user = User(
+            user_id="analyst",
+            email="analyst@company.com",
+            roles=["analyst"],
+            department="Business Intelligence", 
+            cost_limit=50.0,
+            data_classification_access=["public"],
+            attributes={"clearance_level": "standard"},
+            active=True,
+            created_at=datetime.now()
+        )
+        self.users[analyst_user.user_id] = analyst_user
+        
+        # Default user (used by API when no user_id specified)
+        default_user = User(
+            user_id="default_user",
+            email="default@company.com",
+            roles=["analyst"], 
+            department="General",
+            cost_limit=50.0,
+            data_classification_access=["public"],
+            attributes={"clearance_level": "standard"},
+            active=True,
+            created_at=datetime.now()
+        )
+        self.users[default_user.user_id] = default_user
     
     async def check_query_permissions(self, user_id: str, sql: str, estimated_cost: float = 0.0) -> Dict[str, Any]:
         """

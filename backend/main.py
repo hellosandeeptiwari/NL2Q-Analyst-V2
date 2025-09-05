@@ -424,12 +424,24 @@ async def get_database_status():
                 "warehouse": ""
             }
         
-        # Test connection
+        # Test connection (silently to avoid log spam)
         try:
+            # Temporarily store the original log level
+            import logging
+            snowflake_logger = logging.getLogger("snowflake.connector")
+            original_level = snowflake_logger.level
+            
+            # Suppress Snowflake connector logs for status checks
+            snowflake_logger.setLevel(logging.WARNING)
+            
             db_adapter = get_adapter("snowflake")
             # Simple test query
             result = db_adapter.run("SELECT 1", dry_run=False)
             is_connected = not result.error
+            
+            # Restore original log level
+            snowflake_logger.setLevel(original_level)
+            
         except Exception:
             is_connected = False
         
@@ -1634,9 +1646,25 @@ def logs():
 if __name__ == "__main__":
     print("🚀 Starting uvicorn server...")
     import uvicorn
+    import logging
+    
+    # Configure logging to reduce noise from status endpoint
+    class StatusFilter(logging.Filter):
+        def filter(self, record):
+            # Filter out access logs for database status endpoint
+            if hasattr(record, 'getMessage'):
+                message = record.getMessage()
+                if "/api/database/status" in message and "200 OK" in message:
+                    return False
+            return True
+    
+    # Apply filter to uvicorn access logger
+    access_logger = logging.getLogger("uvicorn.access")
+    access_logger.addFilter(StatusFilter())
+    
     try:
         print("📡 Running uvicorn on port 8000...")
-        uvicorn.run(app, host="0.0.0.0", port=8000)
+        uvicorn.run(app, host="0.0.0.0", port=8000, access_log=True)
     except Exception as e:
         print(f"❌ Error starting server: {e}")
         import traceback

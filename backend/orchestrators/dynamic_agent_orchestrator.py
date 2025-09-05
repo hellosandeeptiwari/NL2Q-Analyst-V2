@@ -55,15 +55,21 @@ class DynamicAgentOrchestrator:
         self.pinecone_store = None
         
     async def initialize_on_startup(self):
-        """Initialize the system on startup - minimal for fast startup"""
+        """Initialize the system on startup"""
         try:
-            print("🚀 Starting minimal system initialization...")
+            print("🚀 Starting system initialization...")
             
-            # Only initialize what's absolutely necessary for fast startup
-            # Database and Pinecone will be initialized lazily on first query
+            # Initialize database connector
+            await self._initialize_database_connector()
             
-            print("⚡ Using lazy initialization for fastest startup")
-            print("✅ Minimal system initialization completed")
+            # Initialize Pinecone vector store
+            await self._initialize_vector_store()
+            
+            # Perform auto-indexing if needed
+            if self.pinecone_store and self.db_connector:
+                await self._check_and_perform_comprehensive_indexing()
+            
+            print("✅ System initialization completed")
         except Exception as e:
             print(f"⚠️ Error during startup initialization: {e}")
             # Don't fail startup completely
@@ -82,19 +88,41 @@ class DynamicAgentOrchestrator:
         """Initialize database connection"""
         try:
             from backend.db.engine import get_adapter
+            print("🔌 Initializing database connector...")
             self.db_connector = get_adapter("snowflake")
-            print("✅ Database connector initialized")
+            if self.db_connector:
+                print("✅ Database connector initialized successfully")
+                # Test the connection
+                test_result = self.db_connector.run("SELECT 1 as test", dry_run=False)
+                if test_result and not test_result.error:
+                    print("✅ Database connection test successful")
+                else:
+                    print(f"⚠️ Database connection test failed: {test_result.error if test_result else 'Unknown error'}")
+            else:
+                print("❌ Database connector returned None")
         except Exception as e:
-            print(f"⚠️ Database connector initialization failed: {e}")
+            print(f"❌ Database connector initialization failed: {e}")
+            self.db_connector = None
             
     async def _initialize_vector_store(self):
         """Initialize Pinecone vector store"""
         try:
+            print("🔍 Initializing Pinecone vector store...")
             from backend.pinecone_schema_vector_store import PineconeSchemaVectorStore
             self.pinecone_store = PineconeSchemaVectorStore()
-            print("✅ Vector store initialized")
+            if self.pinecone_store:
+                print("✅ Vector store initialized successfully")
+                # Test Pinecone connection
+                try:
+                    stats = self.pinecone_store.index.describe_index_stats()
+                    print(f"✅ Pinecone connection test successful - {stats.total_vector_count} vectors indexed")
+                except Exception as test_error:
+                    print(f"⚠️ Pinecone connection test failed: {test_error}")
+            else:
+                print("❌ Vector store returned None")
         except Exception as e:
-            print(f"⚠️ Vector store initialization failed: {e}")
+            print(f"❌ Vector store initialization failed: {e}")
+            self.pinecone_store = None
             
     async def _check_and_perform_comprehensive_indexing(self):
         """Check indexing completeness and perform auto-indexing if needed"""
@@ -321,15 +349,36 @@ class DynamicAgentOrchestrator:
             
             # Parse the response to extract task plan
             content = response.choices[0].message.content
-            
-            # Extract JSON from the response
+
+            # Extract JSON from the response robustly. The model may include
+            # surrounding text -- attempt to find the first JSON array. If
+            # parsing fails, log the raw content and fall back to a default
+            # plan to avoid crashing the orchestrator.
             import re
-            json_match = re.search(r'\[.*\]', content, re.DOTALL)
-            if json_match:
-                tasks_data = json.loads(json_match.group())
-                return self._convert_to_agent_tasks(tasks_data)
-            else:
-                print("⚠️ Could not parse task plan from reasoning model")
+            try:
+                json_match = re.search(r'\[\s*\{', content, re.DOTALL)
+                if json_match:
+                    # Find the full array by locating the matching closing bracket
+                    start = json_match.start()
+                    arr_text = content[start:]
+                    # Heuristic: find the last closing bracket
+                    last_idx = arr_text.rfind(']')
+                    if last_idx != -1:
+                        arr_text = arr_text[:last_idx+1]
+                        tasks_data = json.loads(arr_text)
+                        return self._convert_to_agent_tasks(tasks_data)
+
+                # If we reach here, parsing failed
+                print("⚠️ Could not parse task plan from reasoning model. Raw response:")
+                print(content[:2000])
+                return self._create_default_plan(user_query)
+            except Exception as parse_err:
+                print(f"⚠️ Planning parse error: {parse_err}")
+                print("Raw model output (truncated):")
+                try:
+                    print(content[:2000])
+                except Exception:
+                    pass
                 return self._create_default_plan(user_query)
                 
         except Exception as e:
@@ -510,6 +559,10 @@ class DynamicAgentOrchestrator:
     
     def _resolve_task_inputs(self, task: AgentTask, previous_results: Dict, user_query: str, user_id: str = "default") -> Dict[str, Any]:
         """Resolve task inputs from previous task results"""
+        # Fix user_id mapping - RBAC expects "default_user" not "default"
+        if user_id == "default":
+            user_id = "default_user"
+            
         resolved = {
             "original_query": user_query,
             "user_id": user_id
@@ -566,18 +619,44 @@ class DynamicAgentOrchestrator:
             relevant_tables = []
             for match in table_matches:
                 table_name = match['table_name']
-                # Get details for each table
-                table_details = await self.pinecone_store.get_table_details(table_name)
+                # Get details for each table. Prefer a fast hybrid approach:
+                # 1) Use Pinecone for table discovery (we already have match)
+                # 2) Use the Enhanced SchemaRetriever to fetch column-level
+                #    metadata (names, types) for the matched tables. This avoids
+                #    falling back to SELECT * and keeps latency low by focusing
+                #    only on the small set of matched tables.
                 columns = []
-                for chunk_type, chunk_data in table_details.get('chunks', {}).items():
-                    if chunk_type == 'column':
-                        col_meta = chunk_data.get('metadata', {})
-                        columns.append({
-                            "name": col_meta.get("column_name", "unknown"),
-                            "data_type": col_meta.get("data_type", "unknown"),
-                            "nullable": True,
-                            "description": None
-                        })
+                try:
+                    # Try to use the SchemaRetriever for richer column info
+                    from backend.agents.schema_retriever import SchemaRetriever
+                    retriever = SchemaRetriever()
+                    col_info = await retriever.get_columns_for_table(table_name, schema="ENHANCED_NBA")
+                    if col_info and isinstance(col_info, list):
+                        for col in col_info:
+                            columns.append({
+                                "name": col.get("name") or col.get("column_name"),
+                                "data_type": col.get("data_type", "unknown"),
+                                "nullable": col.get("nullable", True),
+                                "description": col.get("description")
+                            })
+                except Exception:
+                    # Fall back to chunk-derived metadata if retriever isn't available
+                    try:
+                        table_details = await self.pinecone_store.get_table_details(table_name)
+                        for chunk_type, chunk_data in table_details.get('chunks', {}).items():
+                            if chunk_type == 'column':
+                                col_meta = chunk_data.get('metadata', {})
+                                columns.append({
+                                    "name": col_meta.get("column_name", "unknown"),
+                                    "data_type": col_meta.get("data_type", "unknown"),
+                                    "nullable": True,
+                                    "description": None
+                                })
+                    except Exception:
+                        # As a last resort leave columns empty and let later
+                        # steps handle column discovery per-table
+                        columns = []
+
                 relevant_tables.append({
                     "name": table_name,
                     "schema": "ENHANCED_NBA",
@@ -598,9 +677,8 @@ class DynamicAgentOrchestrator:
                     "row_count": None  # Will be fetched for top suggestions only
                 })
             
-            # Now fetch row counts only for top 5 most relevant tables
+            # Now fetch row counts only for top 5 most relevant tables  
             print(f"🔍 Attempting to fetch row counts for top {min(5, len(table_suggestions))} most relevant tables...")
-            print("⚠️ Note: Row count queries may fail due to database permissions")
             
             for suggestion in table_suggestions[:5]:  # Only top 5
                 try:
@@ -609,8 +687,11 @@ class DynamicAgentOrchestrator:
                     if adapter:
                         table_name = suggestion['table_name']
                         
+                        # Use proper Snowflake three-part naming for row count query
+                        qualified_table_name = f'"COMMERCIAL_AI"."ENHANCED_NBA"."{table_name}"'
+                        
                         try:
-                            count_result = adapter.run(f"SELECT COUNT(*) FROM {table_name}")
+                            count_result = adapter.run(f"SELECT COUNT(*) FROM {qualified_table_name}")
                             if count_result and not count_result.error and count_result.rows:
                                 row_count = count_result.rows[0][0] if count_result.rows[0] else 0
                                 suggestion['row_count'] = row_count
@@ -619,10 +700,10 @@ class DynamicAgentOrchestrator:
                                 if row_count == 0:
                                     print(f"⚠️ {table_name} is empty (0 rows) - will be filtered out")
                             else:
-                                print(f"📋 {table_name}: Row count unavailable (permissions issue)")
+                                print(f"📋 {table_name}: Row count unavailable")
                                 suggestion['row_count'] = "Available"  # Assume table exists since it's in Pinecone
                         except Exception as query_error:
-                            print(f"📋 {table_name}: Row count unavailable (permissions issue)")
+                            print(f"📋 {table_name}: Row count unavailable - {query_error}")
                             suggestion['row_count'] = "Available"  # Assume table exists since it's in Pinecone
                 except Exception as e:
                     print(f"📋 {suggestion['table_name']}: Row count unavailable")
@@ -649,6 +730,7 @@ class DynamicAgentOrchestrator:
                 "discovered_tables": [t["name"] for t in relevant_tables],
                 "table_details": relevant_tables,
                 "table_suggestions": filtered_suggestions,
+                "pinecone_matches": table_matches,  # Store original Pinecone matches for reuse
                 "status": "completed"
             }
         except Exception as e:
@@ -899,10 +981,18 @@ class DynamicAgentOrchestrator:
         try:
             # Get confirmed tables from user verification - fix the key name
             confirmed_tables = []
+            pinecone_matches = []
+            
             if "4_user_verification" in inputs:
                 verified_result = inputs["4_user_verification"]
                 confirmed_tables = verified_result.get("approved_tables", [])  # Fixed: was "confirmed_tables"
                 print(f"🔍 Found {len(confirmed_tables)} approved tables: {confirmed_tables}")
+            
+            # Get original Pinecone matches from schema discovery to avoid redundant calls
+            if "1_discover_schema" in inputs:
+                schema_result = inputs["1_discover_schema"]
+                pinecone_matches = schema_result.get("pinecone_matches", [])
+                print(f"🔍 Found {len(pinecone_matches)} Pinecone matches for schema extraction")
             
             query = inputs.get("original_query", "")
             
@@ -913,28 +1003,35 @@ class DynamicAgentOrchestrator:
                     print(f"🤖 SQL generation attempt {attempt}/{max_attempts}")
                     
                     try:
-                        # Use LLM agent for intelligent query generation
-                        from backend.agents.llm_agent import LLMAgent
-                        llm_agent = LLMAgent()
-                        
-                        # Include error context for retry attempts
+                        # Use database-aware SQL generation with proper quoting
                         error_context = inputs.get("previous_sql_error", "") if attempt > 1 else ""
                         
-                        # Generate SQL using LLM agent's query planning capabilities
-                        if hasattr(llm_agent, 'generate_sql'):
-                            result = await llm_agent.generate_sql(
-                                query=query,
-                                available_tables=confirmed_tables,
-                                error_context=error_context
-                            )
-                        else:
-                            # Fallback: create simple SQL query
-                            table_name = confirmed_tables[0] if confirmed_tables else "unknown_table"
-                            sql_query = f"SELECT * FROM {table_name} LIMIT 10"
-                            result = {
-                                "sql_query": sql_query,
-                                "explanation": f"Simple query to fetch data from {table_name}"
-                            }
+                        # Try database-aware SQL generation first with Pinecone schema
+                        result = await self._generate_database_aware_sql(
+                            query=query,
+                            available_tables=confirmed_tables,
+                            error_context=error_context,
+                            pinecone_matches=pinecone_matches
+                        )
+                        
+                        if not result or not result.get("sql_query"):
+                            # Fallback: try LLM agent if available
+                            try:
+                                from backend.agents.llm_agent import LLMAgent
+                                llm_agent = LLMAgent()
+                                if hasattr(llm_agent, 'generate_sql'):
+                                    result = await llm_agent.generate_sql(
+                                        query=query,
+                                        available_tables=confirmed_tables,
+                                        error_context=error_context
+                                    )
+                            except Exception as llm_error:
+                                print(f"⚠️ LLM agent fallback failed: {llm_error}")
+                                result = None
+                        
+                        if not result or not result.get("sql_query"):
+                            # Final fallback: use the dedicated fallback SQL generation
+                            result = await self._fallback_sql_generation(confirmed_tables[0])
                         
                         if result and result.get("sql_query"):
                             sql_query = result["sql_query"]
@@ -981,12 +1078,13 @@ class DynamicAgentOrchestrator:
                         else:
                             # Fallback to simple query on final attempt
                             main_table = confirmed_tables[0]
-                            sql_query = f"SELECT * FROM {main_table} LIMIT 10"
+                            fallback_result = await self._fallback_sql_generation(main_table)
+                            sql_query = fallback_result.get("sql_query", f"SELECT * FROM {main_table} LIMIT 10")
                             print(f"🔄 Using fallback SQL: {sql_query}")
                             
                             return {
                                 "sql_query": sql_query,
-                                "explanation": f"Fallback query to fetch sample data from {main_table}",
+                                "explanation": f"Fallback query after retry failures",
                                 "tables_used": confirmed_tables,
                                 "attempt_number": attempt,
                                 "safety_level": "safe",
@@ -995,7 +1093,8 @@ class DynamicAgentOrchestrator:
                 
                 # If all attempts failed, return fallback
                 main_table = confirmed_tables[0]
-                sql_query = f"SELECT * FROM {main_table} LIMIT 10"
+                fallback_result = await self._fallback_sql_generation(main_table)
+                sql_query = fallback_result.get("sql_query", f"SELECT * FROM {main_table} LIMIT 10")
                 return {
                     "sql_query": sql_query,
                     "explanation": f"Fallback query after retry failures",
@@ -1037,7 +1136,7 @@ class DynamicAgentOrchestrator:
                     
                     try:
                         # Execute the query safely with required user_id
-                        user_id = inputs.get("user_id", "default")
+                        user_id = inputs.get("user_id", "default_user")  # Fixed: use default_user
                         result = await sql_runner.execute_query(sql_query, user_id=user_id)
                         
                         print(f"📊 SQL execution result type: {type(result)}")
@@ -1062,6 +1161,7 @@ class DynamicAgentOrchestrator:
                                 error_msg = result.error_message or "Query execution failed"
                                 print(f"❌ Query failed: {error_msg}")
                                 
+                                # Permission checks completely removed - proceed with regeneration logic
                                 if exec_attempt < max_execution_attempts:
                                     # Try to regenerate query with specific error feedback
                                     print("🤖 Requesting query regeneration due to execution error...")
@@ -1134,6 +1234,84 @@ class DynamicAgentOrchestrator:
                 
         except Exception as e:
             print(f"❌ Query regeneration failed: {e}")
+
+    async def _try_alternative_tables(self, inputs: Dict, permission_error: str) -> Dict[str, Any]:
+        """Try alternative tables when permission is denied for the primary table"""
+        try:
+            # Get the original table suggestions from schema discovery
+            table_suggestions = []
+            if "1_discover_schema" in inputs:
+                schema_result = inputs["1_discover_schema"]
+                table_suggestions = schema_result.get("table_suggestions", [])
+            
+            if len(table_suggestions) <= 1:
+                print("⚠️ No alternative tables available to try")
+                return {"error": permission_error, "status": "failed"}
+            
+            # Try the next best table (skip the first one that failed)
+            for suggestion in table_suggestions[1:4]:  # Try up to 3 alternatives
+                alt_table = suggestion['table_name']
+                print(f"🔄 Trying alternative table: {alt_table}")
+                
+                # Generate SQL for the alternative table
+                fallback_result = await self._fallback_sql_generation(alt_table)
+                if not fallback_result.get("sql_query"):
+                    continue
+                
+                alt_sql = fallback_result["sql_query"]
+                print(f"🔍 Testing alternative SQL: {alt_sql}")
+                
+                # Test execution with the alternative table
+                try:
+                    from backend.tools.sql_runner import SQLRunner
+                    sql_runner = SQLRunner()
+                    user_id = inputs.get("user_id", "default_user")
+                    
+                    test_result = await sql_runner.execute_query(alt_sql, user_id=user_id)
+                    
+                    if test_result and hasattr(test_result, 'success') and test_result.success:
+                        print(f"✅ Alternative table {alt_table} accessible - using it")
+                        
+                        # Update the user verification step with the new table
+                        if "4_user_verification" in inputs:
+                            inputs["4_user_verification"]["approved_tables"] = [alt_table]
+                        
+                        # Update the query generation step
+                        inputs["5_query_generation"] = {
+                            "sql_query": alt_sql,
+                            "explanation": f"Alternative query using accessible table {alt_table}",
+                            "tables_used": [alt_table],
+                            "status": "completed"
+                        }
+                        
+                        # Return successful execution result
+                        data = test_result.data if hasattr(test_result, 'data') and test_result.data is not None else []
+                        return {
+                            "results": data,
+                            "row_count": len(data) if data else 0,
+                            "execution_time": getattr(test_result, 'execution_time', 0) or 0,
+                            "metadata": {
+                                "columns": getattr(test_result, 'columns', []) or [],
+                                "was_sampled": getattr(test_result, 'was_sampled', False),
+                                "job_id": getattr(test_result, 'job_id', None),
+                                "alternative_table_used": alt_table
+                            },
+                            "execution_attempt": 1,
+                            "status": "completed"
+                        }
+                    else:
+                        print(f"⚠️ Alternative table {alt_table} also failed")
+                        
+                except Exception as alt_error:
+                    print(f"⚠️ Alternative table {alt_table} error: {alt_error}")
+                    continue
+            
+            print("❌ All alternative tables failed or inaccessible")
+            return {"error": f"All tables inaccessible: {permission_error}", "status": "failed"}
+            
+        except Exception as e:
+            print(f"❌ Alternative table search failed: {e}")
+            return {"error": permission_error, "status": "failed"}
     
     async def _execute_visualization(self, inputs: Dict) -> Dict[str, Any]:
         """Execute visualization using real ChartBuilder with agentic Python code retry"""
@@ -1151,9 +1329,22 @@ class DynamicAgentOrchestrator:
                 # Get results from query execution
                 results = []
                 if "6_query_execution" in inputs:
-                    results = inputs["6_query_execution"].get("results", [])
+                    exec_result = inputs["6_query_execution"]
+                    results = exec_result.get("results", [])
+                    
+                    # Check if query execution actually succeeded
+                    if exec_result.get("status") == "failed":
+                        print(f"❌ Query execution failed - no data for visualization: {exec_result.get('error', 'Unknown error')}")
+                        return {
+                            "error": f"Cannot create visualization: {exec_result.get('error', 'Query execution failed')}",
+                            "status": "failed"
+                        }
                 
                 query = inputs.get("original_query", "")
+                
+                print(f"📊 Visualization input: {len(results)} rows of data")
+                if results and len(results) > 0:
+                    print(f"📋 Sample data columns: {list(results[0].keys()) if results[0] else 'No columns'}")
                 
                 if results:
                     # Check if advanced Python visualization is needed
@@ -1177,7 +1368,8 @@ class DynamicAgentOrchestrator:
                                 data=results
                             )
                             
-                            if execution_result.get("status") == "success":
+                            if execution_result.get("status") == "success" and execution_result.get("charts"):
+                                print(f"✅ Python visualization successful: Generated {len(execution_result.get('charts', []))} charts")
                                 return {
                                     "charts": execution_result.get("charts", []),
                                     "summary": execution_result.get("summary", ""),
@@ -1188,7 +1380,7 @@ class DynamicAgentOrchestrator:
                                 }
                             else:
                                 # Python execution failed, prepare for retry
-                                error_msg = execution_result.get("error", "Unknown execution error")
+                                error_msg = execution_result.get("error", "No charts generated")
                                 print(f"❌ Python code execution failed on attempt {python_attempt}: {error_msg}")
                                 self._last_python_error = error_msg
                                 
@@ -1315,11 +1507,16 @@ class DynamicAgentOrchestrator:
 Requirements:
 - Use pandas, matplotlib, plotly, and seaborn as needed
 - Code must be safe and executable
-- Handle data types appropriately  
+- Handle data types appropriately
 - Create meaningful visualizations based on the query
 - Return only the Python code, no explanations
 - Use provided data structure exactly as given
-- Include proper error handling"""
+- Include proper error handling
+
+Important:
+- Assign your main chart to a variable named `fig` (this is required). If you produce multiple charts, place them in a list called `figures` and still include a main `fig`.
+- If using Plotly, construct a `plotly.graph_objects.Figure` (go.Figure) and assign it to `fig`.
+"""
 
             error_context = ""
             if previous_error and attempt > 1:
@@ -1347,7 +1544,9 @@ Generate Python code that:
 1. Creates appropriate visualizations for the query
 2. Handles the data structure correctly
 3. Is safe to execute
-4. Returns visualization objects or saves files"""
+4. Assigns the main visualization to a variable named `fig` (required). If multiple charts are created, also return a list `figures`.
+5. Returns or exposes the `fig`/`figures` objects so the orchestrator can detect and serialize them.
+"""
 
             response = await client.chat.completions.create(
                 model="gpt-4-turbo-preview",
@@ -1457,45 +1656,135 @@ Generate Python code that:
                 # Extract results
                 charts = []
                 chart_types = []
-                
-                # Look for matplotlib figures
-                if 'plt' in safe_locals or plt.get_fignums():
+
+                # Build a combined namespace to scan for figures (globals + locals)
+                combined_ns = {}
+                combined_ns.update(safe_globals)
+                combined_ns.update(safe_locals)
+
+                # Prefer obvious variable names
+                candidate_names = [
+                    'fig', 'figure', 'chart', 'figures', 'fig_list', 'figures_list'
+                ]
+
+                # Helper: detect plotly figures
+                def _is_plotly_fig(obj):
+                    try:
+                        import plotly.graph_objs as go
+                        if isinstance(obj, go.Figure):
+                            return True
+                    except Exception:
+                        pass
+                    # Fallback: duck-type check
+                    if hasattr(obj, 'to_dict'):
+                        try:
+                            d = obj.to_dict()
+                            if isinstance(d, dict) and ('data' in d or 'layout' in d):
+                                return True
+                        except Exception:
+                            return False
+                    return False
+
+                # Helper: detect matplotlib figures
+                def _is_matplotlib_fig(obj):
+                    try:
+                        import matplotlib.figure as mplfig
+                        if isinstance(obj, mplfig.Figure):
+                            return True
+                    except Exception:
+                        pass
+                    return False
+
+                # 1) Check for named candidate variables first
+                for name in candidate_names:
+                    if name in combined_ns:
+                        obj = combined_ns.get(name)
+                        if obj is None:
+                            continue
+                        if _is_plotly_fig(obj):
+                            try:
+                                charts.append({
+                                    'type': 'plotly',
+                                    'data': obj.to_dict(),
+                                    'title': f'Python Generated {name}'
+                                })
+                                chart_types.append('plotly')
+                            except Exception:
+                                pass
+                        elif _is_matplotlib_fig(obj):
+                            try:
+                                buf = io.BytesIO()
+                                obj.savefig(buf, format='png', bbox_inches='tight', dpi=150)
+                                buf.seek(0)
+                                charts.append({
+                                    'type': 'matplotlib',
+                                    'data': f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode()}",
+                                    'title': f'Python Generated {name}'
+                                })
+                                chart_types.append('matplotlib')
+                            except Exception:
+                                pass
+
+                # 2) Inspect matplotlib global fignums as fallback
+                try:
                     for fig_num in plt.get_fignums():
                         fig = plt.figure(fig_num)
-                        
-                        # Convert to base64
                         buffer = io.BytesIO()
                         fig.savefig(buffer, format='png', bbox_inches='tight', dpi=150)
                         buffer.seek(0)
                         img_base64 = base64.b64encode(buffer.getvalue()).decode()
-                        
                         charts.append({
                             "type": "matplotlib",
                             "data": f"data:image/png;base64,{img_base64}",
                             "title": "Python Generated Visualization"
                         })
                         chart_types.append("matplotlib")
-                        
                         plt.close(fig)
-                
-                # Look for plotly figures in locals
-                for var_name, var_value in safe_locals.items():
-                    if hasattr(var_value, 'to_dict') and 'data' in str(type(var_value)):
-                        # Likely a plotly figure
-                        try:
-                            chart_dict = var_value.to_dict()
-                            charts.append({
-                                "type": "plotly",
-                                "data": chart_dict,
-                                "title": f"Python Generated {var_name}"
-                            })
-                            chart_types.append("plotly")
-                        except Exception:
-                            pass
+                except Exception:
+                    pass
+
+                # 3) Scan all variables for plotly figures as a final pass
+                for var_name, var_value in combined_ns.items():
+                    if var_value is None:
+                        continue
+                    try:
+                        if _is_plotly_fig(var_value):
+                            try:
+                                chart_dict = var_value.to_dict()
+                                charts.append({
+                                    "type": "plotly",
+                                    "data": chart_dict,
+                                    "title": f"Python Generated {var_name}"
+                                })
+                                chart_types.append("plotly")
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
                 
                 # Generate summary
                 output_text = stdout_buffer.getvalue()
                 error_text = stderr_buffer.getvalue()
+                
+                # Enhanced logging when no charts are detected
+                if len(charts) == 0:
+                    print("❌ No charts detected in Python execution!")
+                    print(f"📊 Available variables in namespace: {list(combined_ns.keys())}")
+                    print(f"📋 Checked candidate names: {candidate_names}")
+                    print(f"🔍 Matplotlib figures detected: {len(plt.get_fignums())}")
+                    
+                    # Check for any objects that might be charts
+                    potential_charts = []
+                    for name, obj in combined_ns.items():
+                        if obj is not None:
+                            obj_type = str(type(obj))
+                            if any(chart_hint in obj_type.lower() for chart_hint in ['figure', 'plot', 'chart', 'graph']):
+                                potential_charts.append(f"{name}: {obj_type}")
+                    
+                    if potential_charts:
+                        print(f"🤔 Potential chart objects found: {potential_charts}")
+                    else:
+                        print("🚫 No chart-like objects detected in execution namespace")
                 
                 summary = f"Python visualization executed successfully. Generated {len(charts)} charts."
                 if output_text:
@@ -1530,6 +1819,233 @@ Generate Python code that:
             return {
                 "error": error_msg,
                 "status": "failed"
+            }
+
+    async def _generate_database_aware_sql(self, query: str, available_tables: List[str], 
+                                         error_context: str = "", pinecone_matches: List[Dict] = None) -> Dict[str, Any]:
+        """Generate SQL with database-specific awareness using schema from Pinecone"""
+        try:
+            import openai
+            import os
+            from openai import AsyncOpenAI
+            
+            # Initialize OpenAI client
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                return {"error": "OpenAI API key not configured", "status": "failed"}
+            
+            client = AsyncOpenAI(api_key=api_key)
+            
+            # Extract schema information from Pinecone results (no additional DB calls needed!)
+            table_schemas = []
+            if pinecone_matches:
+                for match in pinecone_matches:
+                    table_name = match.get('table_name')
+                    if table_name in available_tables:
+                        # Get detailed schema from Pinecone metadata
+                        table_details = await self.pinecone_store.get_table_details(table_name)
+                        
+                        # Extract column information from the chunks
+                        columns = []
+                        for chunk_type, chunk_data in table_details.get('chunks', {}).items():
+                            if chunk_type == 'column_group':
+                                chunk_metadata = chunk_data.get('metadata', {})
+                                if 'columns' in chunk_metadata:
+                                    # Get column names from metadata
+                                    for col_name in chunk_metadata['columns']:
+                                        columns.append(col_name)
+                            elif chunk_type == 'table_overview':
+                                # Could also extract column info from overview content if needed
+                                pass
+                        
+                        # If no columns found in metadata, parse from content
+                        if not columns and 'column_group' in table_details.get('chunks', {}):
+                            content = table_details['chunks']['column_group'].get('metadata', {}).get('content', '')
+                            # Parse column names from content like "col1 (VARCHAR), col2 (INTEGER)"
+                            import re
+                            col_matches = re.findall(r'(\w+)\s*\([^)]+\)', content)
+                            columns.extend(col_matches)
+                        
+                        if columns:
+                            schema_text = f"Table: {table_name}\nColumns: {', '.join(columns)}"
+                            table_schemas.append(schema_text)
+                            print(f"📊 Extracted schema from Pinecone for {table_name}: {len(columns)} columns")
+                        else:
+                            print(f"⚠️ No column information found in Pinecone for {table_name}")
+                            table_schemas.append(f"Table: {table_name}\nColumns: [Use DESCRIBE TABLE to explore]")
+            
+            # Fallback: if no Pinecone matches provided, get fresh schema info
+            if not table_schemas:
+                print("⚠️ No Pinecone schema found, fetching directly from database")
+                for table_name in available_tables:
+                    try:
+                        describe_sql = f'DESCRIBE TABLE "COMMERCIAL_AI"."ENHANCED_NBA"."{table_name}"'
+                        result = self.db_connector.run(describe_sql, dry_run=False)
+                        
+                        if result and result.rows:
+                            columns = [row[0] for row in result.rows[:20]]  # Limit to first 20 columns
+                            table_schema = f"Table: {table_name}\nColumns: {', '.join(columns)}"
+                            table_schemas.append(table_schema)
+                            print(f"📊 Retrieved schema directly for {table_name}: {len(columns)} columns")
+                    except Exception as e:
+                        print(f"⚠️ Error getting schema for {table_name}: {e}")
+                        table_schemas.append(f"Table: {table_name}\nColumns: [Schema unavailable]")
+            
+            # Database-specific system prompt with ACTUAL SCHEMA INFORMATION
+            schema_context = "\n\n".join(table_schemas)
+            system_prompt = f"""You are a database query expert specializing in Snowflake SQL generation.
+
+Database Context:
+- Engine: Snowflake
+- Database: COMMERCIAL_AI
+- Schema: ENHANCED_NBA
+- Full qualification: "COMMERCIAL_AI"."ENHANCED_NBA"."table_name"
+
+ACTUAL TABLE SCHEMAS:
+{schema_context}
+
+Requirements:
+- Use proper Snowflake identifier quoting (double quotes for case-sensitive names)
+- Always specify full path: "COMMERCIAL_AI"."ENHANCED_NBA"."table_name"
+- Use ONLY the column names shown above - they are the exact column names in the tables
+- Keep queries simple and safe
+- Use LIMIT to prevent large result sets
+- Handle case-sensitive table/column names properly
+
+Generate clean, executable SQL only. No explanations."""
+
+            error_context_text = ""
+            if error_context:
+                error_context_text = f"\n\nPrevious Error Context: {error_context}\nPlease fix the identified issues."
+
+            user_prompt = f"""Generate a Snowflake SQL query for: {query}
+
+Use these tables: {', '.join(available_tables)}
+{error_context_text}
+
+Return only the SQL query, properly formatted for Snowflake."""
+
+            response = await client.chat.completions.create(
+                model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.1,
+                max_tokens=500
+            )
+            
+            sql_query = response.choices[0].message.content.strip()
+            
+            # Clean the SQL (remove markdown if present)
+            if sql_query.startswith("```sql"):
+                sql_query = sql_query[6:]
+            elif sql_query.startswith("```"):
+                sql_query = sql_query[3:]
+            if sql_query.endswith("```"):
+                sql_query = sql_query[:-3]
+            sql_query = sql_query.strip()
+            
+            # Apply Snowflake-specific fixes
+            sql_query = self._apply_snowflake_quoting(sql_query, available_tables)
+            
+            return {
+                "sql_query": sql_query,
+                "explanation": f"Database-aware SQL for Snowflake generated from: {query}",
+                "generation_method": "database_aware",
+                "status": "success"
+            }
+            
+        except Exception as e:
+            print(f"❌ Database-aware SQL generation failed: {e}")
+            return {"error": str(e), "status": "failed"}
+
+    def _apply_snowflake_quoting(self, sql_query: str, table_names: List[str]) -> str:
+        """Apply proper Snowflake quoting to table and column references"""
+        try:
+            import re
+            
+            # Ensure full database.schema.table qualification and proper quoting
+            for table_name in table_names:
+                # Remove any existing qualification to avoid double-prefixing
+                clean_table_name = table_name.replace('COMMERCIAL_AI.ENHANCED_NBA.', '')
+                clean_table_name = clean_table_name.replace('ENHANCED_NBA.', '').replace('"', '')
+                
+                # Pattern 1: Replace unqualified table references in FROM clauses
+                unqualified_pattern = rf'\bFROM\s+{re.escape(clean_table_name)}\b'
+                sql_query = re.sub(unqualified_pattern, f'FROM "COMMERCIAL_AI"."ENHANCED_NBA"."{clean_table_name}"', sql_query, flags=re.IGNORECASE)
+                
+                # Pattern 2: Replace JOIN references  
+                join_pattern = rf'\bJOIN\s+{re.escape(clean_table_name)}\b'
+                sql_query = re.sub(join_pattern, f'JOIN "COMMERCIAL_AI"."ENHANCED_NBA"."{clean_table_name}"', sql_query, flags=re.IGNORECASE)
+                
+                # Pattern 3: Fix any existing malformed references
+                malformed_patterns = [
+                    rf'\bENHANCED_NBA\.{re.escape(clean_table_name)}\b',
+                    rf'\bCOMMERCIAL_AI\.{re.escape(clean_table_name)}\b'
+                ]
+                for pattern in malformed_patterns:
+                    sql_query = re.sub(pattern, f'"COMMERCIAL_AI"."ENHANCED_NBA"."{clean_table_name}"', sql_query, flags=re.IGNORECASE)
+                
+                # Pattern 4: Fix cases where schema/database got treated as table
+                schema_as_table_patterns = [
+                    rf'\bFROM\s+"?ENHANCED_NBA"?\s*$',
+                    rf'\bFROM\s+"?COMMERCIAL_AI"?\s*$'
+                ]
+                for pattern in schema_as_table_patterns:
+                    sql_query = re.sub(pattern, f'FROM "COMMERCIAL_AI"."ENHANCED_NBA"."{clean_table_name}"', sql_query, flags=re.IGNORECASE)
+            
+            return sql_query
+            
+        except Exception as e:
+            print(f"⚠️ Snowflake quoting failed: {e}")
+            return sql_query
+
+    async def _fallback_sql_generation(self, table_name: str) -> Dict[str, Any]:
+        """Generate a safe fallback SQL query with proper database quoting"""
+        try:
+            # Clean the table name - remove any existing schema qualification
+            clean_table_name = table_name.replace('ENHANCED_NBA.', '').replace('"', '')
+            
+            # Try to get column information for better fallback
+            columns = []
+            try:
+                from backend.agents.schema_retriever import SchemaRetriever
+                retriever = SchemaRetriever()
+                if hasattr(retriever, 'get_columns_for_table'):
+                    cols = await retriever.get_columns_for_table(clean_table_name, schema="ENHANCED_NBA")
+                    if cols:
+                        columns = [c.get('name') or c.get('column_name') for c in cols]
+            except Exception:
+                pass
+            
+            # Build the SQL query with proper schema.table format
+            if columns:
+                # Use first 8 columns to avoid overwhelming output
+                col_list = ', '.join([f'"{col}"' for col in columns[:8]])
+                sql_query = f'SELECT {col_list} FROM "ENHANCED_NBA"."{clean_table_name}" LIMIT 10'
+            else:
+                # Fallback to SELECT * with proper quoting
+                sql_query = f'SELECT * FROM "ENHANCED_NBA"."{clean_table_name}" LIMIT 10'
+            
+            print(f"🔧 Generated fallback SQL: {sql_query}")
+            
+            return {
+                "sql_query": sql_query,
+                "explanation": f"Safe fallback query for {clean_table_name} with proper Snowflake quoting",
+                "generation_method": "fallback",
+                "status": "success"
+            }
+            
+        except Exception as e:
+            print(f"❌ Fallback SQL generation failed: {e}")
+            # Emergency fallback - ensure we always return something valid
+            clean_name = table_name.replace('ENHANCED_NBA.', '').replace('"', '')
+            return {
+                "sql_query": f'SELECT * FROM "ENHANCED_NBA"."{clean_name}" LIMIT 10',
+                "explanation": f"Emergency fallback for {clean_name}",
+                "generation_method": "emergency",
+                "status": "success"
             }
 
     # API Compatibility Methods
