@@ -24,3 +24,17 @@
 {"error": "Error code: 400 - {'error': {'message': \"This model's maximum context length is 128000 tokens. However, your messages resulted in 138787 tokens. Please reduce the length of the messages.\", 'type': 'invalid_request_error', 'param': 'messages', 'code': 'context_length_exceeded'}}", "context": {"nl": "What are the recommended messages for NBA marketing actions?", "job_id": "test_traditional_query"}, "user": "anonymous", "timestamp": "2025-09-06T09:00:34.078251"}
 {"error": "agent_query", "context": "Object of type set is not JSON serializable", "user": "anonymous", "timestamp": "2025-09-06T09:17:24.214095"}
 {"error": "Error code: 400 - {'error': {'message': \"This model's maximum context length is 128000 tokens. However, your messages resulted in 138787 tokens. Please reduce the length of the messages.\", 'type': 'invalid_request_error', 'param': 'messages', 'code': 'context_length_exceeded'}}", "context": {"nl": "What are the recommended messages for NBA marketing actions?", "job_id": "test_with_schema"}, "user": "anonymous", "timestamp": "2025-09-06T09:21:18.226390"}
+{"error": "agent_query", "context": "Object of type set is not JSON serializable", "user": "anonymous", "timestamp": "2025-09-06T10:09:00.082020"}
+{"error": "agent_query", "context": "Object of type set is not JSON serializable", "user": "anonymous", "timestamp": "2025-09-06T10:14:39.100505"}
+{"error": "agent_query", "context": "Object of type set is not JSON serializable", "user": "anonymous", "timestamp": "2025-09-06T10:26:08.252970"}
+{"error": "agent_query", "context": "Object of type set is not JSON serializable", "user": "anonymous", "timestamp": "2025-09-06T10:30:14.338714"}
+{"error": "agent_query", "context": "Object of type set is not JSON serializable", "user": "anonymous", "timestamp": "2025-09-06T10:33:05.877228"}
+{"error": "agent_query", "context": "Object of type set is not JSON serializable", "user": "anonymous", "timestamp": "2025-09-06T10:36:29.024548"}
+{"error": "agent_query", "context": "Object of type set is not JSON serializable", "user": "anonymous", "timestamp": "2025-09-06T10:41:41.310668"}
+{"error": "agent_query", "context": "Object of type set is not JSON serializable", "user": "anonymous", "timestamp": "2025-09-06T10:48:51.073367"}
+{"error": "agent_query", "context": "'dict' object has no attribute 'to_dict'", "user": "anonymous", "timestamp": "2025-09-06T11:00:41.831144"}
+{"error": "agent_query", "context": "'dict' object has no attribute 'to_dict'", "user": "anonymous", "timestamp": "2025-09-06T11:01:29.168576"}
+{"error": "agent_query", "context": "'dict' object has no attribute 'to_dict'", "user": "anonymous", "timestamp": "2025-09-06T11:04:15.327099"}
+{"error": "agent_query", "context": "Object of type set is not JSON serializable", "user": "anonymous", "timestamp": "2025-09-06T11:09:44.517489"}
+{"error": "agent_query", "context": "Object of type set is not JSON serializable", "user": "anonymous", "timestamp": "2025-09-06T11:15:23.389198"}
+{"error": "agent_query", "context": "Object of type set is not JSON serializable", "user": "anonymous", "timestamp": "2025-09-06T11:17:18.778463"}

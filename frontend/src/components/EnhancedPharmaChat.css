@@ -969,3 +969,176 @@
   color: #1e40af;
   font-size: 14px;
 }
+
+/* Live Progress Display Styles */
+.live-progress {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border: 1px solid #0ea5e9;
+  border-radius: 12px;
+  padding: 20px;
+  margin: 16px 0;
+  box-shadow: 0 4px 6px -1px rgba(14, 165, 233, 0.1);
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.progress-header h5 {
+  margin: 0;
+  color: #0c4a6e;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.progress-percentage {
+  background: #0ea5e9;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.progress-bar-container {
+  width: 100%;
+  height: 8px;
+  background: #e0f2fe;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #0ea5e9 0%, #0284c7 100%);
+  border-radius: 4px;
+  transition: width 0.5s ease;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+}
+
+.current-step-display {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: white;
+  padding: 12px;
+  border-radius: 8px;
+  border-left: 4px solid #0ea5e9;
+  margin-bottom: 12px;
+}
+
+.current-step-icon {
+  font-size: 18px;
+  animation: rotate 2s linear infinite;
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.current-step-info {
+  flex: 1;
+}
+
+.current-step-name {
+  font-weight: 600;
+  color: #0c4a6e;
+  margin-bottom: 4px;
+}
+
+.current-step-description {
+  font-size: 14px;
+  color: #64748b;
+}
+
+.time-estimate {
+  text-align: center;
+  color: #64748b;
+  margin-top: 12px;
+}
+
+/* Steps Timeline Styles */
+.steps-progress {
+  margin: 16px 0;
+  background: white;
+  border-radius: 8px;
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+}
+
+.steps-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 6px;
+  transition: all 0.3s ease;
+}
+
+.step-item.completed {
+  background: #f0fdf4;
+  border-left: 3px solid #22c55e;
+}
+
+.step-item.current {
+  background: #fef3c7;
+  border-left: 3px solid #f59e0b;
+  animation: highlightCurrent 2s ease infinite;
+}
+
+.step-item.pending {
+  background: #f8fafc;
+  border-left: 3px solid #e2e8f0;
+}
+
+@keyframes highlightCurrent {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(2px); }
+}
+
+.step-indicator {
+  font-size: 16px;
+  width: 24px;
+  text-align: center;
+}
+
+.step-label {
+  flex: 1;
+}
+
+.step-name {
+  font-weight: 500;
+  color: #1f2937;
+  font-size: 14px;
+}
+
+.step-status {
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.step-item.current .step-status {
+  color: #d97706;
+  font-weight: 500;
+}
+
+.step-item.completed .step-status {
+  color: #16a34a;
+}

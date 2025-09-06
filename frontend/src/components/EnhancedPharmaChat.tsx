@@ -147,8 +147,9 @@ const api = {
     return api.getDatabaseStatus();
   },
 
-  // Agent Query
+  // Agent Query (no timeout - waits indefinitely for backend)
   sendQuery: async (query: string, userId: string, conversationId: string): Promise<QueryPlan> => {
+    // No timeout - let the backend take as long as it needs
     const response = await fetch('http://localhost:8000/api/agent/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -157,12 +158,24 @@ const api = {
         user_id: userId, 
         session_id: conversationId 
       })
+      // Explicitly no timeout specified - browser default is usually 5+ minutes
     });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
     return response.json();
   },
 
   getPlanStatus: async (planId: string): Promise<QueryPlan> => {
+    // No timeout for status checks either
     const response = await fetch(`http://localhost:8000/api/agent/plan/${planId}/status`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
     return response.json();
   },
 
@@ -330,10 +343,13 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
 
     try {
       // Send query to agent
+      console.log('Sending query to backend:', currentMessage);
       const planResult = await api.sendQuery(currentMessage, userProfile.user_id, activeConversation.conversation_id);
       
       // Add debugging to see what we're getting
       console.log('Received plan result:', planResult);
+      console.log('Plan status:', planResult.status);
+      console.log('Plan tasks:', planResult.tasks);
       
       // Set the plan directly since it's already the full plan object
       setActivePlan(planResult);
@@ -360,17 +376,79 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
           // Keep the plan visible for results, but don't show it in the main flow
           // setActivePlan(null);
         }, 500);
+      } else {
+        // Plan is still executing, start polling for updates
+        console.log('Plan is executing, starting to poll for status...');
+        let pollAttempts = 0;
+        
+        const pollPlanStatus = async () => {
+          pollAttempts++;
+          console.log(`Polling attempt ${pollAttempts} for plan ${planResult.plan_id}`);
+          
+          try {
+            const updatedPlan = await api.getPlanStatus(planResult.plan_id);
+            console.log('Polling plan status:', updatedPlan.status, `Progress: ${updatedPlan.progress}%`);
+            setActivePlan(updatedPlan);
+            
+            if (updatedPlan.status === 'completed' || updatedPlan.status === 'failed') {
+              console.log(`Plan ${updatedPlan.status} after ${pollAttempts} polling attempts`);
+              setIsLoading(false);
+              
+              const assistantMessage: ChatMessage = {
+                message_id: `msg_${Date.now()}_assistant`,
+                conversation_id: activeConversation.conversation_id,
+                message_type: 'system_response',
+                content: updatedPlan.status === 'completed' ? 
+                  'Analysis completed successfully. See results below.' : 
+                  'Analysis completed with some issues. See details below.',
+                timestamp: new Date().toISOString(),
+                status: updatedPlan.status === 'failed' ? 'error' : updatedPlan.status
+              };
+              
+              setTimeout(() => {
+                setMessages(prev => [...prev, assistantMessage]);
+              }, 500);
+            } else {
+              // Continue polling - will wait indefinitely until completion
+              console.log(`Plan still ${updatedPlan.status}, continuing to poll...`);
+              setTimeout(pollPlanStatus, 1000);
+            }
+          } catch (error) {
+            console.error('Error polling plan status:', error);
+            pollAttempts++;
+            
+            // Don't give up on errors - retry polling after a longer delay
+            if (pollAttempts < 1000) { // Effectively infinite retries
+              console.log('Retrying polling after error...');
+              setTimeout(pollPlanStatus, 3000); // Wait 3 seconds after error
+            } else {
+              console.log('Too many polling errors, stopping');
+              setIsLoading(false);
+            }
+          }
+        };
+        
+        // Start polling after 1 second
+        setTimeout(pollPlanStatus, 1000);
       }
 
     } catch (error) {
       console.error('Error sending message:', error);
       setIsLoading(false);
       
+      // Show detailed error instead of generic message
+      let errorDetails = 'Unknown error occurred';
+      if (error instanceof Error) {
+        errorDetails = error.message;
+      } else if (typeof error === 'string') {
+        errorDetails = error;
+      }
+      
       const errorMessage: ChatMessage = {
         message_id: `msg_${Date.now()}`,
         conversation_id: activeConversation.conversation_id,
         message_type: 'error',
-        content: 'Sorry, there was an error processing your request. Please try again.',
+        content: `Error processing request: ${errorDetails}. Please check the console for more details and try again.`,
         timestamp: new Date().toISOString(),
         status: 'error'
       };
@@ -490,10 +568,27 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
     return date.toLocaleDateString();
   };
 
-  // Render plan execution
+  // Render plan execution with live status
   const renderPlanExecution = (plan: QueryPlan) => {
     console.log('Plan tasks:', plan.tasks);
     console.log('Plan results:', plan.results);
+    console.log('Plan current step:', plan.current_step);
+    console.log('Plan progress:', plan.progress);
+    
+    // Define the expected steps in order
+    const expectedSteps = [
+      { key: 'schema_discovery', name: 'Schema Discovery', description: 'Discovering database structure and tables' },
+      { key: 'semantic_understanding', name: 'Semantic Analysis', description: 'Understanding query intent and extracting entities' },
+      { key: 'similarity_matching', name: 'Similarity Matching', description: 'Finding relevant tables using vector search' },
+      { key: 'user_interaction', name: 'Table Selection', description: 'Selecting appropriate tables for your query' },
+      { key: 'query_generation', name: 'Query Generation', description: 'Generating optimized SQL query' },
+      { key: 'execution', name: 'Query Execution', description: 'Running query against database' },
+      { key: 'visualization', name: 'Visualization', description: 'Creating charts and visualizations' }
+    ];
+    
+    // Calculate current step index
+    const currentStepIndex = plan.current_step ? 
+      expectedSteps.findIndex(step => step.key === plan.current_step) : -1;
     
     // Separate intermediate steps (1-6) from final display step (7)
     const intermediateTasks = plan.tasks ? plan.tasks.filter((task, index) => index < plan.tasks.length - 1) : [];
@@ -501,19 +596,79 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
     
     // Handle undefined status gracefully
     const planStatus = plan.status || 'unknown';
+    const isExecuting = planStatus === 'executing' || planStatus === 'draft' || planStatus === 'validated';
+    const progressPercentage = Math.round((plan.progress || 0) * 100);
     
     return (
     <div className="plan-execution">
       <div className="plan-header">
-        <h4 className="plan-title">AI Agent Execution Plan</h4>
+        <h4 className="plan-title">🤖 AI Agent Execution Plan</h4>
         <span className={`plan-status ${planStatus.toLowerCase()}`}>
           {planStatus.toUpperCase()}
         </span>
       </div>
       
+      {/* Live Progress Display */}
+      {isExecuting && (
+        <div className="live-progress">
+          <div className="progress-header">
+            <h5>🚀 Processing Your Query</h5>
+            <span className="progress-percentage">{progressPercentage}% Complete</span>
+          </div>
+          
+          <div className="progress-bar-container">
+            <div className="progress-bar" style={{ width: `${progressPercentage}%` }}></div>
+          </div>
+          
+          {plan.current_step && (
+            <div className="current-step-display">
+              <div className="current-step-icon">⚙️</div>
+              <div className="current-step-info">
+                <div className="current-step-name">
+                  {expectedSteps.find(s => s.key === plan.current_step)?.name || plan.current_step}
+                </div>
+                <div className="current-step-description">
+                  {expectedSteps.find(s => s.key === plan.current_step)?.description || 'Processing...'}
+                </div>
+              </div>
+            </div>
+          )}
+          
+          <div className="time-estimate">
+            <small>⏱️ This typically takes 1-2 minutes. Please wait while we process your query...</small>
+          </div>
+        </div>
+      )}
+      
+      {/* Steps Progress Indicator */}
+      {isExecuting && (
+        <div className="steps-progress">
+          <div className="steps-timeline">
+            {expectedSteps.map((step, index) => {
+              const isCompleted = currentStepIndex > index;
+              const isCurrent = currentStepIndex === index;
+              const isPending = currentStepIndex < index;
+              
+              return (
+                <div key={step.key} className={`step-item ${isCompleted ? 'completed' : isCurrent ? 'current' : 'pending'}`}>
+                  <div className="step-indicator">
+                    {isCompleted ? '✅' : isCurrent ? '⚙️' : '⏳'}
+                  </div>
+                  <div className="step-label">
+                    <div className="step-name">{step.name}</div>
+                    {isCurrent && <div className="step-status">In Progress...</div>}
+                    {isCompleted && <div className="step-status">Completed</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      
       {plan.reasoning_steps && plan.reasoning_steps.length > 0 && (
         <div className="reasoning-steps">
-          <p className="reasoning-title"><strong>Reasoning:</strong></p>
+          <p className="reasoning-title"><strong>🧠 Reasoning:</strong></p>
           <ul>
             {plan.reasoning_steps.map((step, idx) => (
               <li key={idx}>{step}</li>
@@ -527,12 +682,12 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
         <div className="plan-steps">
           <div className="steps-header" onClick={() => toggleStepExpansion(plan.plan_id)}>
             <p className="steps-title">
-              <strong>Processing Steps ({intermediateTasks.length})</strong>
+              <strong>📋 Processing Details ({intermediateTasks.length} steps)</strong>
               {!expandedSteps[plan.plan_id] && (
                 <span className="steps-summary">
                   {' '}- {plan.status === 'completed' ? '✅ All steps completed' : 
                         plan.status === 'failed' ? '❌ Execution failed' :
-                        plan.status === 'executing' ? '⚙️ Processing...' : '⏳ Pending'}
+                        isExecuting ? `⚙️ ${progressPercentage}% complete` : '⏳ Pending'}
                 </span>
               )}
             </p>
@@ -780,8 +935,22 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                 finalTaskType: finalTask.tool_type,
                 resultKey,
                 stepResult,
-                allResultKeys: Object.keys(plan.results || {})
+                allResultKeys: Object.keys(plan.results || {}),
+                charts: stepResult?.charts,
+                chartsLength: stepResult?.charts?.length
               });
+              
+              // Additional debug for charts
+              if (stepResult?.charts) {
+                console.log('Charts details:', stepResult.charts.map((chart: any, idx: number) => ({
+                  index: idx,
+                  type: chart.type,
+                  title: chart.title,
+                  hasData: !!chart.data,
+                  dataType: typeof chart.data,
+                  dataKeys: chart.data && typeof chart.data === 'object' ? Object.keys(chart.data) : 'not an object'
+                })));
+              }
               
               return (
                 <div className="step-result">
@@ -1096,7 +1265,37 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
           {isLoading && (
             <div className="loading-indicator">
               <FiLoader className="loading-icon" />
-              <span>AI is analyzing your request...</span>
+              <div className="loading-content">
+                {activePlan ? (
+                  <div>
+                    <span>Processing: {activePlan.current_step || 'Initializing...'}</span>
+                    <div className="progress-bar" style={{
+                      width: '200px',
+                      height: '4px',
+                      backgroundColor: '#e0e0e0',
+                      borderRadius: '2px',
+                      margin: '8px 0',
+                      overflow: 'hidden'
+                    }}>
+                      <div 
+                        className="progress-fill"
+                        style={{
+                          width: `${activePlan.progress || 0}%`,
+                          height: '100%',
+                          backgroundColor: '#4285f4',
+                          borderRadius: '2px',
+                          transition: 'width 0.3s ease'
+                        }}
+                      />
+                    </div>
+                    <span style={{fontSize: '12px', color: '#666'}}>
+                      {activePlan.progress || 0}% complete - This may take 1-2 minutes
+                    </span>
+                  </div>
+                ) : (
+                  <span>AI is analyzing your request...</span>
+                )}
+              </div>
               <div className="loading-dots">
                 <div className="loading-dot"></div>
                 <div className="loading-dot"></div>

@@ -697,6 +697,11 @@ Data Analytics Focus: {self._get_analytics_focus(table_name)}"""
             table_scores[table_name]["best_score"] = max(table_scores[table_name]["best_score"], score)
             table_scores[table_name]["chunk_types"].add(match.metadata.get("chunk_type"))
             table_scores[table_name]["sample_content"] = match.metadata.get("metadata", "")
+        
+        # Convert sets to lists for JSON serialization before returning
+        for table_info in table_scores.values():
+            table_info["chunk_types"] = list(table_info["chunk_types"])
+            
         ranked_tables = sorted(table_scores.values(), key=lambda x: (x["best_score"], x["total_score"]), reverse=True)
         return ranked_tables[:top_k]
 

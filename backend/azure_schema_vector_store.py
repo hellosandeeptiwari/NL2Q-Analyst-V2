@@ -456,6 +456,10 @@ class AzureSchemaVectorStore:
                 )
                 table_scores[table_name]['chunk_types'].add(result['chunk_type'])
             
+            # Convert sets to lists for JSON serialization before returning
+            for table_info in table_scores.values():
+                table_info['chunk_types'] = list(table_info['chunk_types'])
+            
             # Sort tables by relevance score
             ranked_tables = sorted(
                 table_scores.values(),

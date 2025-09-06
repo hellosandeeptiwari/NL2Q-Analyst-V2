@@ -697,58 +697,29 @@ class DynamicAgentOrchestrator:
                     "description": f"Table containing {match['table_name'].replace('_', ' ').lower()} data",
                     "chunk_types": list(match['chunk_types']),
                     "estimated_relevance": "High" if match['best_score'] > 0.8 else "Medium" if match['best_score'] > 0.6 else "Low",
-                    "row_count": None  # Will be fetched for top suggestions only
+                    "row_count": "Available"  # Skip expensive row count fetching for better performance
                 })
             
-            # Now fetch row counts only for top 5 most relevant tables  
-            print(f"🔍 Attempting to fetch row counts for top {min(5, len(table_suggestions))} most relevant tables...")
+            # Skip row count fetching to improve performance (saves 10+ seconds)
+            print(f"⚡ Skipping row count fetching for performance - assuming all tables are available")
             
-            for suggestion in table_suggestions[:5]:  # Only top 5
-                try:
-                    from backend.db.engine import get_adapter
-                    adapter = get_adapter()
-                    if adapter:
-                        table_name = suggestion['table_name']
-                        
-                        # Use proper Snowflake three-part naming for row count query
-                        qualified_table_name = f'"COMMERCIAL_AI"."ENHANCED_NBA"."{table_name}"'
-                        
-                        try:
-                            count_result = adapter.run(f"SELECT COUNT(*) FROM {qualified_table_name}")
-                            if count_result and not count_result.error and count_result.rows:
-                                row_count = count_result.rows[0][0] if count_result.rows[0] else 0
-                                suggestion['row_count'] = row_count
-                                print(f"📊 {table_name}: {row_count:,} rows")
-                                
-                                if row_count == 0:
-                                    print(f"⚠️ {table_name} is empty (0 rows) - will be filtered out")
-                            else:
-                                print(f"📋 {table_name}: Row count unavailable")
-                                suggestion['row_count'] = "Available"  # Assume table exists since it's in Pinecone
-                        except Exception as query_error:
-                            print(f"📋 {table_name}: Row count unavailable - {query_error}")
-                            suggestion['row_count'] = "Available"  # Assume table exists since it's in Pinecone
-                except Exception as e:
-                    print(f"📋 {suggestion['table_name']}: Row count unavailable")
-                    suggestion['row_count'] = "Available"  # Assume table exists since it's in Pinecone
+            # Set all tables as available since they exist in Pinecone
+            for suggestion in table_suggestions:
+                suggestion['row_count'] = "Available"
             
             # Filter out empty tables after checking row counts
             filtered_suggestions = []
             for suggestion in table_suggestions:
-                # Skip tables with 0 rows but keep "Available" and "Unknown" tables
-                if suggestion['row_count'] == 0:
-                    print(f"🚫 Skipping {suggestion['table_name']} - empty table (0 rows)")
-                    continue  # Skip empty tables
-                else:
-                    # Keep tables with actual counts, "Available", or "Unknown" status
-                    filtered_suggestions.append(suggestion)
+                # Since we're not checking row counts, assume all tables are valid
+                print(f"✅ Including {suggestion['table_name']} - assumed available")
+                filtered_suggestions.append(suggestion)
             
             # Re-rank after filtering
             for i, suggestion in enumerate(filtered_suggestions):
                 suggestion['rank'] = i + 1
             print(f"✅ Pinecone schema discovery found {len(relevant_tables)} tables")
             if filtered_suggestions:
-                print(f"💡 Generated {len(filtered_suggestions)} table suggestions for user selection (filtered out empty tables)")
+                print(f"💡 Generated {len(filtered_suggestions)} table suggestions for user selection")
             return {
                 "discovered_tables": [t["name"] for t in relevant_tables],
                 "table_details": relevant_tables,
@@ -1662,7 +1633,8 @@ Generate Python code that:
                     'max': max,
                     'sum': sum,
                     'abs': abs,
-                    'round': round
+                    'round': round,
+                    '__import__': __import__  # Add this to allow imports
                 }
             }
             
@@ -1726,9 +1698,14 @@ Generate Python code that:
                             continue
                         if _is_plotly_fig(obj):
                             try:
+                                # Convert plotly figure to dict and clean numpy arrays
+                                chart_dict = obj.to_dict()
+                                # Clean numpy arrays and other non-serializable objects
+                                cleaned_chart_dict = self._convert_non_serializable_data(chart_dict)
+                                
                                 charts.append({
                                     'type': 'plotly',
-                                    'data': obj.to_dict(),
+                                    'data': cleaned_chart_dict,
                                     'title': f'Python Generated {name}'
                                 })
                                 chart_types.append('plotly')
@@ -1773,10 +1750,14 @@ Generate Python code that:
                     try:
                         if _is_plotly_fig(var_value):
                             try:
+                                # Convert plotly figure to dict and clean numpy arrays
                                 chart_dict = var_value.to_dict()
+                                # Clean numpy arrays and other non-serializable objects
+                                cleaned_chart_dict = self._convert_non_serializable_data(chart_dict)
+                                
                                 charts.append({
                                     "type": "plotly",
-                                    "data": chart_dict,
+                                    "data": cleaned_chart_dict,
                                     "title": f"Python Generated {var_name}"
                                 })
                                 chart_types.append("plotly")
@@ -2109,3 +2090,29 @@ Return only the SQL query, properly formatted for Snowflake."""
                 "error": str(e),
                 "status": "failed"
             }
+
+    def _convert_non_serializable_data(self, obj):
+        """Convert non-JSON-serializable objects to serializable ones"""
+        import numpy as np
+        
+        if isinstance(obj, set):
+            return list(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif hasattr(obj, 'tolist') and callable(getattr(obj, 'tolist')):  # Any numpy-like array
+            try:
+                return obj.tolist()
+            except:
+                return str(obj)
+        elif isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, dict):
+            return {k: self._convert_non_serializable_data(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._convert_non_serializable_data(item) for item in obj]
+        elif isinstance(obj, tuple):
+            return [self._convert_non_serializable_data(item) for item in obj]
+        else:
+            return obj

@@ -206,10 +206,87 @@ async def agent_query(request: Request):
             session_id=session_id
         )
         
-        return JSONResponse(content=plan)
+        print(f"🔍 Plan object type: {type(plan)}")
+        print(f"🔍 Plan has to_dict: {hasattr(plan, 'to_dict')}")
+        
+        # Check if plan is already a dict or needs conversion
+        if hasattr(plan, 'to_dict'):
+            print("🔄 Converting plan using to_dict()")
+            plan_dict = plan.to_dict()
+        else:
+            print("✅ Plan is already a dict, using directly")
+            plan_dict = plan
+        
+        print(f"🔍 Final plan_dict type: {type(plan_dict)}")
+        print(f"🔍 Plan_dict keys: {list(plan_dict.keys()) if isinstance(plan_dict, dict) else 'Not a dict'}")
+        
+        # Apply conversion to prevent JSON serialization issues
+        try:
+            import json
+            # Apply conversion to all data BEFORE testing JSON serialization
+            converted_plan_dict = _convert_non_serializable(plan_dict)
+            
+            # Test JSON serialization
+            json_test = json.dumps(converted_plan_dict)
+            print("✅ JSON serialization test passed")
+            plan_dict = converted_plan_dict  # Use the converted version
+            
+        except Exception as json_error:
+            print(f"❌ JSON serialization still failed after conversion: {json_error}")
+            # This should not happen if our conversion is working properly
+            return JSONResponse(status_code=500, content={"error": f"JSON serialization error: {json_error}"})
+            
+        return JSONResponse(content=plan_dict)
     except Exception as e:
         report_error("agent_query", str(e))
         return JSONResponse(status_code=500, content={"error": f"An error occurred: {str(e)}"})
+
+def _convert_non_serializable(obj):
+    """Convert non-JSON-serializable objects to serializable ones"""
+    import numpy as np
+    
+    if isinstance(obj, set):
+        return list(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif hasattr(obj, 'tolist') and callable(getattr(obj, 'tolist')):  # Any numpy-like array
+        try:
+            return obj.tolist()
+        except:
+            return str(obj)
+    elif isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, dict):
+        return {k: _convert_non_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_convert_non_serializable(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return [_convert_non_serializable(item) for item in obj]
+    else:
+        return obj
+
+def _clean_charts(charts_list):
+    """Clean charts data to make it JSON serializable"""
+    import numpy as np
+    import json
+    
+    cleaned_charts = []
+    for chart in charts_list:
+        if isinstance(chart, dict):
+            clean_chart = {}
+            for chart_key, chart_val in chart.items():
+                try:
+                    # Apply conversion first, then test serialization
+                    converted_val = _convert_non_serializable(chart_val)
+                    json.dumps(converted_val)
+                    clean_chart[chart_key] = converted_val
+                except Exception as chart_error:
+                    print(f"🧹 Skipping chart field: {chart_key} - {chart_error}")
+            if clean_chart:  # Only add if chart has some data
+                cleaned_charts.append(clean_chart)
+    return cleaned_charts
 
 @app.get("/api/agent/plan/{plan_id}")
 async def get_plan_status(plan_id: str):
@@ -775,9 +852,9 @@ async def query(request: Request):
                             
                             # Limit columns to prevent token overflow (max 20 columns per table)
                             if len(cache_columns) > 20:
-                                limited_columns = dict(list(cache_columns.items())[:20])
+                                limited_columns = list(cache_columns.keys())[:20]
                             else:
-                                limited_columns = cache_columns
+                                limited_columns = list(cache_columns.keys())
                                 
                             relevant_schema[table_name] = limited_columns
                             print(f"📋 Added {table_name} with {len(limited_columns)} columns from schema cache")
@@ -807,7 +884,7 @@ async def query(request: Request):
             for table_name in nba_tables:
                 # Limit columns to prevent token overflow
                 cache_columns = list(schema_cache[table_name].keys())[:10]
-                relevant_schema[table_name] = {col: schema_cache[table_name][col] for col in cache_columns}
+                relevant_schema[table_name] = cache_columns
                 print(f"📋 Fallback: Added {table_name} with {len(cache_columns)} columns")
             
             # If still no schema, just pick any 2 tables
@@ -815,7 +892,7 @@ async def query(request: Request):
                 sample_tables = list(schema_cache.keys())[:2]
                 for table_name in sample_tables:
                     cache_columns = list(schema_cache[table_name].keys())[:5]
-                    relevant_schema[table_name] = {col: schema_cache[table_name][col] for col in cache_columns}
+                    relevant_schema[table_name] = cache_columns
                     print(f"📋 Emergency fallback: Added {table_name} with {len(cache_columns)} columns")
         
         print(f"🎯 Final schema passed to LLM: {relevant_schema}")
@@ -825,7 +902,7 @@ async def query(request: Request):
         print(f"🔍 CRITICAL DEBUG: Schema being passed to LLM:")
         for table_name, columns in relevant_schema.items():
             print(f"   Table: {table_name}")
-            print(f"   Columns: {list(columns.keys())}")
+            print(f"   Columns: {columns}")
             if 'Recommended_Msg_Overall' in columns:
                 print(f"   ✅ Has target column!")
             else:
