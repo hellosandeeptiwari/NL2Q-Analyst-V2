@@ -799,6 +799,175 @@
   color: #dc2626;
 }
 
+/* Enhanced Results & Visualization Section */
+.results-visualization-container {
+  margin: 24px 0;
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+}
+
+.results-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 24px;
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.results-icon {
+  font-size: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.results-title-section {
+  flex: 1;
+}
+
+.results-title {
+  margin: 0 0 4px 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1e293b;
+  letter-spacing: -0.025em;
+}
+
+.results-subtitle {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #64748b;
+  font-weight: 400;
+}
+
+.results-content {
+  padding: 24px;
+}
+
+/* Enhanced Charts Styling */
+.charts-container {
+  margin-top: 8px;
+}
+
+.charts-header {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.charts-title {
+  margin: 0 0 8px 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.charts-description {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #64748b;
+}
+
+.charts-grid {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: 1fr;
+}
+
+.enhanced-chart-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.enhanced-chart-card:hover {
+  box-shadow: 0 4px 12px 0 rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+}
+
+.chart-card-header {
+  padding: 16px 20px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.chart-type-badge {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.chart-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #1e293b;
+  flex: 1;
+}
+
+.chart-content {
+  padding: 20px;
+}
+
+.chart-image {
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.plotly-chart-container {
+  width: 100%;
+  height: 450px;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  border: 1px solid #f1f5f9;
+}
+
+.chart-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 2px dashed #cbd5e1;
+}
+
+.fallback-icon {
+  font-size: 3rem;
+  margin-bottom: 12px;
+  opacity: 0.6;
+}
+
+.fallback-text {
+  margin: 0;
+  color: #64748b;
+  font-weight: 500;
+}
+
 /* Enhanced Reasoning Styles for Horizontal Layout */
 .reasoning-steps {
   margin: 15px 0;
@@ -991,10 +1160,10 @@
 .horizontal-steps-container {
   margin: 20px 0;
   padding: 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #ffffff;
   border-radius: 15px;
-  box-shadow: 0 8px 32px rgba(102, 126, 234, 0.15);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
 }
 
 .steps-toggle-header {
@@ -1003,22 +1172,23 @@
   justify-content: space-between;
   align-items: center;
   padding: 15px 20px;
-  background: rgba(255, 255, 255, 0.1);
+  background: #f8fafc;
   border-radius: 10px;
   margin-bottom: 20px;
   transition: all 0.3s ease;
-  backdrop-filter: blur(10px);
+  border: 1px solid #e2e8f0;
 }
 
 .steps-toggle-header:hover {
-  background: rgba(255, 255, 255, 0.15);
-  transform: translateY(-2px);
+  background: #f1f5f9;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .steps-toggle-title {
   font-size: 1.1rem;
   font-weight: 600;
-  color: white;
+  color: #1e293b;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1027,16 +1197,16 @@
 .steps-status {
   margin-left: 10px;
   padding: 4px 12px;
-  background: rgba(0, 255, 0, 0.2);
-  border: 1px solid rgba(0, 255, 0, 0.4);
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
   border-radius: 20px;
   font-size: 0.8rem;
   font-weight: 500;
-  color: #00ff88;
+  color: #059669;
 }
 
 .toggle-icon {
-  color: white;
+  color: #64748b;
   font-size: 1.2rem;
   transition: transform 0.3s ease;
 }

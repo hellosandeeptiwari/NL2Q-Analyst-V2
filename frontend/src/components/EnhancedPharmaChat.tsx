@@ -592,16 +592,6 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
     const currentStepIndex = plan.status === 'completed' ? expectedSteps.length : 
       (plan.current_step ? expectedSteps.findIndex(step => step.key === plan.current_step) : -1);
     
-    // Debug logging
-    console.log('🔍 Steps Debug:', {
-      planStatus: plan.status,
-      currentStep: plan.current_step,
-      currentStepIndex,
-      expectedStepsLength: expectedSteps.length,
-      showStepsDetails,
-      selectedStepKey
-    });
-    
     // Separate intermediate steps (1-6) from final display step (7)
     const intermediateTasks = plan.tasks ? plan.tasks.filter((task, index) => index < plan.tasks.length - 1) : [];
     const finalTask = plan.tasks && plan.tasks.length > 0 ? plan.tasks[plan.tasks.length - 1] : null;
@@ -766,8 +756,8 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
         </div>
       )}
       
-      {/* Enhanced Reasoning Section */}
-      {plan.reasoning_steps && plan.reasoning_steps.length > 0 && (
+      {/* Enhanced Reasoning Section - HIDDEN */}
+      {false && plan.reasoning_steps && plan.reasoning_steps.length > 0 && (
         <div className="reasoning-steps">
           <div className="reasoning-header">
             <strong>🧠 Reasoning Process:</strong>
@@ -1012,13 +1002,17 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
         </div>
       )}
 
-      {/* Always Visible Final Step (Visualization/Results) */}
+      {/* Enhanced Results & Visualization Section */}
       {finalTask && (
-        <div className="final-step">
-          <div className="final-step-header">
-            <h5><strong>📊 Results & Visualization</strong></h5>
+        <div className="results-visualization-container">
+          <div className="results-header">
+            <div className="results-icon">📊</div>
+            <div className="results-title-section">
+              <h3 className="results-title">Results & Visualization</h3>
+              <p className="results-subtitle">Your analysis results and generated charts</p>
+            </div>
           </div>
-          <div className="final-step-content">
+          <div className="results-content">
             {(() => {
               // Fix the result key mapping for final step
               const taskTypeMap: { [key: string]: string } = {
@@ -1104,57 +1098,65 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                         </div>
                       )}
                       
-                      {/* Show final results with actual chart rendering */}
+                      {/* Enhanced Charts Display */}
                       {stepResult.charts && Array.isArray(stepResult.charts) && stepResult.charts.length > 0 && (
-                        <div>
-                          <p><strong>Generated Visualizations ({stepResult.charts.length}):</strong></p>
-                          {stepResult.charts.map((chart: any, idx: number) => (
-                            <div key={idx} className="chart-item" style={{marginBottom: '20px', border: '1px solid #e0e0e0', borderRadius: '8px', padding: '15px'}}>
-                              <p style={{marginBottom: '10px', fontWeight: 'bold'}}>📈 {chart.type} - {chart.title || 'Visualization'}</p>
-                              
-                              {/* Render matplotlib charts (base64 images) */}
-                              {chart.type === 'matplotlib' && chart.data && (
-                                <img 
-                                  src={chart.data} 
-                                  alt={chart.title || 'Visualization'}
-                                  style={{maxWidth: '100%', height: 'auto', borderRadius: '4px'}}
-                                />
-                              )}
-                              
-                              {/* Render plotly charts */}
-                              {chart.type === 'plotly' && chart.data && (
-                                <div style={{width: '100%', height: '400px'}}>
-                                  <Plot
-                                    data={chart.data.data || []}
-                                    layout={{
-                                      ...(chart.data.layout || {}),
-                                      autosize: true,
-                                      margin: { t: 40, r: 20, b: 40, l: 40 }
-                                    }}
-                                    config={{
-                                      displayModeBar: true,
-                                      responsive: true,
-                                      displaylogo: false,
-                                      modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
-                                    }}
-                                    style={{width: '100%', height: '100%'}}
-                                  />
+                        <div className="charts-container">
+                          <div className="charts-header">
+                            <h4 className="charts-title">Generated Visualizations ({stepResult.charts.length})</h4>
+                            <p className="charts-description">Interactive charts created from your data analysis</p>
+                          </div>
+                          <div className="charts-grid">
+                            {stepResult.charts.map((chart: any, idx: number) => (
+                              <div key={idx} className="enhanced-chart-card">
+                                <div className="chart-card-header">
+                                  <div className="chart-type-badge">{chart.type}</div>
+                                  <h5 className="chart-title">{chart.title || 'Data Visualization'}</h5>
                                 </div>
-                              )}
-                              
-                              {/* Fallback for other chart types */}
-                              {!['matplotlib', 'plotly'].includes(chart.type) && (
-                                <div style={{
-                                  background: '#f8f9fa', 
-                                  padding: '15px', 
-                                  borderRadius: '4px',
-                                  color: '#6c757d'
-                                }}>
-                                  Chart data available ({chart.type})
+                                
+                                <div className="chart-content">
+                                  {/* Render matplotlib charts (base64 images) */}
+                                  {chart.type === 'matplotlib' && chart.data && (
+                                    <img 
+                                      src={chart.data} 
+                                      alt={chart.title || 'Visualization'}
+                                      className="chart-image"
+                                    />
+                                  )}
+                                  
+                                  {/* Render plotly charts */}
+                                  {chart.type === 'plotly' && chart.data && (
+                                    <div className="plotly-chart-container">
+                                      <Plot
+                                        data={chart.data.data || []}
+                                        layout={{
+                                          ...(chart.data.layout || {}),
+                                          autosize: true,
+                                          margin: { t: 40, r: 20, b: 40, l: 40 },
+                                          paper_bgcolor: 'rgba(0,0,0,0)',
+                                          plot_bgcolor: 'rgba(0,0,0,0)'
+                                        }}
+                                        config={{
+                                          displayModeBar: true,
+                                          responsive: true,
+                                          displaylogo: false,
+                                          modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
+                                        }}
+                                        style={{width: '100%', height: '100%'}}
+                                      />
+                                    </div>
+                                  )}
+                                  
+                                  {/* Fallback for other chart types */}
+                                  {!['matplotlib', 'plotly'].includes(chart.type) && (
+                                    <div className="chart-fallback">
+                                      <div className="fallback-icon">📊</div>
+                                      <p className="fallback-text">Chart data available ({chart.type})</p>
+                                    </div>
+                                  )}
                                 </div>
-                              )}
-                            </div>
-                          ))}
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
                       
