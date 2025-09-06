@@ -45,7 +45,10 @@ CRITICAL CONSTRAINTS:
 - NEVER create tables, stored procedures, functions, views, or any database objects
 - ONLY read data using SELECT queries
 - Always add a LIMIT if the query is unbounded to prevent large result sets
-- Use the provided schema information to generate accurate queries
+- **MANDATORY**: ONLY use table names and column names that exist in the provided schema
+- **NEVER** use table names from your training data or make up table names
+- **NEVER** use "NBA_outputs" or any table not explicitly listed in the schema
+- If you cannot find appropriate tables in the schema, respond with "ERROR: No suitable tables found in schema"
 
 Database Usage Policy:
 - Read-only access only
@@ -91,12 +94,36 @@ def generate_sql(natural_language: str, schema_snapshot: dict, constraints: Guar
         timeout=30.0  # 30 second timeout
     )
     
-    prompt = SYSTEM_PROMPT + f"\nSchema: {schema_snapshot}\nNL: {natural_language}\nSQL:"
+    # Debug: Print what schema is being passed to LLM
+    print(f"🔍 LLM INPUT DEBUG:")
+    print(f"   Query: {natural_language}")
+    print(f"   Schema tables: {list(schema_snapshot.keys()) if schema_snapshot else 'None'}")
+    print(f"   Schema size: {len(schema_snapshot) if schema_snapshot else 0}")
+    
+    # Create explicit schema description
+    if schema_snapshot:
+        schema_text = "AVAILABLE TABLES AND COLUMNS:\n"
+        for table_name, columns in schema_snapshot.items():
+            schema_text += f"Table: {table_name}\n"
+            schema_text += f"Columns: {', '.join(columns)}\n\n"
+        schema_text += f"\nREMEMBER: You must ONLY use these {len(schema_snapshot)} tables: {list(schema_snapshot.keys())}"
+    else:
+        schema_text = "No schema provided"
+    
+    user_prompt = f"{schema_text}\n\nNatural Language Query: {natural_language}\n\nGenerate SQL using ONLY the tables and columns listed above:"
+    
     response = client.chat.completions.create(
         model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-        messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}]
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT}, 
+            {"role": "user", "content": user_prompt}
+        ]
     )
     sql = response.choices[0].message.content.strip()
+    
+    # Debug: Print what LLM generated
+    print(f"🤖 LLM OUTPUT: {sql}")
+    
     safe_sql, added_limit = sanitize_sql(sql, constraints)
     rationale = "Generated with schema priming and guardrails."
     suggestions = generate_query_suggestions(natural_language, schema_snapshot)

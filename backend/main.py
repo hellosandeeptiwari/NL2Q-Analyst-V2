@@ -727,6 +727,18 @@ async def perform_schema_indexing(force_reindex: bool = False):
             "error": str(e)
         })
 
+async def ensure_pinecone_initialized():
+    """Ensure Pinecone store is initialized"""
+    global pinecone_store
+    if not pinecone_store:
+        try:
+            from backend.pinecone_schema_vector_store import PineconeSchemaVectorStore
+            pinecone_store = PineconeSchemaVectorStore()
+            print("✅ Pinecone store initialized for traditional endpoint")
+        except Exception as e:
+            print(f"⚠️ Failed to initialize Pinecone store: {e}")
+    return pinecone_store
+
 @app.post("/query")
 async def query(request: Request):
     log_usage("/query")
@@ -740,7 +752,94 @@ async def query(request: Request):
             allowed_schemas=["public"],
             default_limit=100
         )
-        generated = generate_sql(nl, schema_cache, guardrail_cfg)
+        
+        # Enhanced: Use intelligent table discovery like the orchestrator
+        relevant_schema = {}  # Start with empty schema
+        
+        # Ensure Pinecone store is initialized and use vector search to find relevant tables
+        await ensure_pinecone_initialized()
+        if pinecone_store:
+            try:
+                print(f"🔍 Using Pinecone to find relevant tables for: {nl}")
+                search_results = await pinecone_store.search_relevant_tables(nl, top_k=3)  # Limit to top 3
+                
+                if search_results:
+                    # Build focused schema with only relevant tables and their actual columns
+                    for result in search_results:
+                        table_name = result.get('table_name')
+                        print(f"📋 Processing table: {table_name}")
+                        
+                        if table_name and table_name in schema_cache:
+                            # Use actual schema from cache - don't call get_table_details
+                            cache_columns = schema_cache[table_name]
+                            
+                            # Limit columns to prevent token overflow (max 20 columns per table)
+                            if len(cache_columns) > 20:
+                                limited_columns = dict(list(cache_columns.items())[:20])
+                            else:
+                                limited_columns = cache_columns
+                                
+                            relevant_schema[table_name] = limited_columns
+                            print(f"📋 Added {table_name} with {len(limited_columns)} columns from schema cache")
+                            
+                            # Verify target column
+                            if 'Recommended_Msg_Overall' in limited_columns:
+                                print(f"   ✅ {table_name} has target column!")
+                            else:
+                                print(f"   ⚠️ {table_name} missing target column")
+                        else:
+                            print(f"   ❌ {table_name} not found in schema cache")
+                    
+                    print(f"🎯 Focused schema contains {len(relevant_schema)} relevant tables: {list(relevant_schema.keys())}")
+                else:
+                    print("⚠️ No relevant tables found via Pinecone")
+                    
+            except Exception as e:
+                print(f"❌ Pinecone search failed: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # Fallback: if no relevant schema found, use a small subset of schema_cache
+        if not relevant_schema:
+            print("⚠️ Using fallback: limited schema subset")
+            # Find NBA-related tables from schema cache
+            nba_tables = [name for name in schema_cache.keys() if 'nba' in name.lower() or 'NBA' in name][:3]
+            for table_name in nba_tables:
+                # Limit columns to prevent token overflow
+                cache_columns = list(schema_cache[table_name].keys())[:10]
+                relevant_schema[table_name] = {col: schema_cache[table_name][col] for col in cache_columns}
+                print(f"📋 Fallback: Added {table_name} with {len(cache_columns)} columns")
+            
+            # If still no schema, just pick any 2 tables
+            if not relevant_schema:
+                sample_tables = list(schema_cache.keys())[:2]
+                for table_name in sample_tables:
+                    cache_columns = list(schema_cache[table_name].keys())[:5]
+                    relevant_schema[table_name] = {col: schema_cache[table_name][col] for col in cache_columns}
+                    print(f"📋 Emergency fallback: Added {table_name} with {len(cache_columns)} columns")
+        
+        print(f"🎯 Final schema passed to LLM: {relevant_schema}")
+        print(f"🎯 Schema contains {len(relevant_schema)} tables with {sum(len(cols) for cols in relevant_schema.values())} total columns")
+        
+        # Critical Debug: Verify exact schema being passed
+        print(f"🔍 CRITICAL DEBUG: Schema being passed to LLM:")
+        for table_name, columns in relevant_schema.items():
+            print(f"   Table: {table_name}")
+            print(f"   Columns: {list(columns.keys())}")
+            if 'Recommended_Msg_Overall' in columns:
+                print(f"   ✅ Has target column!")
+            else:
+                print(f"   ❌ Missing target column")
+        
+        if not relevant_schema:
+            print(f"❌ CRITICAL: Empty schema being passed to LLM!")
+            print(f"Schema cache status: {len(schema_cache)} tables")
+            print(f"Sample schema cache tables: {list(schema_cache.keys())[:5]}")
+        
+        generated = generate_sql(nl, relevant_schema, guardrail_cfg)
+        
+        print(f"🔧 LLM Generated SQL: {generated.sql}")
+        print(f"🔧 SQL mentions tables: {[t for t in relevant_schema.keys() if t in generated.sql]}")
         if db_type != os.getenv("DB_ENGINE", "sqlite"):
             adapter = get_adapter(db_type)
         else:
@@ -749,9 +848,19 @@ async def query(request: Request):
         location = storage.save_data(result.rows, job_id)
         log_audit(nl, generated.sql, result.execution_time, len(result.rows), result.error)
         save_query_history(nl, generated.sql, job_id)
-        import pandas as pd
-        df = pd.DataFrame(result.rows)
-        plotly_spec = result.plotly_spec if hasattr(result, 'plotly_spec') else {}
+        
+        # Enhanced: Generate Plotly visualization
+        plotly_spec = {}
+        if result.rows:
+            try:
+                from backend.utils.plotly_generator import PlotlyGenerator
+                plotly_gen = PlotlyGenerator()
+                plotly_spec = plotly_gen.generate_plotly_spec(result.rows, nl, generated.sql)
+                print(f"📊 Generated Plotly spec for {len(result.rows)} rows")
+            except Exception as e:
+                print(f"⚠️ Failed to generate Plotly spec: {e}")
+                plotly_spec = {}
+        
         bias_report = bias_detector.detect_bias(result.rows, nl)
         return {
             "sql": generated.sql,
