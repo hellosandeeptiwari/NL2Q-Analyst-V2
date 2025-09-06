@@ -927,7 +927,19 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
               
               const finalIndex = plan.tasks.length - 1;
               const resultKey = `${finalIndex + 1}_${taskTypeMap[finalTask.tool_type] || finalTask.tool_type}`;
-              const stepResult = plan.results?.[resultKey];
+              let stepResult = plan.results?.[resultKey];
+              
+              // NEW: Fallback - search for charts in any result if not found in expected key
+              if (!stepResult?.charts) {
+                console.log('Charts not found in expected key, searching all results...');
+                for (const [key, result] of Object.entries(plan.results || {})) {
+                  if (result && typeof result === 'object' && (result as any).charts) {
+                    console.log(`Found charts in ${key}:`, (result as any).charts);
+                    stepResult = result as any;
+                    break;
+                  }
+                }
+              }
               
               // Debug logging
               console.log('Final step debugging:', {
@@ -938,6 +950,22 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                 allResultKeys: Object.keys(plan.results || {}),
                 charts: stepResult?.charts,
                 chartsLength: stepResult?.charts?.length
+              });
+              
+              // NEW: Enhanced debugging for chart detection
+              console.log('=== COMPREHENSIVE CHART DEBUG ===');
+              console.log('All plan results:', plan.results);
+              console.log('Looking for visualization results in keys:', Object.keys(plan.results || {}));
+              
+              // Check all result keys for chart data
+              Object.keys(plan.results || {}).forEach(key => {
+                const result = plan.results[key];
+                console.log(`Result ${key}:`, {
+                  hasCharts: !!result.charts,
+                  chartsLength: result.charts?.length,
+                  chartTypes: result.charts?.map((c: any) => c.type),
+                  allKeys: Object.keys(result)
+                });
               });
               
               // Additional debug for charts
