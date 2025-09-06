@@ -2114,7 +2114,7 @@ Return only the SQL query, properly formatted for Snowflake."""
             return {
                 "plan_id": plan_id,
                 "user_query": user_query,
-                "reasoning_steps": [f"Planned {len(tasks)} execution steps", "Used Pinecone vector search for schema discovery", "Executed dynamic agent coordination"],
+                "reasoning_steps": [f"Planned {len(tasks)} execution steps", "Analyzed database structure and content", "Coordinated intelligent query processing"],
                 "estimated_execution_time": f"{len(tasks) * 2}s",
                 "tasks": [{"task_type": task.task_type.value, "agent": "dynamic"} for task in tasks],
                 "status": "completed" if "error" not in results else "failed",

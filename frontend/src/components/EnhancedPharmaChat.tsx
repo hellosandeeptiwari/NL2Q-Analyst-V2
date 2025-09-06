@@ -234,6 +234,8 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
   const [searchQuery, setSearchQuery] = useState('');
   const [showProfile, setShowProfile] = useState(false);
   const [expandedSteps, setExpandedSteps] = useState<{[key: string]: boolean}>({});
+  const [showStepsDetails, setShowStepsDetails] = useState(false);
+  const [selectedStepKey, setSelectedStepKey] = useState<string | null>(null);
   const [databaseStatus, setDatabaseStatus] = useState<DatabaseStatus>({
     isConnected: false,
     databaseType: 'Unknown',
@@ -575,20 +577,30 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
     console.log('Plan current step:', plan.current_step);
     console.log('Plan progress:', plan.progress);
     
-    // Define the expected steps in order
+    // Define the expected steps in order - using actual planner task IDs
     const expectedSteps = [
-      { key: 'schema_discovery', name: 'Schema Discovery', description: 'Discovering database structure and tables' },
-      { key: 'semantic_understanding', name: 'Semantic Analysis', description: 'Understanding query intent and extracting entities' },
-      { key: 'similarity_matching', name: 'Similarity Matching', description: 'Finding relevant tables using vector search' },
-      { key: 'user_interaction', name: 'Table Selection', description: 'Selecting appropriate tables for your query' },
-      { key: 'query_generation', name: 'Query Generation', description: 'Generating optimized SQL query' },
-      { key: 'execution', name: 'Query Execution', description: 'Running query against database' },
-      { key: 'visualization', name: 'Visualization', description: 'Creating charts and visualizations' }
+      { key: '1_discover_schema', name: 'Database Discovery', description: 'Analyzing database structure and available tables' },
+      { key: '2_semantic_analysis', name: 'Query Understanding', description: 'Interpreting your natural language request' },
+      { key: '3_similarity_matching', name: 'Table Matching', description: 'Finding the most relevant tables for your query' },
+      { key: '4_user_verification', name: 'Table Selection', description: 'Selecting the best tables for your analysis' },
+      { key: '5_query_generation', name: 'SQL Generation', description: 'Creating optimized database query' },
+      { key: '6_query_execution', name: 'Data Retrieval', description: 'Executing query and fetching your results' },
+      { key: '7_visualization', name: 'Chart Creation', description: 'Generating visualizations from your data' }
     ];
     
     // Calculate current step index
-    const currentStepIndex = plan.current_step ? 
-      expectedSteps.findIndex(step => step.key === plan.current_step) : -1;
+    const currentStepIndex = plan.status === 'completed' ? expectedSteps.length : 
+      (plan.current_step ? expectedSteps.findIndex(step => step.key === plan.current_step) : -1);
+    
+    // Debug logging
+    console.log('🔍 Steps Debug:', {
+      planStatus: plan.status,
+      currentStep: plan.current_step,
+      currentStepIndex,
+      expectedStepsLength: expectedSteps.length,
+      showStepsDetails,
+      selectedStepKey
+    });
     
     // Separate intermediate steps (1-6) from final display step (7)
     const intermediateTasks = plan.tasks ? plan.tasks.filter((task, index) => index < plan.tasks.length - 1) : [];
@@ -596,7 +608,7 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
     
     // Handle undefined status gracefully
     const planStatus = plan.status || 'unknown';
-    const isExecuting = planStatus === 'executing' || planStatus === 'draft' || planStatus === 'validated';
+    const isExecuting = planStatus === 'executing' || planStatus === 'draft' || planStatus === 'validated' || planStatus === 'completed';
     const progressPercentage = Math.round((plan.progress || 0) * 100);
     
     return (
@@ -608,77 +620,171 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
         </span>
       </div>
       
-      {/* Live Progress Display */}
-      {isExecuting && (
-        <div className="live-progress">
-          <div className="progress-header">
-            <h5>🚀 Processing Your Query</h5>
-            <span className="progress-percentage">{progressPercentage}% Complete</span>
+      {/* Horizontal Steps Progress Indicator */}
+      {plan && (
+        <div className="horizontal-steps-container">
+          {/* Toggle Button */}
+          <div className="steps-toggle-header" onClick={() => setShowStepsDetails(!showStepsDetails)}>
+            <span className="steps-toggle-title">
+              🤖 AI Agent Execution Plan 
+              <span className="steps-status">
+                {plan.status === 'completed' ? 'COMPLETED' : 'IN PROGRESS'}
+              </span>
+            </span>
+            <FiChevronDown className={`toggle-icon ${showStepsDetails ? 'rotated' : ''}`} />
           </div>
-          
-          <div className="progress-bar-container">
-            <div className="progress-bar" style={{ width: `${progressPercentage}%` }}></div>
-          </div>
-          
-          {plan.current_step && (
-            <div className="current-step-display">
-              <div className="current-step-icon">⚙️</div>
-              <div className="current-step-info">
-                <div className="current-step-name">
-                  {expectedSteps.find(s => s.key === plan.current_step)?.name || plan.current_step}
-                </div>
-                <div className="current-step-description">
-                  {expectedSteps.find(s => s.key === plan.current_step)?.description || 'Processing...'}
-                </div>
-              </div>
-            </div>
-          )}
-          
-          <div className="time-estimate">
-            <small>⏱️ This typically takes 1-2 minutes. Please wait while we process your query...</small>
-          </div>
-        </div>
-      )}
-      
-      {/* Steps Progress Indicator */}
-      {isExecuting && (
-        <div className="steps-progress">
-          <div className="steps-timeline">
+
+          {/* Horizontal Steps Timeline - Dynamic Display */}
+          <div className="horizontal-steps-timeline">
             {expectedSteps.map((step, index) => {
               const isCompleted = currentStepIndex > index;
               const isCurrent = currentStepIndex === index;
-              const isPending = currentStepIndex < index;
+              
+              // For completed plans, show all steps. For executing plans, show current and completed
+              const shouldShow = plan.status === 'completed' ? true : (isCompleted || isCurrent);
+              
+              if (!shouldShow) return null;
               
               return (
-                <div key={step.key} className={`step-item ${isCompleted ? 'completed' : isCurrent ? 'current' : 'pending'}`}>
-                  <div className="step-indicator">
-                    {isCompleted ? '✅' : isCurrent ? '⚙️' : '⏳'}
+                <div 
+                  key={step.key} 
+                  className={`horizontal-step-item ${isCompleted ? 'completed' : isCurrent ? 'current' : 'pending'} ${selectedStepKey === step.key ? 'selected' : ''} dynamic-reveal`}
+                  onClick={() => setSelectedStepKey(selectedStepKey === step.key ? null : step.key)}
+                >
+                  <div className="horizontal-step-circle">
+                    {isCompleted ? (
+                      <div className="step-checkmark">✓</div>
+                    ) : isCurrent ? (
+                      <div className="step-spinner">⚙️</div>
+                    ) : (
+                      <div className="step-number">{index + 1}</div>
+                    )}
                   </div>
-                  <div className="step-label">
-                    <div className="step-name">{step.name}</div>
-                    {isCurrent && <div className="step-status">In Progress...</div>}
-                    {isCompleted && <div className="step-status">Completed</div>}
-                  </div>
+                  <div className="horizontal-step-label">{step.name}</div>
+                  
+                  {/* Show connector only if next step is also visible */}
+                  {index < expectedSteps.length - 1 && currentStepIndex > index && (
+                    <div className={`step-connector ${isCompleted ? 'completed' : ''}`}></div>
+                  )}
                 </div>
               );
             })}
+            
+            {/* Show remaining steps count - only for executing plans */}
+            {plan.status !== 'completed' && currentStepIndex < expectedSteps.length - 1 && (
+              <div className="remaining-steps-indicator">
+                <div className="remaining-steps-circle">
+                  <span className="remaining-count">+{expectedSteps.length - currentStepIndex - 1}</span>
+                </div>
+                <div className="remaining-steps-label">More steps</div>
+              </div>
+            )}
           </div>
+
+          {/* Step Details Panel - Only for visible steps */}
+          {showStepsDetails && selectedStepKey && (
+            <div className="step-details-panel">
+              {(() => {
+                const selectedStep = expectedSteps.find(s => s.key === selectedStepKey);
+                const stepIndex = expectedSteps.findIndex(s => s.key === selectedStepKey);
+                const isCompleted = currentStepIndex > stepIndex;
+                const isCurrent = currentStepIndex === stepIndex;
+                
+                return (
+                  <div className="step-detail-content">
+                    <div className="step-detail-header">
+                      <h4>{selectedStep?.name}</h4>
+                      <span className={`step-detail-status ${isCompleted ? 'completed' : isCurrent ? 'current' : 'pending'}`}>
+                        {isCompleted ? 'Completed' : isCurrent ? 'In Progress' : 'Pending'}
+                      </span>
+                    </div>
+                    <p className="step-detail-description">{selectedStep?.description}</p>
+                    
+                    {/* Show specific details based on step - only for completed steps */}
+                    {isCompleted && selectedStepKey === '1_discover_schema' && plan.results?.['1_discover_schema'] && (
+                      <div className="step-result-details">
+                        <p>✅ Database schema discovered successfully</p>
+                        <p>📊 Tables and columns identified for analysis</p>
+                      </div>
+                    )}
+                    
+                    {isCompleted && selectedStepKey === '2_semantic_analysis' && plan.results?.['2_semantic_analysis'] && (
+                      <div className="step-result-details">
+                        <p>🧠 Query intent understood</p>
+                        <p>🔍 Key entities extracted and analyzed</p>
+                      </div>
+                    )}
+                    
+                    {isCompleted && selectedStepKey === '3_similarity_matching' && plan.results?.['3_similarity_matching'] && (
+                      <div className="step-result-details">
+                        <p>🎯 Matching tables identified successfully</p>
+                        <p>📈 Relevance scores calculated</p>
+                      </div>
+                    )}
+                    
+                    {isCompleted && selectedStepKey === '5_query_generation' && plan.results?.['5_query_generation'] && (
+                      <div className="step-result-details">
+                        <p>✅ SQL query generated successfully</p>
+                        {plan.results['5_query_generation'].sql_query && (
+                          <div className="sql-preview">
+                            <code>{plan.results['5_query_generation'].sql_query.substring(0, 100)}...</code>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
+                    {isCompleted && selectedStepKey === '6_query_execution' && plan.results?.['6_query_execution'] && (
+                      <div className="step-result-details">
+                        <p>✅ Query executed successfully</p>
+                        <p>📊 Data retrieved and processed</p>
+                      </div>
+                    )}
+                    
+                    {isCompleted && selectedStepKey === '7_visualization' && plan.results?.['7_visualization'] && (
+                      <div className="step-result-details">
+                        <p>📈 Visualizations created successfully</p>
+                        <p>🎨 Charts ready for display</p>
+                      </div>
+                    )}
+                    
+                    {/* Show current step progress */}
+                    {isCurrent && (
+                      <div className="step-progress-details">
+                        <div className="progress-indicator">
+                          <div className="progress-bar">
+                            <div className="progress-fill"></div>
+                          </div>
+                          <p className="progress-text">Processing step...</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
         </div>
       )}
       
+      {/* Enhanced Reasoning Section */}
       {plan.reasoning_steps && plan.reasoning_steps.length > 0 && (
         <div className="reasoning-steps">
-          <p className="reasoning-title"><strong>🧠 Reasoning:</strong></p>
-          <ul>
+          <div className="reasoning-header">
+            <strong>🧠 Reasoning Process:</strong>
+          </div>
+          <ul className="reasoning-list">
             {plan.reasoning_steps.map((step, idx) => (
-              <li key={idx}>{step}</li>
+              <li key={idx} className="reasoning-item">
+                <span className="reasoning-bullet">•</span>
+                <span className="reasoning-text">{step}</span>
+              </li>
             ))}
           </ul>
         </div>
       )}
 
-      {/* Collapsible Intermediate Steps (1-6) */}
-      {intermediateTasks.length > 0 && (
+      {/* Collapsible Intermediate Steps (1-6) - HIDDEN FOR NEW HORIZONTAL UI */}
+      {false && intermediateTasks.length > 0 && (
         <div className="plan-steps">
           <div className="steps-header" onClick={() => toggleStepExpansion(plan.plan_id)}>
             <p className="steps-title">
