@@ -46,14 +46,22 @@ interface Conversation {
   messages: ChatMessage[];
 }
 
+// Backend task structure (simplified from DynamicAgentOrchestrator)
+interface BackendTask {
+  task_type: string;  // e.g., "schema_discovery", "query_generation", "execution"
+  agent: string;      // e.g., "dynamic"
+}
+
+// Enhanced frontend step structure for UI display
 interface PlanStep {
   step_id: string;
-  tool_type: string;
+  task_type: string;
+  name: string;
+  description: string;
   status: 'pending' | 'executing' | 'completed' | 'error';
   start_time?: string;
   end_time?: string;
   error?: string;
-  input_data?: any;
   output_data?: {
     sql?: string;
     results?: any[];
@@ -67,15 +75,18 @@ interface PlanStep {
 
 interface QueryPlan {
   plan_id: string;
-  status: 'draft' | 'validated' | 'executing' | 'completed' | 'failed';
-  progress: number;
-  current_step: string;
+  user_query: string;
   reasoning_steps: string[];
-  tasks: PlanStep[];  // Backend returns 'tasks', not 'execution_steps'
-  results: { [key: string]: any };  // Backend returns results object
-  estimated_cost: number;
-  actual_cost: number;
-  context?: any;
+  estimated_execution_time: string;  // e.g., "6s"
+  tasks: BackendTask[];              // Backend simplified task list
+  status: 'completed' | 'failed';   // Backend only returns these two
+  results: { [key: string]: any };  // Task results keyed by task_id
+  error?: string;                    // Present if status is "failed"
+  
+  // Enhanced frontend fields (derived from backend data)
+  enhanced_steps?: PlanStep[];       // Enhanced step display for UI
+  progress?: number;                 // Calculated progress (0-1)
+  current_step?: string;             // Current step ID for tracking
 }
 
 interface DatabaseStatus {
@@ -236,6 +247,61 @@ const api = {
 interface EnhancedPharmaChatProps {
   onNavigateToSettings?: () => void;
 }
+
+// Helper function to transform backend plan to enhanced frontend format
+const enhancePlanForUI = (backendPlan: QueryPlan): QueryPlan => {
+  // Task type mapping for step names and descriptions
+  const taskMetadata: { [key: string]: { name: string; description: string; stepId: string } } = {
+    'schema_discovery': { name: 'Schema Discovery', description: 'Discovering relevant database tables and columns', stepId: '1_discover_schema' },
+    'semantic_understanding': { name: 'Semantic Analysis', description: 'Understanding query intent and extracting key entities', stepId: '2_semantic_analysis' },
+    'similarity_matching': { name: 'Similarity Matching', description: 'Matching query terms to database schema', stepId: '3_similarity_matching' },
+    'user_interaction': { name: 'Table Selection', description: 'Selecting the best tables for analysis', stepId: '4_user_verification' },
+    'query_generation': { name: 'SQL Generation', description: 'Creating optimized database query', stepId: '5_query_generation' },
+    'execution': { name: 'Data Retrieval', description: 'Executing query and fetching results', stepId: '6_query_execution' },
+    'visualization': { name: 'Chart Creation', description: 'Generating visualizations from data', stepId: '7_visualization' }
+  };
+
+  // Create enhanced steps from backend tasks using actual backend task IDs
+  const enhancedSteps: PlanStep[] = backendPlan.tasks.map((task, index) => {
+    const metadata = taskMetadata[task.task_type] || { 
+      name: task.task_type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()), 
+      description: `Processing ${task.task_type}`,
+      stepId: `${index + 1}_${task.task_type}`  // Use actual backend task ID format
+    };
+    
+    // Use the actual backend task ID format (e.g., "1_semantic_understanding")
+    const actualStepId = `${index + 1}_${task.task_type}`;
+    
+    // Check if this step has results (completed) using the actual step ID
+    const hasResult = backendPlan.results && backendPlan.results[actualStepId];
+    const stepStatus = backendPlan.status === 'failed' ? 'error' : 
+                     hasResult ? 'completed' : 'pending';
+    
+    return {
+      step_id: actualStepId,  // Use actual backend task ID
+      task_type: task.task_type,
+      name: metadata.name,
+      description: metadata.description,
+      status: stepStatus,
+      output_data: hasResult ? backendPlan.results[actualStepId] : undefined
+    };
+  });
+
+  // Calculate progress and current step
+  const completedSteps = enhancedSteps.filter(step => step.status === 'completed').length;
+  const totalSteps = enhancedSteps.length;
+  const progress = totalSteps > 0 ? completedSteps / totalSteps : 0;
+  
+  // Find current step (first non-completed step, or null if all done)
+  const currentStep = enhancedSteps.find(step => step.status !== 'completed')?.step_id || null;
+
+  return {
+    ...backendPlan,
+    enhanced_steps: enhancedSteps,
+    progress: progress,
+    current_step: currentStep || undefined
+  };
+};
 
 const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSettings }) => {
   // State Management
@@ -473,8 +539,9 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
       console.log('Plan status:', planResult.status);
       console.log('Plan tasks:', planResult.tasks);
       
-      // Set the plan directly since it's already the full plan object
-      setActivePlan(planResult);
+      // Enhance the plan for UI display
+      const enhancedPlan = enhancePlanForUI(planResult);
+      setActivePlan(enhancedPlan);
       
       // If plan is completed, add assistant response to messages and clear active plan
       if (planResult.status === 'completed' || planResult.status === 'failed') {
@@ -772,28 +839,24 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
     console.log('Plan current step:', plan.current_step);
     console.log('Plan progress:', plan.progress);
     
-    // Define the expected steps in order - using actual planner task IDs
-    const expectedSteps = [
-      { key: '1_discover_schema', name: 'Database Discovery', description: 'Analyzing database structure and available tables' },
-      { key: '2_semantic_analysis', name: 'Query Understanding', description: 'Interpreting your natural language request' },
-      { key: '3_similarity_matching', name: 'Table Matching', description: 'Finding the most relevant tables for your query' },
-      { key: '4_user_verification', name: 'Table Selection', description: 'Selecting the best tables for your analysis' },
-      { key: '5_query_generation', name: 'SQL Generation', description: 'Creating optimized database query' },
-      { key: '6_query_execution', name: 'Data Retrieval', description: 'Executing query and fetching your results' },
-      { key: '7_visualization', name: 'Chart Creation', description: 'Generating visualizations from your data' }
-    ];
+    // Use enhanced steps for UI display (dynamic steps from backend)
+    const enhancedSteps = plan.enhanced_steps || [];
     
-    // Calculate current step index
-    const currentStepIndex = plan.status === 'completed' ? expectedSteps.length : 
-      (plan.current_step ? expectedSteps.findIndex(step => step.key === plan.current_step) : -1);
+    // Convert enhanced steps to the format expected by the UI
+    const dynamicSteps = enhancedSteps.map((step, index) => ({
+      key: step.step_id,
+      name: step.name,
+      description: step.description
+    }));
     
-    // Separate intermediate steps (1-6) from final display step (7)
-    const intermediateTasks = plan.tasks ? plan.tasks.filter((task, index) => index < plan.tasks.length - 1) : [];
-    const finalTask = plan.tasks && plan.tasks.length > 0 ? plan.tasks[plan.tasks.length - 1] : null;
+    // Calculate current step index using actual dynamic steps
+    const currentStepIndex = plan.status === 'completed' ? dynamicSteps.length : 
+      (plan.current_step ? dynamicSteps.findIndex(step => step.key === plan.current_step) : -1);
     
-    // Handle undefined status gracefully
-    const planStatus = plan.status || 'unknown';
-    const isExecuting = planStatus === 'executing' || planStatus === 'draft' || planStatus === 'validated' || planStatus === 'completed';
+    // Handle status properly for backend data
+    const planStatus = plan.status;
+    const isCompleted = planStatus === 'completed';
+    const isFailed = planStatus === 'failed';
     const progressPercentage = Math.round((plan.progress || 0) * 100);
     
     return (
@@ -806,7 +869,7 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
             <span className="steps-toggle-title">
               🤖 AI Agent Execution Plan 
               <span className="steps-status">
-                {plan.status === 'completed' ? 'COMPLETED' : 'IN PROGRESS'}
+                {isCompleted ? 'COMPLETED' : isFailed ? 'FAILED' : 'IN PROGRESS'}
               </span>
             </span>
             <FiChevronDown className={`toggle-icon ${showStepsDetails ? 'rotated' : ''}`} />
@@ -814,7 +877,7 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
 
           {/* Horizontal Steps Timeline - Dynamic Display */}
           <div className="horizontal-steps-timeline">
-            {expectedSteps.map((step, index) => {
+            {dynamicSteps.map((step, index) => {
               const isCompleted = currentStepIndex > index;
               const isCurrent = currentStepIndex === index;
               
@@ -841,7 +904,7 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                   <div className="horizontal-step-label">{step.name}</div>
                   
                   {/* Show connector only if next step is also visible */}
-                  {index < expectedSteps.length - 1 && currentStepIndex > index && (
+                  {index < dynamicSteps.length - 1 && currentStepIndex > index && (
                     <div className={`step-connector ${isCompleted ? 'completed' : ''}`}></div>
                   )}
                 </div>
@@ -849,10 +912,10 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
             })}
             
             {/* Show remaining steps count - only for executing plans */}
-            {plan.status !== 'completed' && currentStepIndex < expectedSteps.length - 1 && (
+            {plan.status !== 'completed' && currentStepIndex < dynamicSteps.length - 1 && (
               <div className="remaining-steps-indicator">
                 <div className="remaining-steps-circle">
-                  <span className="remaining-count">+{expectedSteps.length - currentStepIndex - 1}</span>
+                  <span className="remaining-count">+{dynamicSteps.length - currentStepIndex - 1}</span>
                 </div>
                 <div className="remaining-steps-label">More steps</div>
               </div>
@@ -863,8 +926,8 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
           {showStepsDetails && selectedStepKey && (
             <div className="step-details-panel">
               {(() => {
-                const selectedStep = expectedSteps.find(s => s.key === selectedStepKey);
-                const stepIndex = expectedSteps.findIndex(s => s.key === selectedStepKey);
+                const selectedStep = dynamicSteps.find(s => s.key === selectedStepKey);
+                const stepIndex = dynamicSteps.findIndex(s => s.key === selectedStepKey);
                 const isCompleted = currentStepIndex > stepIndex;
                 const isCurrent = currentStepIndex === stepIndex;
                 
@@ -879,49 +942,71 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                     <p className="step-detail-description">{selectedStep?.description}</p>
                     
                     {/* Show specific details based on step - only for completed steps */}
-                    {isCompleted && selectedStepKey === '1_discover_schema' && plan.results?.['1_discover_schema'] && (
+                    {isCompleted && selectedStepKey && plan.results?.[selectedStepKey] && (
                       <div className="step-result-details">
-                        <p>✅ Database schema discovered successfully</p>
-                        <p>📊 Tables and columns identified for analysis</p>
-                      </div>
-                    )}
-                    
-                    {isCompleted && selectedStepKey === '2_semantic_analysis' && plan.results?.['2_semantic_analysis'] && (
-                      <div className="step-result-details">
-                        <p>🧠 Query intent understood</p>
-                        <p>🔍 Key entities extracted and analyzed</p>
-                      </div>
-                    )}
-                    
-                    {isCompleted && selectedStepKey === '3_similarity_matching' && plan.results?.['3_similarity_matching'] && (
-                      <div className="step-result-details">
-                        <p>🎯 Matching tables identified successfully</p>
-                        <p>📈 Relevance scores calculated</p>
-                      </div>
-                    )}
-                    
-                    {isCompleted && selectedStepKey === '5_query_generation' && plan.results?.['5_query_generation'] && (
-                      <div className="step-result-details">
-                        <p>✅ SQL query generated successfully</p>
-                        {plan.results['5_query_generation'].sql_query && (
-                          <div className="sql-preview">
-                            <code>{plan.results['5_query_generation'].sql_query.substring(0, 100)}...</code>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    
-                    {isCompleted && selectedStepKey === '6_query_execution' && plan.results?.['6_query_execution'] && (
-                      <div className="step-result-details">
-                        <p>✅ Query executed successfully</p>
-                        <p>📊 Data retrieved and processed</p>
-                      </div>
-                    )}
-                    
-                    {isCompleted && selectedStepKey === '7_visualization' && plan.results?.['7_visualization'] && (
-                      <div className="step-result-details">
-                        <p>📈 Visualizations created successfully</p>
-                        <p>🎨 Charts ready for display</p>
+                        {(() => {
+                          const stepResult = plan.results[selectedStepKey];
+                          const stepType = selectedStep?.name || 'Step';
+                          
+                          // Dynamic step result display based on step type
+                          if (selectedStep?.name.includes('Schema') || selectedStep?.name.includes('Discovery')) {
+                            return (
+                              <>
+                                <p>✅ Database schema discovered successfully</p>
+                                <p>📊 Tables and columns identified for analysis</p>
+                              </>
+                            );
+                          } else if (selectedStep?.name.includes('Semantic') || selectedStep?.name.includes('Understanding')) {
+                            return (
+                              <>
+                                <p>🧠 Query intent understood</p>
+                                <p>🔍 Key entities extracted and analyzed</p>
+                              </>
+                            );
+                          } else if (selectedStep?.name.includes('Matching') || selectedStep?.name.includes('Similarity')) {
+                            return (
+                              <>
+                                <p>🎯 Matching tables identified successfully</p>
+                                <p>📈 Relevance scores calculated</p>
+                              </>
+                            );
+                          } else if (selectedStep?.name.includes('SQL') || selectedStep?.name.includes('Generation')) {
+                            return (
+                              <>
+                                <p>✅ SQL query generated successfully</p>
+                                {stepResult?.sql_query && (
+                                  <div className="sql-preview">
+                                    <code>{stepResult.sql_query.substring(0, 100)}...</code>
+                                  </div>
+                                )}
+                              </>
+                            );
+                          } else if (selectedStep?.name.includes('Execution') || selectedStep?.name.includes('Retrieval')) {
+                            return (
+                              <>
+                                <p>✅ Query executed successfully</p>
+                                <p>📊 Data retrieved and processed</p>
+                                {stepResult?.data && Array.isArray(stepResult.data) && (
+                                  <p>📋 Retrieved {stepResult.data.length} rows</p>
+                                )}
+                              </>
+                            );
+                          } else if (selectedStep?.name.includes('Visualization') || selectedStep?.name.includes('Chart')) {
+                            return (
+                              <>
+                                <p>📈 Visualizations created successfully</p>
+                                <p>🎨 Charts ready for display</p>
+                              </>
+                            );
+                          } else {
+                            return (
+                              <>
+                                <p>✅ {stepType} completed successfully</p>
+                                <p>📊 Step processed and results generated</p>
+                              </>
+                            );
+                          }
+                        })()}
                       </div>
                     )}
                     
@@ -962,16 +1047,16 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
       )}
 
       {/* Collapsible Intermediate Steps (1-6) - HIDDEN FOR NEW HORIZONTAL UI */}
-      {false && intermediateTasks.length > 0 && (
+      {false && enhancedSteps.length > 0 && (
         <div className="plan-steps">
           <div className="steps-header" onClick={() => toggleStepExpansion(plan.plan_id)}>
             <p className="steps-title">
-              <strong>📋 Processing Details ({intermediateTasks.length} steps)</strong>
+              <strong>📋 Processing Details ({enhancedSteps.length} steps)</strong>
               {!expandedSteps[plan.plan_id] && (
                 <span className="steps-summary">
                   {' '}- {plan.status === 'completed' ? '✅ All steps completed' : 
                         plan.status === 'failed' ? '❌ Execution failed' :
-                        isExecuting ? `⚙️ ${progressPercentage}% complete` : '⏳ Pending'}
+                        `⚙️ ${progressPercentage}% complete`}
                 </span>
               )}
             </p>
@@ -982,31 +1067,20 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
           
           {expandedSteps[plan.plan_id] && (
             <div className="steps-content">
-              {intermediateTasks.map((task: any, index: number) => {
-          // Fix the result key mapping to match backend format
-          const taskTypeMap: { [key: string]: string } = {
-            'schema_discovery': 'discover_schema',
-            'semantic_understanding': 'semantic_analysis', 
-            'similarity_matching': 'similarity_matching',
-            'user_interaction': 'user_verification',
-            'query_generation': 'query_generation',
-            'execution': 'query_execution',
-            'visualization': 'visualization'
-          };
+              {enhancedSteps.map((step: PlanStep, index: number) => {
+          // Use the step's output_data directly from enhanced steps
+          const stepResult = step.output_data;
           
-          const resultKey = `${index + 1}_${taskTypeMap[task.tool_type] || task.tool_type}`;
-          const stepResult = plan.results ? plan.results[resultKey] : null;
-          
-          console.log(`Step ${index + 1}: ${task.task_type} -> ${resultKey}`, stepResult);
+          console.log(`Step ${index + 1}: ${step.task_type} -> ${step.step_id}`, stepResult);
           
           return (
-            <div key={`${task.task_type}_${index}`} className="plan-step">
-              <div className={`step-status-icon ${stepResult?.status === 'failed' ? 'failed' : 'completed'}`}>
-                {stepResult?.status === 'failed' ? '!' : '✓'}
+            <div key={`${step.task_type}_${index}`} className="plan-step">
+              <div className={`step-status-icon ${step.status === 'error' ? 'failed' : 'completed'}`}>
+                {step.status === 'error' ? '!' : '✓'}
               </div>
               <div className="step-details">
                 <div className="step-name">
-                  {index + 1}. {task.task_type.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())}
+                  {index + 1}. {step.name}
                 </div>
                 
                 {/* Show step results */}
@@ -1191,7 +1265,7 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
       )}
 
       {/* Enhanced Results & Visualization Section */}
-      {finalTask && (
+      {enhancedSteps.length > 0 && (plan.status === 'completed' || plan.status === 'failed') && (
         <div className="results-visualization-container">
           <div className="results-header">
             <div className="results-icon">📊</div>
@@ -1202,27 +1276,27 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
           </div>
           <div className="results-content">
             {(() => {
-              // Fix the result key mapping for final step
-              const taskTypeMap: { [key: string]: string } = {
-                'schema_discovery': 'discover_schema',
-                'semantic_understanding': 'semantic_analysis', 
-                'similarity_matching': 'similarity_matching',
-                'user_interaction': 'user_verification',
-                'query_generation': 'query_generation',
-                'execution': 'query_execution',
-                'visualization': 'visualization'
-              };
+              // Use enhanced steps for better result mapping
+              const lastStep = enhancedSteps[enhancedSteps.length - 1];
+              let stepResult = lastStep?.output_data;
               
-              const finalIndex = plan.tasks.length - 1;
-              const resultKey = `${finalIndex + 1}_${taskTypeMap[finalTask.tool_type] || finalTask.tool_type}`;
-              let stepResult = plan.results?.[resultKey];
+              // If no result in last step, search for execution results
+              if (!stepResult) {
+                console.log('No result in last step, searching for execution results...');
+                for (const step of enhancedSteps) {
+                  if (step.task_type === 'execution' && step.output_data) {
+                    console.log(`Found execution results in ${step.step_id}:`, step.output_data);
+                    stepResult = step.output_data;
+                    break;
+                  }
+                }
+              }
               
-              // NEW: Fallback - search for charts in any result if not found in expected key
-              if (!stepResult?.charts) {
-                console.log('Charts not found in expected key, searching all results...');
+              // Additional fallback: search raw results for data
+              if (!stepResult) {
                 for (const [key, result] of Object.entries(plan.results || {})) {
-                  if (result && typeof result === 'object' && (result as any).charts) {
-                    console.log(`Found charts in ${key}:`, (result as any).charts);
+                  if (result && typeof result === 'object' && ((result as any).data || (result as any).charts)) {
+                    console.log(`Found results in ${key}:`, result);
                     stepResult = result as any;
                     break;
                   }
@@ -1230,14 +1304,14 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
               }
               
               // Debug logging
-              console.log('Final step debugging:', {
-                finalIndex,
-                finalTaskType: finalTask.tool_type,
-                resultKey,
+              console.log('Results debugging:', {
+                lastStepId: lastStep?.step_id,
+                lastStepType: lastStep?.task_type,
                 stepResult,
                 allResultKeys: Object.keys(plan.results || {}),
-                charts: stepResult?.charts,
-                chartsLength: stepResult?.charts?.length
+                hasData: stepResult?.data,
+                hasCharts: stepResult?.charts,
+                dataLength: Array.isArray(stepResult?.data) ? stepResult?.data?.length : 'not array'
               });
               
               // NEW: Enhanced debugging for chart detection
@@ -1276,7 +1350,77 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                     </div>
                   ) : stepResult ? (
                     <div>
-                      {/* Show visualization */}
+                      {/* Debug: Log what we have in stepResult */}
+                      {(() => {
+                        console.log('=== TABLE RENDERING DEBUG ===');
+                        console.log('stepResult:', stepResult);
+                        console.log('stepResult.results exists:', !!stepResult.results);
+                        console.log('stepResult.results is array:', Array.isArray(stepResult.results));
+                        console.log('stepResult.results length:', stepResult.results?.length);
+                        console.log('stepResult.data exists:', !!stepResult.data);
+                        console.log('stepResult keys:', Object.keys(stepResult));
+                        console.log('=== END DEBUG ===');
+                        return null; // IIFE that returns null for React
+                      })()}
+                      
+                      {/* Show Table Data First (Primary for data queries) */}
+                      {stepResult.results && Array.isArray(stepResult.results) && stepResult.results.length > 0 ? (
+                        <div className="table-results-container">
+                          <div className="table-header">
+                            <h4 className="table-title">Query Results ({stepResult.results.length} rows)</h4>
+                            <p className="table-description">Data retrieved from your query</p>
+                          </div>
+                          <div className="table-container">
+                            <table className="results-table">
+                              <thead>
+                                <tr>
+                                  {Object.keys(stepResult.results[0] || {}).map((column) => (
+                                    <th key={column} className="table-header-cell">{column}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {stepResult.results.slice(0, 10).map((row: any, rowIndex: number) => (
+                                  <tr key={rowIndex} className="table-row">
+                                    {Object.values(row).map((value: any, colIndex: number) => (
+                                      <td key={colIndex} className="table-cell">
+                                        {value !== null && value !== undefined ? String(value) : '-'}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            {stepResult.results.length > 10 && (
+                              <div className="table-footer">
+                                <p className="table-pagination">Showing first 10 of {stepResult.results.length} rows</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="no-table-data">
+                          {(() => {
+                            console.log('No table data to display - stepResult.results not found or empty');
+                            console.log('Available stepResult keys:', Object.keys(stepResult));
+                            return null;
+                          })()}
+                        </div>
+                      )}
+
+                      {/* Show SQL Query if available */}
+                      {stepResult.sql_query && (
+                        <div className="sql-display-container">
+                          <div className="sql-header">
+                            <h4 className="sql-title">Generated SQL Query</h4>
+                          </div>
+                          <div className="sql-content">
+                            <pre className="sql-code">{stepResult.sql_query}</pre>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Show visualizations if available */}
                       {stepResult.chart_config && (
                         <div>
                           <p><strong>Visualization Created:</strong></p>
@@ -1371,9 +1515,10 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
         </div>
       )}
 
-      {plan.estimated_cost && plan.estimated_cost > 0 && (
-        <div className="plan-cost">
-          <strong>Estimated cost:</strong> ${plan.estimated_cost.toFixed(3)}
+      {/* Optional: Show execution time if available */}
+      {plan.estimated_execution_time && (
+        <div className="plan-time">
+          <strong>Execution time:</strong> {plan.estimated_execution_time}
         </div>
       )}
     </div>
