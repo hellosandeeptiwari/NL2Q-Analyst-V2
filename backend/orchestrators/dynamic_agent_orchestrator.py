@@ -643,15 +643,38 @@ class DynamicAgentOrchestrator:
                     # Fall back to chunk-derived metadata if retriever isn't available
                     try:
                         table_details = await self.pinecone_store.get_table_details(table_name)
-                        for chunk_type, chunk_data in table_details.get('chunks', {}).items():
-                            if chunk_type == 'column':
-                                col_meta = chunk_data.get('metadata', {})
-                                columns.append({
-                                    "name": col_meta.get("column_name", "unknown"),
-                                    "data_type": col_meta.get("data_type", "unknown"),
-                                    "nullable": True,
-                                    "description": None
-                                })
+                        
+                        # Use enhanced column extraction from get_table_details
+                        extracted_columns = table_details.get('columns', [])
+                        for col_name in extracted_columns:
+                            columns.append({
+                                "name": col_name,
+                                "data_type": "unknown",
+                                "nullable": True,
+                                "description": None
+                            })
+                        
+                        # Fallback: check chunks manually if no columns extracted
+                        if not extracted_columns:
+                            for chunk_type, chunk_data in table_details.get('chunks', {}).items():
+                                if chunk_type in ['column_group', 'column']:
+                                    col_meta = chunk_data.get('metadata', {})
+                                    # Handle both direct column info and column group info
+                                    if 'columns' in col_meta:
+                                        for col_name in col_meta['columns']:
+                                            columns.append({
+                                                "name": col_name,
+                                                "data_type": "unknown", 
+                                                "nullable": True,
+                                                "description": None
+                                            })
+                                    elif 'column_name' in col_meta:
+                                        columns.append({
+                                            "name": col_meta.get("column_name", "unknown"),
+                                            "data_type": col_meta.get("data_type", "unknown"),
+                                            "nullable": True,
+                                            "description": None
+                                        })
                     except Exception:
                         # As a last resort leave columns empty and let later
                         # steps handle column discovery per-table
@@ -1549,7 +1572,7 @@ Generate Python code that:
 """
 
             response = await client.chat.completions.create(
-                model="gpt-4-turbo-preview",
+                model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -1845,18 +1868,21 @@ Generate Python code that:
                         # Get detailed schema from Pinecone metadata
                         table_details = await self.pinecone_store.get_table_details(table_name)
                         
-                        # Extract column information from the chunks
-                        columns = []
-                        for chunk_type, chunk_data in table_details.get('chunks', {}).items():
-                            if chunk_type == 'column_group':
-                                chunk_metadata = chunk_data.get('metadata', {})
-                                if 'columns' in chunk_metadata:
-                                    # Get column names from metadata
-                                    for col_name in chunk_metadata['columns']:
-                                        columns.append(col_name)
-                            elif chunk_type == 'table_overview':
-                                # Could also extract column info from overview content if needed
-                                pass
+                        # Extract column information from the enhanced table details
+                        columns = table_details.get('columns', [])
+                        
+                        if not columns:
+                            # Fallback: Extract from chunks manually if columns not already extracted
+                            for chunk_type, chunk_data in table_details.get('chunks', {}).items():
+                                if chunk_type == 'column_group':
+                                    chunk_metadata = chunk_data.get('metadata', {})
+                                    if 'columns' in chunk_metadata:
+                                        # Get column names from metadata
+                                        for col_name in chunk_metadata['columns']:
+                                            columns.append(col_name)
+                                elif chunk_type == 'table_overview':
+                                    # Could also extract column info from overview content if needed
+                                    pass
                         
                         # If no columns found in metadata, parse from content
                         if not columns and 'column_group' in table_details.get('chunks', {}):

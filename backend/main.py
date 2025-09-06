@@ -261,35 +261,69 @@ def schema():
     return JSONResponse(schema_cache)
 
 @app.get("/refresh-schema")
-def refresh_schema():
-    """Force refresh the schema cache from database"""
-    global schema_cache
+async def refresh_schema():
+    """Force refresh the schema cache from Pinecone vector store"""
+    global schema_cache, pinecone_store
     try:
-        print("🔄 Manual schema refresh requested...")
+        print("🔄 Manual schema refresh requested from Pinecone...")
         
-        # Try to load schema directly
-        adapter = get_adapter()
-        adapter.connect()
+        # Initialize Pinecone store if not already done
+        if not pinecone_store:
+            from backend.pinecone_schema_vector_store import PineconeSchemaVectorStore
+            pinecone_store = PineconeSchemaVectorStore()
         
-        # Use direct Snowflake query
-        cur = adapter.conn.cursor()
-        cur.execute("""
-            SELECT TABLE_NAME 
-            FROM INFORMATION_SCHEMA.TABLES 
-            WHERE TABLE_SCHEMA = CURRENT_SCHEMA()
-        """)
-        tables = [row[0] for row in cur.fetchall()]
+        # Get all unique table names from Pinecone
+        dummy_vector = [0.0] * 3072
+        all_results = pinecone_store.index.query(
+            vector=dummy_vector,
+            filter={},  # No filter to get all tables
+            top_k=1000,  # Get many results
+            include_metadata=True
+        )
         
-        # Create simplified schema cache
-        schema_cache = {table: {"column1": "varchar"} for table in tables}
+        # Extract unique table names
+        table_names = set()
+        for match in all_results.matches:
+            table_name = match.metadata.get("table_name")
+            if table_name:
+                table_names.add(table_name)
         
-        print(f"✅ Loaded {len(schema_cache)} tables directly")
+        print(f"📋 Found {len(table_names)} unique tables in Pinecone")
+        
+        # Build schema cache with actual column information from Pinecone
+        schema_cache = {}
+        for table_name in table_names:
+            try:
+                table_details = await pinecone_store.get_table_details(table_name)
+                columns = table_details.get('columns', [])
+                
+                if columns:
+                    # Create column dict with placeholder types
+                    column_dict = {col: "varchar" for col in columns}
+                    schema_cache[table_name] = column_dict
+                    print(f"✅ Added {table_name}: {len(columns)} columns")
+                else:
+                    # Fallback if no columns found
+                    schema_cache[table_name] = {"column1": "varchar"}
+                    print(f"⚠️ Added {table_name}: placeholder columns (no detailed schema found)")
+                    
+            except Exception as e:
+                print(f"❌ Failed to get schema for {table_name}: {e}")
+                schema_cache[table_name] = {"column1": "varchar"}
+        
+        print(f"✅ Loaded {len(schema_cache)} tables with detailed column information from Pinecone")
+        
+        # Show sample of what we loaded
+        nba_tables = [name for name in schema_cache.keys() if 'nba' in name.lower() or 'NBA' in name]
+        target_tables = [name for name in schema_cache.keys() if 'Final_NBA_Output' in name]
         
         return {
             "status": "success", 
             "tables_count": len(schema_cache),
             "sample_tables": list(schema_cache.keys())[:5],
-            "azure_tables": [t for t in tables if 'azure' in t.lower() or 'analytics' in t.lower()]
+            "nba_tables": nba_tables,
+            "target_tables": target_tables,
+            "sample_columns": {table: list(schema_cache[table].keys())[:5] for table in list(schema_cache.keys())[:3]}
         }
     except Exception as e:
         print(f"❌ Schema refresh failed: {e}")

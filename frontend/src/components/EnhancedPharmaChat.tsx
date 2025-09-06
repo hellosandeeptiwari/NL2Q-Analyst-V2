@@ -499,12 +499,15 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
     const intermediateTasks = plan.tasks ? plan.tasks.filter((task, index) => index < plan.tasks.length - 1) : [];
     const finalTask = plan.tasks && plan.tasks.length > 0 ? plan.tasks[plan.tasks.length - 1] : null;
     
+    // Handle undefined status gracefully
+    const planStatus = plan.status || 'unknown';
+    
     return (
     <div className="plan-execution">
       <div className="plan-header">
         <h4 className="plan-title">AI Agent Execution Plan</h4>
-        <span className={`plan-status ${plan.status.toLowerCase()}`}>
-          {plan.status.toUpperCase()}
+        <span className={`plan-status ${planStatus.toLowerCase()}`}>
+          {planStatus.toUpperCase()}
         </span>
       </div>
       

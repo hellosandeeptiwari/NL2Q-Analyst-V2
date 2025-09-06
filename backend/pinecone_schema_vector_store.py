@@ -701,6 +701,8 @@ Data Analytics Focus: {self._get_analytics_focus(table_name)}"""
         return ranked_tables[:top_k]
 
     async def get_table_details(self, table_name: str) -> Dict[str, Any]:
+        import json
+        
         # Use dummy vector for filter-only query (Pinecone requires either vector or ID)
         dummy_vector = [0.0] * 3072  # text-embedding-3-large dimension
         results = self.index.query(
@@ -709,8 +711,37 @@ Data Analytics Focus: {self._get_analytics_focus(table_name)}"""
             top_k=20, 
             include_metadata=True
         )
-        table_details = {"table_name": table_name, "chunks": {}, "metadata": {}}
+        
+        table_details = {"table_name": table_name, "chunks": {}, "metadata": {}, "columns": []}
+        all_columns = []
+        
         for match in results.matches:
             chunk_type = match.metadata.get("chunk_type")
-            table_details["chunks"][chunk_type] = {"metadata": match.metadata}
+            metadata = match.metadata
+            
+            # Process column_group chunks to extract actual columns
+            if chunk_type == "column_group":
+                # Check if columns are in direct metadata
+                columns = metadata.get("columns", [])
+                
+                # If not found, check nested metadata JSON
+                if not columns and "metadata" in metadata:
+                    try:
+                        nested_metadata = json.loads(metadata["metadata"])
+                        columns = nested_metadata.get("columns", [])
+                        column_group = nested_metadata.get("column_group", "unknown")
+                        print(f"📋 Extracted {len(columns)} columns from group '{column_group}': {columns}")
+                    except (json.JSONDecodeError, TypeError) as e:
+                        print(f"❌ Failed to parse nested metadata: {e}")
+                        columns = []
+                
+                if columns:
+                    all_columns.extend(columns)
+            
+            table_details["chunks"][chunk_type] = {"metadata": metadata}
+        
+        # Store all found columns
+        table_details["columns"] = all_columns
+        print(f"✅ Total columns found for {table_name}: {len(all_columns)} - {all_columns}")
+        
         return table_details
