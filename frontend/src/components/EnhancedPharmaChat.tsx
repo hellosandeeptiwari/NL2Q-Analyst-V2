@@ -8,6 +8,9 @@ import {
   FiPlus, FiMoreHorizontal, FiDownload, FiShare2
 } from 'react-icons/fi';
 import Plot from 'react-plotly.js';
+import EnhancedTable from './EnhancedTable';
+import ChartCustomizer from './ChartCustomizer';
+import { downloadChartAsPNG, downloadChartAsPDF, downloadChartAsSVG, applyChartColors, convertChartType } from '../utils/chartUtils';
 
 // Types
 interface UserProfile {
@@ -326,6 +329,11 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
     schema: '',
     warehouse: ''
   });
+
+  // Chart customization state
+  const [chartCustomizations, setChartCustomizations] = useState<{[key: string]: any}>({});
+  const [customChartTypes, setCustomChartTypes] = useState<{[key: string]: string}>({});
+  const [customColors, setCustomColors] = useState<{[key: string]: string[]}>({});
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -1279,6 +1287,7 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
               // Use enhanced steps for better result mapping
               const lastStep = enhancedSteps[enhancedSteps.length - 1];
               let stepResult = lastStep?.output_data;
+              const stepId = lastStep?.step_id || 'unknown_step'; // Define stepId here
               
               // If no result in last step, search for execution results
               if (!stepResult) {
@@ -1363,41 +1372,14 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                         return null; // IIFE that returns null for React
                       })()}
                       
-                      {/* Show Table Data First (Primary for data queries) */}
+                      {/* Show Enhanced Table Data (Primary for data queries) */}
                       {stepResult.results && Array.isArray(stepResult.results) && stepResult.results.length > 0 ? (
-                        <div className="table-results-container">
-                          <div className="table-header">
-                            <h4 className="table-title">Query Results ({stepResult.results.length} rows)</h4>
-                            <p className="table-description">Data retrieved from your query</p>
-                          </div>
-                          <div className="table-container">
-                            <table className="results-table">
-                              <thead>
-                                <tr>
-                                  {Object.keys(stepResult.results[0] || {}).map((column) => (
-                                    <th key={column} className="table-header-cell">{column}</th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {stepResult.results.slice(0, 10).map((row: any, rowIndex: number) => (
-                                  <tr key={rowIndex} className="table-row">
-                                    {Object.values(row).map((value: any, colIndex: number) => (
-                                      <td key={colIndex} className="table-cell">
-                                        {value !== null && value !== undefined ? String(value) : '-'}
-                                      </td>
-                                    ))}
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                            {stepResult.results.length > 10 && (
-                              <div className="table-footer">
-                                <p className="table-pagination">Showing first 10 of {stepResult.results.length} rows</p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
+                        <EnhancedTable 
+                          data={stepResult.results}
+                          title="Query Results"
+                          description="Data retrieved from your query"
+                          maxHeight="500px"
+                        />
                       ) : (
                         <div className="no-table-data">
                           {(() => {
@@ -1438,56 +1420,75 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                             <p className="charts-description">Interactive charts created from your data analysis</p>
                           </div>
                           <div className="charts-grid">
-                            {stepResult.charts.map((chart: any, idx: number) => (
-                              <div key={idx} className="enhanced-chart-card">
-                                <div className="chart-card-header">
-                                  <div className="chart-type-badge">{chart.type}</div>
-                                  <h5 className="chart-title">{chart.title || 'Data Visualization'}</h5>
-                                </div>
-                                
-                                <div className="chart-content">
-                                  {/* Render matplotlib charts (base64 images) */}
-                                  {chart.type === 'matplotlib' && chart.data && (
-                                    <img 
-                                      src={chart.data} 
-                                      alt={chart.title || 'Visualization'}
-                                      className="chart-image"
+                            {stepResult.charts.map((chart: any, idx: number) => {
+                              const chartKey = `${stepId}_${idx}`;
+                              const customizedChart = getCustomizedChartData(chart, idx, stepId);
+                              const currentChartType = customChartTypes[chartKey] || chart.type;
+                              const currentColorScheme = customColors[chartKey] || ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
+                              
+                              return (
+                                <div key={idx} className="enhanced-chart-card">
+                                  <div className="chart-card-header">
+                                    <div className="left-section">
+                                      <div className="chart-type-badge">{currentChartType}</div>
+                                      <h5 className="chart-title">{chart.title || 'Data Visualization'}</h5>
+                                    </div>
+                                    
+                                    {/* Chart Customizer */}
+                                    <ChartCustomizer
+                                      chartData={customizedChart}
+                                      onChartTypeChange={(type) => handleChartTypeChange(idx, stepId, type)}
+                                      onColorSchemeChange={(colors) => handleColorSchemeChange(idx, stepId, colors)}
+                                      onDownloadChart={(format) => handleDownloadChart(idx, stepId, format)}
+                                      currentChartType={currentChartType}
+                                      currentColors={currentColorScheme}
                                     />
-                                  )}
+                                  </div>
                                   
-                                  {/* Render plotly charts */}
-                                  {chart.type === 'plotly' && chart.data && (
-                                    <div className="plotly-chart-container">
-                                      <Plot
-                                        data={chart.data.data || []}
-                                        layout={{
-                                          ...(chart.data.layout || {}),
-                                          autosize: true,
-                                          margin: { t: 40, r: 20, b: 40, l: 40 },
-                                          paper_bgcolor: 'rgba(0,0,0,0)',
-                                          plot_bgcolor: 'rgba(0,0,0,0)'
-                                        }}
-                                        config={{
-                                          displayModeBar: true,
-                                          responsive: true,
-                                          displaylogo: false,
-                                          modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
-                                        }}
-                                        style={{width: '100%', height: '100%'}}
+                                  <div className="chart-content" data-chart-id={chartKey}>
+                                    {/* Render matplotlib charts (base64 images) */}
+                                    {chart.type === 'matplotlib' && chart.data && (
+                                      <img 
+                                        src={chart.data} 
+                                        alt={chart.title || 'Visualization'}
+                                        className="chart-image"
                                       />
-                                    </div>
-                                  )}
-                                  
-                                  {/* Fallback for other chart types */}
-                                  {!['matplotlib', 'plotly'].includes(chart.type) && (
-                                    <div className="chart-fallback">
-                                      <div className="fallback-icon">📊</div>
-                                      <p className="fallback-text">Chart data available ({chart.type})</p>
-                                    </div>
-                                  )}
+                                    )}
+                                    
+                                    {/* Render plotly charts */}
+                                    {chart.type === 'plotly' && chart.data && (
+                                      <div className="plotly-chart-container">
+                                        <Plot
+                                          data={customizedChart.data?.data || chart.data.data || []}
+                                          layout={{
+                                            ...(customizedChart.data?.layout || chart.data.layout || {}),
+                                            autosize: true,
+                                            margin: { t: 40, r: 20, b: 40, l: 40 },
+                                            paper_bgcolor: 'rgba(0,0,0,0)',
+                                            plot_bgcolor: 'rgba(0,0,0,0)'
+                                          }}
+                                          config={{
+                                            displayModeBar: true,
+                                            responsive: true,
+                                            displaylogo: false,
+                                            modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
+                                          }}
+                                          style={{width: '100%', height: '100%'}}
+                                        />
+                                      </div>
+                                    )}
+                                    
+                                    {/* Fallback for other chart types */}
+                                    {!['matplotlib', 'plotly'].includes(chart.type) && (
+                                      <div className="chart-fallback">
+                                        <div className="fallback-icon">📊</div>
+                                        <p className="fallback-text">Chart data available ({chart.type})</p>
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       )}
@@ -1523,6 +1524,66 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
       )}
     </div>
     );
+  };
+
+  // Chart customization handlers
+  const handleChartTypeChange = (chartIndex: number, stepId: string, newType: string) => {
+    const chartKey = `${stepId}_${chartIndex}`;
+    setCustomChartTypes(prev => ({
+      ...prev,
+      [chartKey]: newType
+    }));
+  };
+
+  const handleColorSchemeChange = (chartIndex: number, stepId: string, colors: string[]) => {
+    const chartKey = `${stepId}_${chartIndex}`;
+    setCustomColors(prev => ({
+      ...prev,
+      [chartKey]: colors
+    }));
+  };
+
+  const handleDownloadChart = (chartIndex: number, stepId: string, format: 'png' | 'pdf' | 'svg') => {
+    const chartKey = `${stepId}_${chartIndex}`;
+    const chartElement = document.querySelector(`[data-chart-id="${chartKey}"]`) as HTMLElement;
+    
+    if (chartElement) {
+      const filename = `pharma_chart_${stepId}_${chartIndex}`;
+      
+      switch (format) {
+        case 'png':
+          downloadChartAsPNG(chartElement, filename);
+          break;
+        case 'pdf':
+          downloadChartAsPDF(chartElement, filename);
+          break;
+        case 'svg':
+          downloadChartAsSVG(chartElement, filename);
+          break;
+      }
+    } else {
+      console.error('Chart element not found for download');
+    }
+  };
+
+  const getCustomizedChartData = (chart: any, chartIndex: number, stepId: string) => {
+    const chartKey = `${stepId}_${chartIndex}`;
+    const customType = customChartTypes[chartKey];
+    const customColorScheme = customColors[chartKey];
+    
+    let customizedChart = chart;
+    
+    // Apply custom colors if available
+    if (customColorScheme && customColorScheme.length > 0) {
+      customizedChart = applyChartColors(customizedChart, customColorScheme);
+    }
+    
+    // Apply custom chart type if available
+    if (customType && customType !== chart.type) {
+      customizedChart = convertChartType(customizedChart, customType);
+    }
+    
+    return customizedChart;
   };
 
   // Render message
