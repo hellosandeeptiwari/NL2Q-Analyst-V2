@@ -77,11 +77,9 @@ class DynamicAgentOrchestrator:
     async def _ensure_initialized(self):
         """Ensure database and Pinecone are initialized (lazy initialization)"""
         if not self.db_connector:
-            print("🔌 Initializing database connector...")
             await self._initialize_database_connector()
             
         if not self.pinecone_store:
-            print("🔍 Initializing Pinecone vector store...")
             await self._initialize_vector_store()
             
     async def _initialize_database_connector(self):
@@ -1618,6 +1616,9 @@ Generate Python code that:
                 'sns': sns,
                 'np': np,
                 'data': data,
+                'json': json,  # Add json module
+                'io': io,      # Add io module
+                'base64': base64,  # Add base64 module
                 '__builtins__': {
                     'len': len,
                     'str': str,
@@ -1634,7 +1635,32 @@ Generate Python code that:
                     'sum': sum,
                     'abs': abs,
                     'round': round,
-                    '__import__': __import__  # Add this to allow imports
+                    'isinstance': isinstance,
+                    'type': type,
+                    'hasattr': hasattr,
+                    'getattr': getattr,
+                    'setattr': setattr,
+                    '__import__': __import__,
+                    # Add standard exception classes
+                    'Exception': Exception,
+                    'ValueError': ValueError,
+                    'TypeError': TypeError,
+                    'KeyError': KeyError,
+                    'IndexError': IndexError,
+                    'AttributeError': AttributeError,
+                    'RuntimeError': RuntimeError,
+                    'ImportError': ImportError,
+                    'NameError': NameError,
+                    'ZeroDivisionError': ZeroDivisionError,
+                    # Add commonly used functions
+                    'sorted': sorted,
+                    'reversed': reversed,
+                    'any': any,
+                    'all': all,
+                    'bool': bool,
+                    'tuple': tuple,
+                    'set': set,
+                    'frozenset': frozenset
                 }
             }
             
@@ -1651,6 +1677,7 @@ Generate Python code that:
                 # Extract results
                 charts = []
                 chart_types = []
+                processed_objects = set()  # Track processed objects to prevent duplicates
 
                 # Build a combined namespace to scan for figures (globals + locals)
                 combined_ns = {}
@@ -1698,6 +1725,12 @@ Generate Python code that:
                             continue
                         if _is_plotly_fig(obj):
                             try:
+                                # Check if we've already processed this object
+                                obj_id = id(obj)
+                                if obj_id in processed_objects:
+                                    continue
+                                processed_objects.add(obj_id)
+                                
                                 # Convert plotly figure to dict and clean numpy arrays
                                 chart_dict = obj.to_dict()
                                 # Clean numpy arrays and other non-serializable objects
@@ -1750,6 +1783,12 @@ Generate Python code that:
                     try:
                         if _is_plotly_fig(var_value):
                             try:
+                                # Check if we've already processed this object
+                                obj_id = id(var_value)
+                                if obj_id in processed_objects:
+                                    continue
+                                processed_objects.add(obj_id)
+                                
                                 # Convert plotly figure to dict and clean numpy arrays
                                 chart_dict = var_value.to_dict()
                                 # Clean numpy arrays and other non-serializable objects
