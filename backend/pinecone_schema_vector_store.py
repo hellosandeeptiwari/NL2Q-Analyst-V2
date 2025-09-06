@@ -188,16 +188,20 @@ class PineconeSchemaVectorStore:
         column_types = [f"{col}: {info.get('data_type', 'unknown')}" for col, info in columns.items()] if columns else []
         
         # Create rich table context - NO DATA LOSS, just split if needed
+        row_count = table_info.get('row_count')
+        row_count_text = f"Row Count: {row_count:,} rows" if isinstance(row_count, int) else f"Row Count: {row_count}"
+        
         table_chunk_content = f"""Table: {table_name}
 Schema: {table_schema}
 Description: {table_description}
 Total Columns: {len(column_names)}
+{row_count_text}
 Column Names: {', '.join(column_names)}
 Column Types: {', '.join(column_types)}
 Business Domain: {self._extract_business_domain(table_name)}
 Data Category: {self._categorize_table(table_name, column_names)}
 Table Purpose: {self._infer_table_purpose(table_name, column_names)}
-Row Count: {table_info.get('row_count', 'unknown')}"""
+Table Size: {"Large table" if isinstance(row_count, int) and row_count > 1000000 else "Medium table" if isinstance(row_count, int) and row_count > 10000 else "Small table" if isinstance(row_count, int) else "Unknown size"}"""
         
         # Split table overview if it's too large
         overview_parts = self._split_content_by_tokens(table_chunk_content)
@@ -214,6 +218,7 @@ Row Count: {table_info.get('row_count', 'unknown')}"""
                     "business_domain": self._extract_business_domain(table_name),
                     "data_category": self._categorize_table(table_name, column_names),
                     "row_count": table_info.get('row_count'),
+                    "table_size_category": "large" if isinstance(row_count, int) and row_count > 1000000 else "medium" if isinstance(row_count, int) and row_count > 10000 else "small" if isinstance(row_count, int) else "unknown",
                     "part": i + 1 if len(overview_parts) > 1 else None
                 }
             ))
@@ -617,18 +622,26 @@ Data Analytics Focus: {self._get_analytics_focus(table_name)}"""
     async def _get_table_info(self, db_adapter, table_name: str) -> Dict[str, Any]:
         """Get table information with optimized queries"""
         try:
-            # Run both queries concurrently for faster execution
+            # Check if we should include row counts from environment settings
+            skip_row_counts = self.SKIP_ROW_COUNTS
+            
+            # Always get column information with proper Snowflake quoting
+            qualified_table_name = f'"COMMERCIAL_AI"."ENHANCED_NBA"."{table_name}"'
             columns_task = asyncio.create_task(
-                asyncio.to_thread(db_adapter.run, f"DESCRIBE TABLE {table_name}", False)
+                asyncio.to_thread(db_adapter.run, f"DESCRIBE TABLE {qualified_table_name}", False)
             )
             
-            # Skip row count for faster indexing - it's not critical for schema matching
-            # count_task = asyncio.create_task(
-            #     asyncio.to_thread(db_adapter.run, f"SELECT COUNT(*) FROM {table_name} LIMIT 1", False)
-            # )
+            # Conditionally get row count based on settings
+            count_task = None
+            if not skip_row_counts:
+                count_task = asyncio.create_task(
+                    asyncio.to_thread(db_adapter.run, f"SELECT COUNT(*) FROM {qualified_table_name}", False)
+                )
             
             columns_result = await columns_task
-            # count_result = await count_task
+            count_result = None
+            if count_task:
+                count_result = await count_task
             
             columns = {}
             if not columns_result.error:
@@ -642,10 +655,13 @@ Data Analytics Focus: {self._get_analytics_focus(table_name)}"""
                         "description": None
                     }
             
-            # Set row count to None for faster processing
+            # Get row count if enabled and query succeeded
             row_count = None
-            # if not count_result.error and count_result.rows:
-            #     row_count = count_result.rows[0][0]
+            if count_result and not count_result.error and count_result.rows:
+                row_count = count_result.rows[0][0]
+            elif not skip_row_counts:
+                # If row count was requested but failed, set to "Unknown"
+                row_count = "Unknown"
             
             return {
                 "name": table_name,
