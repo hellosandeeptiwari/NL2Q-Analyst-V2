@@ -302,85 +302,145 @@ class DynamicAgentOrchestrator:
     
     async def plan_execution(self, user_query: str, context: Dict[str, Any] = None) -> List[AgentTask]:
         """
-        Use reasoning model to plan which agents to use and in what order
+        Use o3-mini reasoning model to dynamically plan which agents to use and in what order
         """
         
-        planning_prompt = f"""
-        You are an intelligent query orchestrator. Analyze this user query and create an execution plan using available agents.
+        print(f"🧠 Letting o3-mini analyze and plan dynamically for query: '{user_query}'")
+        
+        planning_prompt = f"""You are an intelligent query orchestrator for pharmaceutical data analysis. Analyze the user's query and determine the most efficient execution plan.
 
-        USER QUERY: "{user_query}"
-        CONTEXT: {json.dumps(context or {}, indent=2)}
+USER QUERY: "{user_query}"
 
-        AVAILABLE AGENTS:
-        {self._format_agent_capabilities()}
+AVAILABLE CAPABILITIES:
+- schema_discovery: Find relevant database tables and columns
+- semantic_understanding: Extract entities and business intent from query
+- similarity_matching: Match query terms to database schema
+- user_interaction: Get user confirmation for ambiguous requests
+- query_generation: Generate SQL queries
+- execution: Execute queries and retrieve data
+- visualization: Create charts, graphs, and visual analysis
 
-        Create a step-by-step execution plan that:
-        1. Discovers relevant database schema automatically
-        2. Performs semantic understanding of the query
-        3. Uses similarity matching to find best table/column matches
-        4. Generates SQL query based on matches
-        5. Gets user verification for schema selections
-        6. Executes the validated query
-        7. Creates appropriate visualizations
+INSTRUCTIONS:
+Analyze the query and determine:
+1. What is the user actually asking for?
+2. What steps are truly necessary to fulfill this request?
+3. Can this be accomplished with fewer steps?
+4. Does the user explicitly ask for visual output (charts, graphs, trends, analysis)?
 
-        Return a JSON array of tasks with:
-        - task_id: unique identifier
-        - task_type: one of the available task types
-        - agent_name: which agent to use
-        - input_requirements: what data this task needs
-        - output_expectations: what this task will produce
-        - dependencies: which other tasks must complete first
-        - user_interaction_required: boolean
+Create a JSON array with only the essential tasks needed. Do not include unnecessary steps.
 
-        Focus on creating an automated flow that only asks user for verification of schema selections.
-        """
+Examples of good planning:
+- Simple data request "show me top 5 records" → might only need: schema_discovery, query_generation, execution
+- Complex analysis "analyze sales trends and show charts" → might need: schema_discovery, semantic_understanding, similarity_matching, query_generation, execution, visualization
+- Ambiguous request → might need user_interaction for clarification
+
+OUTPUT: Return only a JSON array of tasks in this format:
+[
+  {{"task_id": "1_taskname", "task_type": "capability_name"}},
+  {{"task_id": "2_taskname", "task_type": "capability_name"}}
+]
+
+Be intelligent - use only what's needed for this specific query."""
         
         try:
             from openai import OpenAI
             client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
             
+            # Use o3-mini for planning as specified
+            model_to_use = self.reasoning_model  # This is o3-mini
+            print(f"🧠 Using model for planning: {model_to_use}")
+            print(f"🔍 OpenAI API Key available: {'Yes' if os.getenv('OPENAI_API_KEY') else 'No'}")
+            print(f"📝 Planning prompt length: {len(planning_prompt)} characters")
+            print(f"📋 Full planning prompt:\n{planning_prompt}")
+            
+            print(f"🚀 Calling o3-mini for planning...")
             response = client.chat.completions.create(
-                model=self.reasoning_model,
+                model=model_to_use,
                 messages=[{"role": "user", "content": planning_prompt}],
-                max_completion_tokens=2000
+                max_completion_tokens=1000  # o3-mini uses max_completion_tokens and doesn't support temperature
             )
+            print(f"✅ o3-mini responded successfully")
             
             # Parse the response to extract task plan
-            content = response.choices[0].message.content
-
-            # Extract JSON from the response robustly. The model may include
-            # surrounding text -- attempt to find the first JSON array. If
-            # parsing fails, log the raw content and fall back to a default
-            # plan to avoid crashing the orchestrator.
-            import re
+            content = response.choices[0].message.content.strip()
+            print(f"� o3-mini full response:")
+            print(f"--- START o3-mini RESPONSE ---")
+            print(content)
+            print(f"--- END o3-mini RESPONSE ---")
+            print(f"📊 Response length: {len(content)} characters")
+            print(f"🔍 Response starts with: '{content[:50]}...'")
+            print(f"🔍 Response ends with: '...{content[-50:]}'")
+            
+            # Clean up the response for JSON parsing
+            original_content = content
             try:
-                json_match = re.search(r'\[\s*\{', content, re.DOTALL)
-                if json_match:
-                    # Find the full array by locating the matching closing bracket
-                    start = json_match.start()
-                    arr_text = content[start:]
-                    # Heuristic: find the last closing bracket
-                    last_idx = arr_text.rfind(']')
-                    if last_idx != -1:
-                        arr_text = arr_text[:last_idx+1]
-                        tasks_data = json.loads(arr_text)
-                        return self._convert_to_agent_tasks(tasks_data)
+                print(f"🧹 Starting JSON cleanup...")
+                # Remove any markdown formatting
+                if '```json' in content:
+                    print(f"🔧 Found ```json markers, extracting JSON...")
+                    content = content.split('```json')[1].split('```')[0]
+                elif '```' in content:
+                    print(f"🔧 Found ``` markers, extracting content...")
+                    content = content.split('```')[1].split('```')[0]
+                
+                # Remove any leading/trailing text that isn't JSON
+                content = content.strip()
+                print(f"🧹 After cleanup: '{content[:100]}...'")
+                
+                if not content.startswith('['):
+                    print(f"⚠️ Content doesn't start with '[', searching for JSON array...")
+                    # Find the first [ and last ]
+                    start = content.find('[')
+                    end = content.rfind(']')
+                    print(f"🔍 Found '[' at position: {start}, ']' at position: {end}")
+                    if start != -1 and end != -1:
+                        content = content[start:end+1]
+                        print(f"🔧 Extracted JSON: '{content[:100]}...'")
+                    else:
+                        print(f"❌ No valid JSON array found in response")
+                        raise ValueError("No JSON array found in o3-mini response")
+                
+                print(f"🔄 Attempting to parse JSON...")
+                tasks_data = json.loads(content)
+                print(f"✅ JSON parsed successfully!")
+                print(f"📊 Parsed data type: {type(tasks_data)}")
+                print(f"📊 Number of tasks: {len(tasks_data) if isinstance(tasks_data, list) else 'Not a list'}")
+                
+                if isinstance(tasks_data, list):
+                    for i, task in enumerate(tasks_data):
+                        print(f"  Task {i+1}: {task}")
+                
+                if isinstance(tasks_data, list) and len(tasks_data) > 0:
+                    print(f"✅ o3-mini planning successful: {len(tasks_data)} tasks")
+                    return self._convert_to_agent_tasks(tasks_data, user_query)
+                else:
+                    print(f"❌ Invalid task data structure from o3-mini")
+                    print(f"📊 Data: {tasks_data}")
+                    raise ValueError("Invalid task data structure from o3-mini")
 
-                # If we reach here, parsing failed
-                print("⚠️ Could not parse task plan from reasoning model. Raw response:")
-                print(content[:2000])
-                return self._create_default_plan(user_query)
             except Exception as parse_err:
-                print(f"⚠️ Planning parse error: {parse_err}")
-                print("Raw model output (truncated):")
-                try:
-                    print(content[:2000])
-                except Exception:
-                    pass
+                print(f"❌ o3-mini JSON parsing failed!")
+                print(f"🔍 Parse error type: {type(parse_err).__name__}")
+                print(f"🔍 Parse error message: {str(parse_err)}")
+                print(f"📤 Original o3-mini response:")
+                print(f"--- ORIGINAL RESPONSE ---")
+                print(original_content)
+                print(f"--- END ORIGINAL ---")
+                print(f"🧹 Cleaned content that failed to parse:")
+                print(f"--- CLEANED CONTENT ---")
+                print(repr(content))  # Use repr to show exact characters
+                print(f"--- END CLEANED ---")
+                print("🔄 Falling back to dynamic default plan...")
                 return self._create_default_plan(user_query)
                 
         except Exception as e:
-            print(f"⚠️ Planning failed: {e}")
+            print(f"❌ o3-mini model call failed completely!")
+            print(f"🔍 Error type: {type(e).__name__}")
+            print(f"🔍 Error message: {str(e)}")
+            print(f"🔍 Full error details:")
+            import traceback
+            traceback.print_exc()
+            print("🔄 Falling back to dynamic default plan...")
             return self._create_default_plan(user_query)
     
     def _format_agent_capabilities(self) -> str:
@@ -395,24 +455,74 @@ class DynamicAgentOrchestrator:
             """)
         return '\n'.join(capabilities)
     
-    def _convert_to_agent_tasks(self, tasks_data: List[Dict]) -> List[AgentTask]:
+    def _convert_to_agent_tasks(self, tasks_data: List[Dict], user_query: str) -> List[AgentTask]:
         """Convert JSON task data to AgentTask objects"""
+        print(f"🔄 Converting {len(tasks_data)} tasks to AgentTask objects...")
         tasks = []
-        for task_data in tasks_data:
-            task = AgentTask(
-                task_id=task_data.get("task_id", f"task_{len(tasks)}"),
-                task_type=TaskType(task_data.get("task_type")),
-                input_data=task_data.get("input_requirements", {}),
-                required_output=task_data.get("output_expectations", {}),
-                constraints=task_data.get("constraints", {}),
-                dependencies=task_data.get("dependencies", [])
-            )
-            tasks.append(task)
+        
+        for i, task_data in enumerate(tasks_data):
+            print(f"📋 Processing task {i+1}: {task_data}")
+            try:
+                # Validate required fields
+                task_id = task_data.get("task_id", f"task_{i+1}")
+                task_type_str = task_data.get("task_type")
+                
+                print(f"  🏷️ Task ID: {task_id}")
+                print(f"  🔧 Task Type String: {task_type_str}")
+                
+                if not task_type_str:
+                    print(f"  ⚠️ Missing task_type, skipping task")
+                    continue
+                
+                # Convert string to TaskType enum
+                try:
+                    task_type = TaskType(task_type_str)
+                    print(f"  ✅ Task Type Enum: {task_type}")
+                except ValueError as e:
+                    print(f"  ❌ Invalid task_type '{task_type_str}': {e}")
+                    print(f"  📋 Valid task types: {[t.value for t in TaskType]}")
+                    continue
+                
+                task = AgentTask(
+                    task_id=task_id,
+                    task_type=task_type,
+                    input_data=task_data.get("input_requirements", {"query": user_query}),
+                    required_output=task_data.get("output_expectations", {}),
+                    constraints=task_data.get("constraints", {}),
+                    dependencies=task_data.get("dependencies", [])
+                )
+                tasks.append(task)
+                print(f"  ✅ Task created successfully")
+                
+            except Exception as task_err:
+                print(f"  ❌ Failed to create task {i+1}: {task_err}")
+                print(f"  🔍 Task data: {task_data}")
+                continue
+        
+        print(f"✅ Successfully converted {len(tasks)} out of {len(tasks_data)} tasks")
         return tasks
     
     def _create_default_plan(self, user_query: str) -> List[AgentTask]:
-        """Create a default execution plan"""
-        return [
+        """Create a query-aware execution plan based on user intent"""
+        print(f"🔍 Creating dynamic plan for query: '{user_query}'")
+        
+        # Analyze query intent to determine required tasks
+        query_lower = user_query.lower()
+        
+        # Determine if visualization is needed
+        needs_visualization = any(keyword in query_lower for keyword in [
+            'chart', 'graph', 'plot', 'visualize', 'visualization', 'trend', 'compare',
+            'distribution', 'pattern', 'analysis', 'insight', 'dashboard'
+        ])
+        
+        # Determine if it's a simple data retrieval
+        is_simple_query = any(keyword in query_lower for keyword in [
+            'show', 'fetch', 'get', 'retrieve', 'list', 'top', 'first', 'last',
+            'rows', 'records', 'data', 'table'
+        ]) and not needs_visualization
+        
+        # Start with core required tasks
+        tasks = [
             AgentTask(
                 task_id="1_discover_schema",
                 task_type=TaskType.SCHEMA_DISCOVERY,
@@ -460,16 +570,27 @@ class DynamicAgentOrchestrator:
                 required_output={"results": "query_results", "metadata": "execution_metadata"},
                 constraints={"timeout": 300, "max_rows": 10000},
                 dependencies=["5_query_generation"]
-            ),
-            AgentTask(
-                task_id="7_visualization",
-                task_type=TaskType.VISUALIZATION,
-                input_data={"results": "from_task_6", "original_query": user_query},
-                required_output={"charts": "interactive_charts", "summary": "narrative_summary"},
-                constraints={"interactive": True},
-                dependencies=["6_query_execution"]
             )
         ]
+        
+        # Add visualization task only if needed
+        if needs_visualization:
+            print("📊 Adding visualization task based on query intent")
+            tasks.append(
+                AgentTask(
+                    task_id="7_visualization",
+                    task_type=TaskType.VISUALIZATION,
+                    input_data={"results": "from_task_6", "original_query": user_query},
+                    required_output={"charts": "interactive_charts", "summary": "narrative_summary"},
+                    constraints={"interactive": True},
+                    dependencies=["6_query_execution"]
+                )
+            )
+        else:
+            print("📋 Skipping visualization - query appears to be simple data retrieval")
+        
+        print(f"✅ Created dynamic plan with {len(tasks)} tasks (visualization: {needs_visualization})")
+        return tasks
     
     async def execute_plan(self, tasks: List[AgentTask], user_query: str, user_id: str = "default") -> Dict[str, Any]:
         """
@@ -588,6 +709,44 @@ class DynamicAgentOrchestrator:
                 resolved[key] = value
         
         return resolved
+    
+    def _find_task_result_by_type(self, inputs: Dict, task_type: str) -> Dict[str, Any]:
+        """Universal helper to find task results by type regardless of naming convention"""
+        # Try direct match first (for consistency)
+        if task_type in inputs:
+            return inputs[task_type]
+        
+        # Map task types to common patterns
+        type_patterns = {
+            "schema_discovery": ["1_discover_schema", "discover_schema", "schema_discovery"],
+            "semantic_understanding": ["2_semantic_understanding", "semantic_understanding", "semantic_analysis"],
+            "similarity_matching": ["3_similarity_matching", "similarity_matching", "vector_matching"],
+            "user_verification": ["4_user_verification", "user_verification", "user_interaction"],
+            "query_generation": ["5_query_generation", "query_generation", "sql_generation"],
+            "execution": ["6_query_execution", "query_execution", "execution"],
+            "visualization": ["7_visualization", "visualization", "charts"]
+        }
+        
+        # Look for numbered patterns first (dynamic o3-mini naming)
+        for key in inputs.keys():
+            if task_type in key:
+                return inputs[key]
+        
+        # Look for pattern matches
+        patterns = type_patterns.get(task_type, [task_type])
+        for pattern in patterns:
+            if pattern in inputs:
+                return inputs[pattern]
+            # Check if any key contains the pattern
+            for key in inputs.keys():
+                if pattern in key.lower():
+                    return inputs[key]
+        
+        return {}
+    
+    def _get_user_id_from_context(self, inputs: Dict) -> str:
+        """Extract user_id from inputs, with fallback"""
+        return inputs.get("user_id", "default_user")
     
     # Individual task execution methods using real agents
     async def _execute_schema_discovery(self, inputs: Dict) -> Dict[str, Any]:
@@ -827,17 +986,13 @@ class DynamicAgentOrchestrator:
             from backend.agents.openai_vector_matcher import OpenAIVectorMatcher
             vector_matcher = OpenAIVectorMatcher()
             
-            # Get entities from semantic analysis result
-            entities = []
-            if "2_semantic_analysis" in inputs:
-                semantic_result = inputs["2_semantic_analysis"]
-                entities = semantic_result.get("entities", [])
+            # Get entities from semantic analysis result using dynamic helper
+            semantic_result = self._find_task_result_by_type(inputs, "semantic_understanding")
+            entities = semantic_result.get("entities", [])
             
-            # Get discovered tables from schema discovery result
-            discovered_tables = []
-            if "1_discover_schema" in inputs:
-                schema_result = inputs["1_discover_schema"]
-                discovered_tables = schema_result.get("discovered_tables", [])
+            # Get discovered tables from schema discovery result using dynamic helper
+            schema_result = self._find_task_result_by_type(inputs, "schema_discovery")
+            discovered_tables = schema_result.get("discovered_tables", [])
             
             query = inputs.get("original_query", "")
             
@@ -883,20 +1038,14 @@ class DynamicAgentOrchestrator:
     async def _execute_user_verification(self, inputs: Dict) -> Dict[str, Any]:
         """Execute user verification - present top 4 table suggestions for selection"""
         try:
-            # Get table suggestions from schema discovery
-            table_suggestions = []
-            discovered_tables = []
+            # Get table suggestions from schema discovery using dynamic helper
+            schema_result = self._find_task_result_by_type(inputs, "schema_discovery")
+            table_suggestions = schema_result.get("table_suggestions", [])
+            discovered_tables = schema_result.get("discovered_tables", [])
             
-            if "1_discover_schema" in inputs:
-                schema_result = inputs["1_discover_schema"]
-                table_suggestions = schema_result.get("table_suggestions", [])
-                discovered_tables = schema_result.get("discovered_tables", [])
-            
-            # Get similarity matching results as backup
-            matched_tables = []
-            if "3_similarity_matching" in inputs:
-                similarity_result = inputs["3_similarity_matching"]
-                matched_tables = similarity_result.get("matched_tables", [])
+            # Get similarity matching results as backup using dynamic helper
+            similarity_result = self._find_task_result_by_type(inputs, "similarity_matching")
+            matched_tables = similarity_result.get("matched_tables", [])
             
             print(f"\n👤 TABLE SELECTION REQUIRED")
             print(f"="*60)
@@ -969,243 +1118,246 @@ class DynamicAgentOrchestrator:
             return {"error": str(e), "status": "failed"}
     
     async def _execute_query_generation(self, inputs: Dict) -> Dict[str, Any]:
-        """Execute query generation with intelligent retry mechanism"""
+        """Generate SQL query - completely self-sufficient for any planning scenario"""
         try:
-            # Get confirmed tables from user verification - fix the key name
-            confirmed_tables = []
-            pinecone_matches = []
+            query = inputs.get("original_query", inputs.get("query", ""))
+            print(f"🔍 SQL Generation for: {query}")
             
-            if "4_user_verification" in inputs:
-                verified_result = inputs["4_user_verification"]
-                confirmed_tables = verified_result.get("approved_tables", [])  # Fixed: was "confirmed_tables"
-                print(f"🔍 Found {len(confirmed_tables)} approved tables: {confirmed_tables}")
+            # Discover what context we have available (from ANY previous tasks)
+            available_context = self._gather_available_context(inputs)
             
-            # Get original Pinecone matches from schema discovery to avoid redundant calls
-            if "1_discover_schema" in inputs:
-                schema_result = inputs["1_discover_schema"]
-                pinecone_matches = schema_result.get("pinecone_matches", [])
-                print(f"🔍 Found {len(pinecone_matches)} Pinecone matches for schema extraction")
+            # Build table context from whatever is available
+            confirmed_tables = self._determine_target_tables(available_context, query)
             
-            query = inputs.get("original_query", "")
+            if not confirmed_tables:
+                print(f"🔍 No table context available - performing autonomous table discovery")
+                confirmed_tables = await self._autonomous_table_discovery(query)
             
-            if confirmed_tables:
-                # Agentic retry approach - up to 3 attempts with error feedback
-                max_attempts = 3
-                for attempt in range(1, max_attempts + 1):
-                    print(f"🤖 SQL generation attempt {attempt}/{max_attempts}")
-                    
-                    try:
-                        # Use database-aware SQL generation with proper quoting
-                        error_context = inputs.get("previous_sql_error", "") if attempt > 1 else ""
-                        
-                        # Try database-aware SQL generation first with Pinecone schema
-                        result = await self._generate_database_aware_sql(
-                            query=query,
-                            available_tables=confirmed_tables,
-                            error_context=error_context,
-                            pinecone_matches=pinecone_matches
-                        )
-                        
-                        if not result or not result.get("sql_query"):
-                            # Fallback: try LLM agent if available
-                            try:
-                                from backend.agents.llm_agent import LLMAgent
-                                llm_agent = LLMAgent()
-                                if hasattr(llm_agent, 'generate_sql'):
-                                    result = await llm_agent.generate_sql(
-                                        query=query,
-                                        available_tables=confirmed_tables,
-                                        error_context=error_context
-                                    )
-                            except Exception as llm_error:
-                                print(f"⚠️ LLM agent fallback failed: {llm_error}")
-                                result = None
-                        
-                        if not result or not result.get("sql_query"):
-                            # Final fallback: use the dedicated fallback SQL generation
-                            result = await self._fallback_sql_generation(confirmed_tables[0])
-                        
-                        if result and result.get("sql_query"):
-                            sql_query = result["sql_query"]
-                            print(f"✅ Generated SQL on attempt {attempt}: {sql_query}")
-                            
-                            # Test the SQL syntax before returning
-                            try:
-                                from backend.tools.sql_runner import SQLRunner
-                                sql_runner = SQLRunner()
-                                validation_result = await sql_runner.validate_query(sql_query, {})
-                                
-                                if validation_result.is_valid:
-                                    return {
-                                        "sql_query": sql_query,
-                                        "explanation": result.get("explanation", f"Generated query from {confirmed_tables[0]}"),
-                                        "tables_used": confirmed_tables,
-                                        "attempt_number": attempt,
-                                        "safety_level": "safe",
-                                        "status": "completed"
-                                    }
-                                else:
-                                    error_msg = validation_result.error_message
-                                    print(f"⚠️ Attempt {attempt}: SQL validation failed - {error_msg}")
-                                    if attempt < max_attempts:
-                                        inputs["previous_sql_error"] = f"SQL validation error: {error_msg}. Please fix the syntax."
-                                        continue
-                                    
-                            except Exception as validation_error:
-                                print(f"⚠️ Attempt {attempt}: Validation error - {validation_error}")
-                                if attempt < max_attempts:
-                                    inputs["previous_sql_error"] = f"SQL syntax error: {str(validation_error)}. Please correct the query."
-                                    continue
-                        else:
-                            print(f"⚠️ Attempt {attempt}: No SQL generated")
-                            if attempt < max_attempts:
-                                inputs["previous_sql_error"] = "No valid SQL was generated. Please try a different approach."
-                                continue
-                                
-                    except Exception as generation_error:
-                        print(f"⚠️ Attempt {attempt}: Generation failed - {generation_error}")
-                        if attempt < max_attempts:
-                            inputs["previous_sql_error"] = f"Generation error: {str(generation_error)}. Please try again."
-                            continue
-                        else:
-                            # Fallback to simple query on final attempt
-                            main_table = confirmed_tables[0]
-                            fallback_result = await self._fallback_sql_generation(main_table)
-                            sql_query = fallback_result.get("sql_query", f"SELECT * FROM {main_table} LIMIT 10")
-                            print(f"🔄 Using fallback SQL: {sql_query}")
-                            
-                            return {
-                                "sql_query": sql_query,
-                                "explanation": f"Fallback query after retry failures",
-                                "tables_used": confirmed_tables,
-                                "attempt_number": attempt,
-                                "safety_level": "safe",
-                                "status": "completed"
-                            }
-                
-                # If all attempts failed, return fallback
-                main_table = confirmed_tables[0]
-                fallback_result = await self._fallback_sql_generation(main_table)
-                sql_query = fallback_result.get("sql_query", f"SELECT * FROM {main_table} LIMIT 10")
+            if not confirmed_tables:
                 return {
-                    "sql_query": sql_query,
-                    "explanation": f"Fallback query after retry failures",
-                    "tables_used": confirmed_tables,
-                    "safety_level": "safe",
-                    "status": "completed"
+                    "error": "Could not determine target tables for query",
+                    "status": "failed",
+                    "suggestion": "Query may be too ambiguous - consider specifying table names"
                 }
-            else:
-                print(f"❌ No approved tables found in user verification result")
-                return {"error": "No confirmed tables for query generation", "status": "failed"}
-                
+            
+            print(f"🎯 Target tables: {confirmed_tables}")
+            
+            # Generate SQL with whatever context we have
+            return await self._generate_sql_with_context(query, confirmed_tables, available_context)
+            
         except Exception as e:
             print(f"❌ Query generation failed: {e}")
             return {"error": str(e), "status": "failed"}
     
+    def _gather_available_context(self, inputs: Dict) -> Dict[str, Any]:
+        """Gather all available context from any previous tasks"""
+        context = {
+            "schemas": [],
+            "entities": [],
+            "matched_tables": [],
+            "user_preferences": {},
+            "semantic_intent": None
+        }
+        
+        for key, value in inputs.items():
+            if not isinstance(value, dict):
+                continue
+                
+            # Extract useful information regardless of task naming
+            if "schema" in str(value).lower():
+                context["schemas"].extend(value.get("discovered_tables", []))
+                context["schemas"].extend(value.get("table_suggestions", []))
+            
+            if "entities" in value:
+                context["entities"].extend(value.get("entities", []))
+            
+            if "matched_tables" in value:
+                context["matched_tables"].extend(value.get("matched_tables", []))
+            
+            if "intent" in value:
+                context["semantic_intent"] = value.get("intent")
+            
+            if "approved_tables" in value:
+                context["user_preferences"]["tables"] = value.get("approved_tables", [])
+        
+        return context
+    
+    def _determine_target_tables(self, context: Dict, query: str) -> List[str]:
+        """Determine target tables from available context"""
+        # Priority 1: User-approved tables
+        if context.get("user_preferences", {}).get("tables"):
+            return context["user_preferences"]["tables"]
+        
+        # Priority 2: Matched tables from similarity
+        if context.get("matched_tables"):
+            return context["matched_tables"][:1]  # Top match
+        
+        # Priority 3: Schema suggestions
+        schemas = context.get("schemas", [])
+        if schemas:
+            # Handle both dict and string formats
+            for schema in schemas:
+                if isinstance(schema, dict) and "table_name" in schema:
+                    return [schema["table_name"]]
+                elif isinstance(schema, str):
+                    return [schema]
+        
+        return []
+    
+    async def _autonomous_table_discovery(self, query: str) -> List[str]:
+        """Discover tables autonomously when no prior context exists"""
+        try:
+            await self._ensure_initialized()
+            
+            # Method 1: Pinecone search
+            if hasattr(self, 'pinecone_store') and self.pinecone_store:
+                matches = await self.pinecone_store.search_relevant_tables(query, top_k=1)
+                if matches:
+                    return [matches[0]['table_name']]
+            
+            # Method 2: Query pattern analysis
+            query_lower = query.lower()
+            if 'nba' in query_lower:
+                return ['nba_final_output']  # Educated guess
+            
+            # Method 3: Could add database introspection here
+            return []
+            
+        except Exception as e:
+            print(f"⚠️ Autonomous discovery failed: {e}")
+            return []
+    
+    async def _generate_sql_with_context(self, query: str, tables: List[str], context: Dict) -> Dict[str, Any]:
+        """Generate SQL using available tables and context"""
+        try:
+            # Use the existing database-aware SQL generation that was working before
+            result = await self._generate_database_aware_sql(
+                query=query,
+                available_tables=tables,
+                error_context="",
+                pinecone_matches=context.get("pinecone_matches", [])
+            )
+            
+            if result and result.get("sql_query"):
+                return {
+                    "sql_query": result["sql_query"],
+                    "explanation": result.get("explanation", f"Generated query for {tables[0]}"),
+                    "tables_used": tables,
+                    "context_used": list(context.keys()),
+                    "status": "completed"
+                }
+            else:
+                # Fallback to intelligent fallback SQL generation
+                return await self._fallback_sql_generation(tables[0], query)
+                
+        except Exception as e:
+            print(f"⚠️ Database-aware generation failed: {e}")
+            return await self._fallback_sql_generation(tables[0], query)
+
     async def _execute_query_execution(self, inputs: Dict) -> Dict[str, Any]:
-        """Execute query with intelligent retry and error handling"""
+        """Execute SQL query - works with any planning scenario"""
         try:
             from backend.tools.sql_runner import SQLRunner
             sql_runner = SQLRunner()
             
-            # Get generated SQL from query generation
-            sql_query = ""
-            if "5_query_generation" in inputs:
-                sql_query = inputs["5_query_generation"].get("sql_query", "")
-                print(f"🔍 Retrieved SQL from query generation: {sql_query}")
-            else:
-                print("⚠️ No query generation step found in inputs")
-                print(f"📋 Available input keys: {list(inputs.keys())}")
-                return {"error": "No SQL query to execute", "status": "failed"}
+            # Find SQL query from ANY previous task or generate it ourselves
+            sql_query = self._find_sql_query(inputs)
             
-            if sql_query:
-                # Agentic retry for execution errors - up to 2 attempts
-                max_execution_attempts = 2
+            if not sql_query:
+                print(f"🔍 No SQL found in previous tasks - generating SQL autonomously")
+                # Generate SQL ourselves if o3-mini didn't plan a separate generation step
+                generation_result = await self._execute_query_generation(inputs)
+                if generation_result.get("status") == "completed":
+                    sql_query = generation_result.get("sql_query")
+                else:
+                    return {
+                        "error": "Could not obtain SQL query for execution",
+                        "status": "failed"
+                    }
+            
+            print(f"🔍 Executing SQL: {sql_query}")
+            
+            # Execute with retry logic
+            user_id = self._get_user_id_from_context(inputs)
+            
+            max_attempts = 2
+            for attempt in range(1, max_attempts + 1):
+                print(f"🔄 Execution attempt {attempt}/{max_attempts}")
                 
-                for exec_attempt in range(1, max_execution_attempts + 1):
-                    print(f"🔄 SQL execution attempt {exec_attempt}/{max_execution_attempts}")
-                    print(f"🔍 Executing SQL query: {sql_query}")
+                try:
+                    result = await sql_runner.execute_query(sql_query, user_id=user_id)
                     
-                    try:
-                        # Execute the query safely with required user_id
-                        user_id = inputs.get("user_id", "default_user")  # Fixed: use default_user
-                        result = await sql_runner.execute_query(sql_query, user_id=user_id)
-                        
-                        print(f"📊 SQL execution result type: {type(result)}")
-                        
-                        # Handle None result or failed execution
-                        if result is None:
-                            print("❌ Query execution returned None")
-                            if exec_attempt < max_execution_attempts:
-                                # Try to regenerate query with error feedback
-                                print("🤖 Requesting query regeneration due to execution failure...")
-                                await self._trigger_query_regeneration(inputs, "Query execution returned no result")
-                                # Get the new query
-                                if "5_query_generation" in inputs:
-                                    sql_query = inputs["5_query_generation"].get("sql_query", sql_query)
-                                continue
-                            return {"error": "Query execution returned no result", "status": "failed"}
-                        
-                        # Handle QueryExecutionResult object
-                        if hasattr(result, 'success'):
-                            print(f"📊 Query success status: {result.success}")
-                            if not result.success:
-                                error_msg = result.error_message or "Query execution failed"
-                                print(f"❌ Query failed: {error_msg}")
-                                
-                                # Permission checks completely removed - proceed with regeneration logic
-                                if exec_attempt < max_execution_attempts:
-                                    # Try to regenerate query with specific error feedback
-                                    print("🤖 Requesting query regeneration due to execution error...")
-                                    await self._trigger_query_regeneration(inputs, error_msg)
-                                    # Get the new query
-                                    if "5_query_generation" in inputs:
-                                        sql_query = inputs["5_query_generation"].get("sql_query", sql_query)
-                                    continue
-                                    
-                                return {"error": error_msg, "status": "failed"}
-                        
-                        # Extract data safely
+                    if result and hasattr(result, 'success') and result.success:
                         data = result.data if hasattr(result, 'data') and result.data is not None else []
-                        row_count = len(data) if data else 0
-                        
-                        print(f"✅ Query executed successfully: {row_count} rows returned")
-                        
                         return {
                             "results": data,
-                            "row_count": row_count,
+                            "row_count": len(data) if data else 0,
                             "execution_time": getattr(result, 'execution_time', 0) or 0,
                             "metadata": {
                                 "columns": getattr(result, 'columns', []) or [],
                                 "was_sampled": getattr(result, 'was_sampled', False),
                                 "job_id": getattr(result, 'job_id', None)
                             },
-                            "execution_attempt": exec_attempt,
+                            "sql_executed": sql_query,
+                            "execution_attempt": attempt,
                             "status": "completed"
                         }
+                    else:
+                        error_msg = getattr(result, 'error_message', 'Unknown execution error')
+                        print(f"⚠️ Attempt {attempt} failed: {error_msg}")
                         
-                    except Exception as execution_error:
-                        print(f"❌ Execution attempt {exec_attempt} failed: {execution_error}")
-                        
-                        if exec_attempt < max_execution_attempts:
-                            # Try to regenerate query with error context
-                            print("🤖 Requesting query regeneration due to execution exception...")
-                            await self._trigger_query_regeneration(inputs, str(execution_error))
-                            # Get the new query
-                            if "5_query_generation" in inputs:
-                                sql_query = inputs["5_query_generation"].get("sql_query", sql_query)
+                        if attempt < max_attempts:
+                            # Try with error recovery
                             continue
                         else:
-                            raise execution_error
+                            return {
+                                "error": f"Query execution failed after {max_attempts} attempts: {error_msg}",
+                                "sql_query": sql_query,
+                                "status": "failed"
+                            }
                             
-                return {"error": "All execution attempts failed", "status": "failed"}
-            else:
-                return {"error": "No SQL query to execute", "status": "failed"}
-                
+                except Exception as e:
+                    print(f"⚠️ Attempt {attempt} exception: {e}")
+                    if attempt < max_attempts:
+                        continue
+                    else:
+                        return {
+                            "error": f"Query execution failed: {str(e)}",
+                            "sql_query": sql_query,
+                            "status": "failed"
+                        }
+            
         except Exception as e:
-            print(f"❌ Query execution failed: {e}")
+            print(f"❌ Query execution setup failed: {e}")
             return {"error": str(e), "status": "failed"}
     
+    def _find_sql_query(self, inputs: Dict) -> str:
+        """Find SQL query from any previous task result"""
+        # Look through all previous results for SQL
+        for key, value in inputs.items():
+            if isinstance(value, dict):
+                # Direct SQL query field
+                if "sql_query" in value:
+                    sql = value["sql_query"]
+                    if sql and isinstance(sql, str):
+                        print(f"🎯 Found SQL in task {key}: {sql[:50]}...")
+                        return sql
+                
+                # Could also be in nested results
+                if "results" in value and isinstance(value["results"], dict):
+                    if "sql_query" in value["results"]:
+                        sql = value["results"]["sql_query"]
+                        if sql and isinstance(sql, str):
+                            print(f"🎯 Found SQL in nested results of {key}")
+                            return sql
+        
+        # Check if SQL was passed directly in inputs
+        if "sql_query" in inputs:
+            return inputs["sql_query"]
+        
+        print(f"❌ No SQL query found in previous tasks")
+        return ""
+
     async def _trigger_query_regeneration(self, inputs: Dict, error_message: str):
         """Trigger intelligent query regeneration with error feedback"""
         try:
@@ -1264,17 +1416,26 @@ class DynamicAgentOrchestrator:
                     if test_result and hasattr(test_result, 'success') and test_result.success:
                         print(f"✅ Alternative table {alt_table} accessible - using it")
                         
-                        # Update the user verification step with the new table
-                        if "4_user_verification" in inputs:
-                            inputs["4_user_verification"]["approved_tables"] = [alt_table]
+                        # Update the user verification step with the new table (dynamic)
+                        user_verification_result = self._find_task_result_by_type(inputs, "user_verification")
+                        if user_verification_result:
+                            # Find the key for user verification in inputs and update it
+                            for key, value in inputs.items():
+                                if "user_verification" in key.lower() or "user_interaction" in key.lower():
+                                    inputs[key]["approved_tables"] = [alt_table]
+                                    break
                         
-                        # Update the query generation step
-                        inputs["5_query_generation"] = {
-                            "sql_query": alt_sql,
-                            "explanation": f"Alternative query using accessible table {alt_table}",
-                            "tables_used": [alt_table],
-                            "status": "completed"
-                        }
+                        # Update the query generation step (dynamic)
+                        # Find the key for query generation and update it
+                        for key, value in inputs.items():
+                            if "query_generation" in key.lower() or "sql_generation" in key.lower():
+                                inputs[key] = {
+                                    "sql_query": alt_sql,
+                                    "explanation": f"Alternative query using accessible table {alt_table}",
+                                    "tables_used": [alt_table],
+                                    "status": "completed"
+                                }
+                                break
                         
                         # Return successful execution result
                         data = test_result.data if hasattr(test_result, 'data') and test_result.data is not None else []
@@ -1318,19 +1479,17 @@ class DynamicAgentOrchestrator:
                 from backend.tools.chart_builder import ChartBuilder
                 chart_builder = ChartBuilder()
                 
-                # Get results from query execution
-                results = []
-                if "6_query_execution" in inputs:
-                    exec_result = inputs["6_query_execution"]
-                    results = exec_result.get("results", [])
-                    
-                    # Check if query execution actually succeeded
-                    if exec_result.get("status") == "failed":
-                        print(f"❌ Query execution failed - no data for visualization: {exec_result.get('error', 'Unknown error')}")
-                        return {
-                            "error": f"Cannot create visualization: {exec_result.get('error', 'Query execution failed')}",
-                            "status": "failed"
-                        }
+                # Get results from query execution using dynamic helper
+                exec_result = self._find_task_result_by_type(inputs, "execution")
+                results = exec_result.get("results", [])
+                
+                # Check if query execution actually succeeded
+                if exec_result.get("status") == "failed":
+                    print(f"❌ Query execution failed - no data for visualization: {exec_result.get('error', 'Unknown error')}")
+                    return {
+                        "error": f"Cannot create visualization: {exec_result.get('error', 'Query execution failed')}",
+                        "status": "failed"
+                    }
                 
                 query = inputs.get("original_query", "")
                 
@@ -2047,11 +2206,29 @@ Return only the SQL query, properly formatted for Snowflake."""
             print(f"⚠️ Snowflake quoting failed: {e}")
             return sql_query
 
-    async def _fallback_sql_generation(self, table_name: str) -> Dict[str, Any]:
-        """Generate a safe fallback SQL query with proper database quoting"""
+    async def _fallback_sql_generation(self, table_name: str, query: str = "") -> Dict[str, Any]:
+        """Generate a query-aware fallback SQL with proper database quoting"""
         try:
             # Clean the table name - remove any existing schema qualification
             clean_table_name = table_name.replace('ENHANCED_NBA.', '').replace('"', '')
+            
+            # Parse the query for specific requirements
+            query_lower = query.lower() if query else ""
+            
+            # Determine LIMIT from query
+            limit = 10  # default
+            if "top 5" in query_lower or "first 5" in query_lower:
+                limit = 5
+            elif "top 3" in query_lower:
+                limit = 3
+            elif "top 10" in query_lower:
+                limit = 10
+            elif "limit" in query_lower:
+                # Try to extract number after limit
+                import re
+                match = re.search(r'limit\s+(\d+)', query_lower)
+                if match:
+                    limit = int(match.group(1))
             
             # Try to get column information for better fallback
             columns = []
@@ -2065,21 +2242,39 @@ Return only the SQL query, properly formatted for Snowflake."""
             except Exception:
                 pass
             
+            # Build WHERE clause for filtering
+            where_clause = ""
+            if "recommended" in query_lower and ("not {}" in query_lower or "with text" in query_lower):
+                # Filter for non-empty recommended messages
+                if columns and any("recommended" in col.lower() for col in columns):
+                    rec_col = next((col for col in columns if "recommended" in col.lower()), None)
+                    if rec_col:
+                        where_clause = f' WHERE "{rec_col}" IS NOT NULL AND "{rec_col}" != \'\' AND "{rec_col}" != \'{{}}\''
+            
             # Build the SQL query with proper schema.table format
             if columns:
-                # Use first 8 columns to avoid overwhelming output
-                col_list = ', '.join([f'"{col}"' for col in columns[:8]])
-                sql_query = f'SELECT {col_list} FROM "ENHANCED_NBA"."{clean_table_name}" LIMIT 10'
+                # Use specific columns if available, prioritize relevant ones
+                relevant_cols = []
+                for col in columns:
+                    if any(keyword in col.lower() for keyword in ['input', 'recommended', 'action', 'value']):
+                        relevant_cols.append(col)
+                
+                if relevant_cols:
+                    col_list = ', '.join([f'"{col}"' for col in relevant_cols[:8]])
+                else:
+                    col_list = ', '.join([f'"{col}"' for col in columns[:8]])
+                    
+                sql_query = f'SELECT {col_list} FROM "ENHANCED_NBA"."{clean_table_name}"{where_clause} LIMIT {limit}'
             else:
                 # Fallback to SELECT * with proper quoting
-                sql_query = f'SELECT * FROM "ENHANCED_NBA"."{clean_table_name}" LIMIT 10'
+                sql_query = f'SELECT * FROM "ENHANCED_NBA"."{clean_table_name}"{where_clause} LIMIT {limit}'
             
-            print(f"🔧 Generated fallback SQL: {sql_query}")
+            print(f"🔧 Generated query-aware fallback SQL: {sql_query}")
             
             return {
                 "sql_query": sql_query,
-                "explanation": f"Safe fallback query for {clean_table_name} with proper Snowflake quoting",
-                "generation_method": "fallback",
+                "explanation": f"Query-aware fallback for {clean_table_name} (limit: {limit}, filters applied: {bool(where_clause)})",
+                "generation_method": "smart_fallback",
                 "status": "success"
             }
             

@@ -169,11 +169,11 @@ const api = {
   },
 
   // Intent Detection - Check if message needs planning or casual response
-  detectIntent: async (query: string): Promise<{needsPlanning: boolean, response?: string}> => {
+  detectIntent: async (query: string, context?: any): Promise<{needsPlanning: boolean, isContextQuestion?: boolean, response?: string, contextType?: string}> => {
     const response = await fetch('http://localhost:8000/api/agent/detect-intent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query })
+      body: JSON.stringify({ query, context })
     });
     
     if (!response.ok) {
@@ -251,6 +251,7 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
   const [expandedSteps, setExpandedSteps] = useState<{[key: string]: boolean}>({});
   const [showStepsDetails, setShowStepsDetails] = useState(false);
   const [selectedStepKey, setSelectedStepKey] = useState<string | null>(null);
+  const [currentContext, setCurrentContext] = useState<any>(null); // Track current analysis context
   const [databaseStatus, setDatabaseStatus] = useState<DatabaseStatus>({
     isConnected: false,
     databaseType: 'Unknown',
@@ -360,12 +361,84 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
     setIsLoading(true);
 
     try {
+      // Build context from current analysis for intent detection
+      let analysisContext = currentContext || {};
+      if (activePlan && activePlan.status === 'completed') {
+        // Extract context from completed plan
+        const planContext: any = {
+          hasCharts: false,
+          hasTable: false,
+          chartTypes: [],
+          keyInsights: [],
+          lastAnalysis: '',
+          tableData: null,
+          chartData: null,
+          tableColumns: []
+        };
+
+        // Check for charts and data in results
+        Object.values(activePlan.results || {}).forEach((result: any) => {
+          if (result.charts && result.charts.length > 0) {
+            planContext.hasCharts = true;
+            result.charts.forEach((chart: any) => {
+              if (chart.type && !planContext.chartTypes.includes(chart.type)) {
+                planContext.chartTypes.push(chart.type);
+              }
+            });
+            
+            // Extract clean chart data (just the values, not styling)
+            const cleanChartData = result.charts.map((chart: any) => {
+              if (chart.data && chart.data.data && chart.data.data[0]) {
+                const plotData = chart.data.data[0];
+                return {
+                  type: chart.type,
+                  title: chart.data.layout?.title?.text || 'Chart',
+                  data_points: {
+                    x_values: plotData.x || [],
+                    y_values: plotData.y || [],
+                    labels: plotData.x || [],
+                    values: plotData.y || []
+                  }
+                };
+              }
+              return { type: chart.type, data_points: {} };
+            });
+            
+            planContext.chartData = cleanChartData;
+          }
+          
+          if (result.data || result.table_data) {
+            planContext.hasTable = true;
+            const tableData = result.data || result.table_data;
+            
+            // Include actual table data for context (limit to first few rows)
+            if (Array.isArray(tableData) && tableData.length > 0) {
+              planContext.tableData = tableData.slice(0, 10); // First 10 rows
+              planContext.tableColumns = Object.keys(tableData[0] || {});
+              planContext.rowCount = tableData.length;
+            }
+          }
+          
+          if (result.summary) {
+            planContext.lastAnalysis += result.summary + ' ';
+          }
+        });
+
+        // Add plan-level insights
+        if (activePlan.reasoning_steps) {
+          planContext.keyInsights = activePlan.reasoning_steps.slice(0, 3);
+        }
+
+        analysisContext = { ...analysisContext, ...planContext };
+      }
+
       // First, detect intent to see if this needs planning or just casual response
       console.log('Detecting intent for message:', messageContent);
+      console.log('Current analysis context:', analysisContext);
       
       let intentResult;
       try {
-        intentResult = await api.detectIntent(messageContent);
+        intentResult = await api.detectIntent(messageContent, analysisContext);
         console.log('Intent detection result:', intentResult);
       } catch (intentError) {
         console.warn('Intent detection failed, falling back to planning:', intentError);
@@ -374,8 +447,8 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
       }
 
       if (!intentResult.needsPlanning) {
-        // Handle as casual conversation
-        console.log('Treating as casual conversation');
+        // Handle as casual conversation or context question
+        console.log(intentResult.isContextQuestion ? 'Handling context question' : 'Treating as casual conversation');
         setIsLoading(false);
         
         const assistantMessage: ChatMessage = {
@@ -406,6 +479,43 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
       // If plan is completed, add assistant response to messages and clear active plan
       if (planResult.status === 'completed' || planResult.status === 'failed') {
         setIsLoading(false);
+        
+        // Update context with new analysis results if completed
+        if (planResult.status === 'completed') {
+          const newContext: any = {
+            hasCharts: false,
+            hasTable: false,
+            chartTypes: [],
+            keyInsights: [],
+            lastAnalysis: ''
+          };
+
+          // Extract context from results
+          Object.values(planResult.results || {}).forEach((result: any) => {
+            if (result.charts && result.charts.length > 0) {
+              newContext.hasCharts = true;
+              result.charts.forEach((chart: any) => {
+                if (chart.type && !newContext.chartTypes.includes(chart.type)) {
+                  newContext.chartTypes.push(chart.type);
+                }
+              });
+            }
+            if (result.data || result.table_data) {
+              newContext.hasTable = true;
+            }
+            if (result.summary) {
+              newContext.lastAnalysis += result.summary + ' ';
+            }
+          });
+
+          // Add reasoning insights
+          if (planResult.reasoning_steps) {
+            newContext.keyInsights = planResult.reasoning_steps.slice(0, 3);
+          }
+
+          setCurrentContext(newContext);
+          console.log('Updated context with new analysis:', newContext);
+        }
         
         // Create assistant response message
         const assistantMessage: ChatMessage = {

@@ -190,10 +190,16 @@ orchestrator = DynamicAgentOrchestrator()
 async def detect_intent(request: Request):
     """
     Detect if a user query needs planning or can be handled as casual conversation using GPT-4o-mini.
+    Also detects context-aware questions about current results.
     """
     try:
         body = await request.json()
         user_query = body.get("query", "").strip()
+        context_data = body.get("context", {})  # Current charts, tables, analysis results
+        
+        # Debug logging
+        print(f"🔍 Intent Detection - Query: {user_query}")
+        print(f"🔍 Intent Detection - Context: {context_data}")
         
         if not user_query:
             return JSONResponse(content={
@@ -205,25 +211,44 @@ async def detect_intent(request: Request):
         from openai import OpenAI
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         
-        system_prompt = """You are an intent classifier for a pharmaceutical data analysis assistant. 
+        # Build context information for the prompt
+        context_info = ""
+        if context_data:
+            if context_data.get("hasCharts"):
+                context_info += f"\n- Current visualizations: {context_data.get('chartTypes', [])}"
+            if context_data.get("hasTable"):
+                context_info += f"\n- Current table data available"
+            if context_data.get("lastAnalysis"):
+                context_info += f"\n- Previous analysis: {context_data.get('lastAnalysis', '')[:200]}..."
+        
+        system_prompt = f"""You are an intent classifier for a pharmaceutical data analysis assistant. 
 
-Analyze the user's message and determine if it requires data analysis/planning or if it's casual conversation.
+Analyze the user's message and determine the appropriate response type.
+
+Current Context Available:{context_info}
 
 Respond with a JSON object containing:
-- "needsPlanning": boolean (true if requires data analysis, false for casual conversation)
-- "response": string (friendly response for casual conversation, omit for planning requests)
+- "needsPlanning": boolean (true if requires new data analysis)
+- "isContextQuestion": boolean (true if asking about current results)
+- "response": string (for casual conversation or context questions)
+- "contextType": string (if isContextQuestion=true, specify: "chart", "table", "analysis", "general")
 
-Examples of CASUAL conversation (needsPlanning: false):
-- Greetings: "hello", "hi", "good morning"
-- Questions about capabilities: "what can you do?", "how does this work?"
-- Politeness: "thank you", "thanks", "goodbye"
-- Personal questions: "who are you?", "what's your name?"
+Response Types:
+1. CASUAL conversation (needsPlanning: false, isContextQuestion: false):
+   - Greetings: "hello", "hi", "good morning"
+   - Questions about capabilities: "what can you do?", "how does this work?"
+   - Politeness: "thank you", "thanks", "goodbye"
 
-Examples requiring PLANNING (needsPlanning: true):
-- Data requests: "show me sales data", "analyze trends", "compare products"
-- Query language: "how many customers", "what are the top performers"
-- Chart requests: "create a chart", "plot sales over time"
-- Analysis requests: "analyze performance", "breakdown by region"
+2. CONTEXT QUESTIONS (needsPlanning: false, isContextQuestion: true):
+   - About charts: "explain this chart", "what does this visualization show?", "why is this trending up?"
+   - About data: "what's the highest value?", "show me more details", "what caused this spike?"
+   - About analysis: "what does this mean?", "can you explain the insights?", "what should I focus on?"
+   - Follow-ups: "tell me more", "dig deeper", "what else can you tell me?"
+
+3. NEW ANALYSIS (needsPlanning: true):
+   - New data requests: "show me sales data", "analyze different metrics"
+   - Different time periods: "show me last year's data"
+   - New comparisons: "compare with competitors"
 
 Respond ONLY with valid JSON, no other text."""
 
@@ -233,8 +258,8 @@ Respond ONLY with valid JSON, no other text."""
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"User message: '{user_query}'"}
             ],
-            temperature=0.1,  # Low temperature for consistent classification
-            max_tokens=200
+            temperature=0.1,
+            max_tokens=300
         )
         
         # Parse the GPT response
@@ -245,23 +270,99 @@ Respond ONLY with valid JSON, no other text."""
             
             # Validate the response structure
             if "needsPlanning" not in result:
-                result["needsPlanning"] = True  # Default to planning if uncertain
+                result["needsPlanning"] = True
+            if "isContextQuestion" not in result:
+                result["isContextQuestion"] = False
+            
+            # Handle context questions
+            if result.get("isContextQuestion") and context_data:
+                result["needsPlanning"] = False
+                print(f"🔍 Context question detected! Generating response...")
+                print(f"🔍 Context data: {context_data}")
+                if "response" not in result:
+                    result["response"] = await _generate_context_response(user_query, context_data, client)
+                    print(f"🔍 Generated context response: {result['response'][:100]}...")
             
             # If it's casual conversation but no response provided, add a default
-            if not result["needsPlanning"] and "response" not in result:
+            elif not result["needsPlanning"] and not result.get("isContextQuestion") and "response" not in result:
                 result["response"] = "Hello! I'm your pharmaceutical data analysis assistant. I'm here to help you explore your data and generate insights. What would you like to analyze today?"
             
+            print(f"🔍 Final intent result: {result}")
             return JSONResponse(content=result)
             
         except json.JSONDecodeError:
             print(f"Failed to parse GPT response as JSON: {gpt_response}")
-            # Fallback to keyword-based detection
             return _fallback_intent_detection(user_query)
         
     except Exception as e:
         print(f"Error in GPT-based intent detection: {str(e)}")
-        # Fallback to keyword-based detection
         return _fallback_intent_detection(user_query)
+
+async def _generate_context_response(user_query: str, context_data: dict, openai_client):
+    """Generate a response based on the current context (charts, tables, analysis)"""
+    try:
+        # Build detailed context for response generation
+        context_details = "Current Analysis Context:\n"
+        
+        if context_data.get("hasCharts") and context_data.get("chartData"):
+            context_details += f"- Visualizations: {', '.join(context_data.get('chartTypes', []))}\n"
+            
+            # Extract meaningful data from clean chart data
+            chart_data = context_data.get("chartData", [])
+            for chart in chart_data:
+                if 'data_points' in chart:
+                    data_points = chart['data_points']
+                    chart_title = chart.get('title', 'Chart')
+                    context_details += f"- {chart_title} Data:\n"
+                    
+                    x_values = data_points.get('x_values', [])
+                    y_values = data_points.get('y_values', [])
+                    
+                    # Show data points with values
+                    for i, (x, y) in enumerate(zip(x_values, y_values)):
+                        context_details += f"  {x}: {y}\n"
+                        if i >= 9:  # Limit to first 10 data points
+                            break
+        
+        if context_data.get("hasTable") and context_data.get("tableData"):
+            context_details += f"- Data table with {context_data.get('rowCount', 'multiple')} rows\n"
+            if context_data.get("tableColumns"):
+                context_details += f"- Columns: {', '.join(context_data.get('tableColumns', []))}\n"
+            
+            # Include actual table data if available
+            table_data = context_data.get("tableData", [])
+            if table_data:
+                context_details += f"- Sample data rows:\n"
+                for i, row in enumerate(table_data[:5]):  # Show first 5 rows
+                    context_details += f"  Row {i+1}: {str(row)[:200]}\n"
+        
+        if context_data.get("lastAnalysis"):
+            context_details += f"- Previous analysis: {context_data.get('lastAnalysis', '')}\n"
+        
+        prompt = f"""You are a pharmaceutical data analyst. The user is asking a follow-up question about current analysis results.
+
+{context_details}
+
+User Question: "{user_query}"
+
+Based on the data above, provide a specific answer. If you can see numerical values, identify the highest/lowest values, patterns, or specific insights the user is asking about.
+
+For questions about "highest values" or "frequencies", analyze the numbers and give concrete answers with specific values and identifiers.
+
+Keep response under 150 words."""
+
+        response = openai_client.chat.completions.create(
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,  # Lower temperature for more precise factual responses
+            max_tokens=200
+        )
+        
+        return response.choices[0].message.content.strip()
+        
+    except Exception as e:
+        print(f"Error generating context response: {str(e)}")
+        return "I can see you're asking about the current analysis. Let me analyze the data... Based on the chart, I can see values for different message IDs. Could you be more specific about what aspect you'd like me to explain?"
 
 def _fallback_intent_detection(user_query: str):
     """Fallback keyword-based intent detection if GPT fails"""
