@@ -92,7 +92,7 @@
 
 .chat-history-header {
   display: flex;
-  justify-content: between;
+  justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
 }
@@ -114,11 +114,33 @@
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
-.new-chat-btn:hover {
+.new-chat-btn:hover:not(:disabled) {
   background: #2563eb;
   transform: translateY(-1px);
+}
+
+.new-chat-btn:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.new-chat-btn.loading {
+  background: #6b7280;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .chat-search {
@@ -345,51 +367,6 @@
 
 .message.user .message-metadata {
   justify-content: flex-end;
-}
-
-/* Plan Execution Display */
-.plan-execution {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 16px;
-  margin: 12px 0;
-}
-
-.plan-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.plan-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1f2937;
-}
-
-.plan-status {
-  padding: 4px 8px;
-  border-radius: 12px;
-  font-size: 11px;
-  font-weight: 500;
-  text-transform: uppercase;
-}
-
-.plan-status.executing {
-  background: #fef3c7;
-  color: #d97706;
-}
-
-.plan-status.completed {
-  background: #d1fae5;
-  color: #065f46;
-}
-
-.plan-status.failed {
-  background: #fee2e2;
-  color: #dc2626;
 }
 
 .plan-steps {
@@ -1158,12 +1135,13 @@
 
 /* Horizontal Steps Container */
 .horizontal-steps-container {
-  margin: 20px 0;
+  margin: 24px 0;
   padding: 20px;
   background: #ffffff;
   border-radius: 15px;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
   border: 1px solid #e2e8f0;
+  clear: both;
 }
 
 .steps-toggle-header {

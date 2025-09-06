@@ -186,6 +186,108 @@ async def websocket_endpoint(websocket: WebSocket):
 # --- Dynamic Agent Orchestrator Setup ---
 orchestrator = DynamicAgentOrchestrator()
 
+@app.post("/api/agent/detect-intent")
+async def detect_intent(request: Request):
+    """
+    Detect if a user query needs planning or can be handled as casual conversation using GPT-4o-mini.
+    """
+    try:
+        body = await request.json()
+        user_query = body.get("query", "").strip()
+        
+        if not user_query:
+            return JSONResponse(content={
+                "needsPlanning": False,
+                "response": "Hello! How can I help you with your data analysis today?"
+            })
+        
+        # Use GPT-4o-mini for intelligent intent detection
+        from openai import OpenAI
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        
+        system_prompt = """You are an intent classifier for a pharmaceutical data analysis assistant. 
+
+Analyze the user's message and determine if it requires data analysis/planning or if it's casual conversation.
+
+Respond with a JSON object containing:
+- "needsPlanning": boolean (true if requires data analysis, false for casual conversation)
+- "response": string (friendly response for casual conversation, omit for planning requests)
+
+Examples of CASUAL conversation (needsPlanning: false):
+- Greetings: "hello", "hi", "good morning"
+- Questions about capabilities: "what can you do?", "how does this work?"
+- Politeness: "thank you", "thanks", "goodbye"
+- Personal questions: "who are you?", "what's your name?"
+
+Examples requiring PLANNING (needsPlanning: true):
+- Data requests: "show me sales data", "analyze trends", "compare products"
+- Query language: "how many customers", "what are the top performers"
+- Chart requests: "create a chart", "plot sales over time"
+- Analysis requests: "analyze performance", "breakdown by region"
+
+Respond ONLY with valid JSON, no other text."""
+
+        response = client.chat.completions.create(
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"User message: '{user_query}'"}
+            ],
+            temperature=0.1,  # Low temperature for consistent classification
+            max_tokens=200
+        )
+        
+        # Parse the GPT response
+        try:
+            import json
+            gpt_response = response.choices[0].message.content.strip()
+            result = json.loads(gpt_response)
+            
+            # Validate the response structure
+            if "needsPlanning" not in result:
+                result["needsPlanning"] = True  # Default to planning if uncertain
+            
+            # If it's casual conversation but no response provided, add a default
+            if not result["needsPlanning"] and "response" not in result:
+                result["response"] = "Hello! I'm your pharmaceutical data analysis assistant. I'm here to help you explore your data and generate insights. What would you like to analyze today?"
+            
+            return JSONResponse(content=result)
+            
+        except json.JSONDecodeError:
+            print(f"Failed to parse GPT response as JSON: {gpt_response}")
+            # Fallback to keyword-based detection
+            return _fallback_intent_detection(user_query)
+        
+    except Exception as e:
+        print(f"Error in GPT-based intent detection: {str(e)}")
+        # Fallback to keyword-based detection
+        return _fallback_intent_detection(user_query)
+
+def _fallback_intent_detection(user_query: str):
+    """Fallback keyword-based intent detection if GPT fails"""
+    casual_patterns = [
+        "hello", "hi", "hey", "good morning", "good afternoon", "good evening",
+        "how are you", "what's up", "what can you do", "help", "thank you", "thanks",
+        "bye", "goodbye", "who are you", "what is your name"
+    ]
+    
+    planning_patterns = [
+        "show me", "analyze", "compare", "trend", "report", "chart", "graph", "plot",
+        "data", "count", "sum", "average", "sales", "revenue", "how many"
+    ]
+    
+    user_query_lower = user_query.lower()
+    is_casual = any(pattern in user_query_lower for pattern in casual_patterns)
+    needs_planning = any(pattern in user_query_lower for pattern in planning_patterns)
+    
+    if is_casual and not needs_planning:
+        return JSONResponse(content={
+            "needsPlanning": False,
+            "response": "Hello! I'm your pharmaceutical data analysis assistant. I'm here to help you explore your data and generate insights. What would you like to analyze today?"
+        })
+    else:
+        return JSONResponse(content={"needsPlanning": True})
+
 @app.post("/api/agent/query")
 async def agent_query(request: Request):
     """

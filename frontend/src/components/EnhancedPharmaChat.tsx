@@ -168,6 +168,21 @@ const api = {
     return response.json();
   },
 
+  // Intent Detection - Check if message needs planning or casual response
+  detectIntent: async (query: string): Promise<{needsPlanning: boolean, response?: string}> => {
+    const response = await fetch('http://localhost:8000/api/agent/detect-intent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    return response.json();
+  },
+
   getPlanStatus: async (planId: string): Promise<QueryPlan> => {
     // No timeout for status checks either
     const response = await fetch(`http://localhost:8000/api/agent/plan/${planId}/status`);
@@ -340,13 +355,45 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const messageContent = currentMessage;
     setCurrentMessage('');
     setIsLoading(true);
 
     try {
-      // Send query to agent
-      console.log('Sending query to backend:', currentMessage);
-      const planResult = await api.sendQuery(currentMessage, userProfile.user_id, activeConversation.conversation_id);
+      // First, detect intent to see if this needs planning or just casual response
+      console.log('Detecting intent for message:', messageContent);
+      
+      let intentResult;
+      try {
+        intentResult = await api.detectIntent(messageContent);
+        console.log('Intent detection result:', intentResult);
+      } catch (intentError) {
+        console.warn('Intent detection failed, falling back to planning:', intentError);
+        // If intent detection fails, default to planning (backward compatibility)
+        intentResult = { needsPlanning: true };
+      }
+
+      if (!intentResult.needsPlanning) {
+        // Handle as casual conversation
+        console.log('Treating as casual conversation');
+        setIsLoading(false);
+        
+        const assistantMessage: ChatMessage = {
+          message_id: `msg_${Date.now()}_assistant`,
+          conversation_id: activeConversation.conversation_id,
+          message_type: 'system_response',
+          content: intentResult.response || 'Hello! I\'m here to help with your data analysis needs. Feel free to ask me about your pharmaceutical data!',
+          timestamp: new Date().toISOString(),
+          status: 'completed'
+        };
+        
+        setMessages(prev => [...prev, assistantMessage]);
+        return;
+      }
+
+      // If planning is needed, proceed with the full workflow
+      console.log('Intent requires planning, sending to agent...');
+      const planResult = await api.sendQuery(messageContent, userProfile.user_id, activeConversation.conversation_id);
       
       // Add debugging to see what we're getting
       console.log('Received plan result:', planResult);
@@ -516,16 +563,54 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
 
   // Create new conversation
   const handleNewConversation = async () => {
-    if (!userProfile) return;
+    if (!userProfile) {
+      console.error('No user profile available for creating conversation');
+      return;
+    }
 
     try {
+      setIsLoading(true);
       const newConv = await api.createConversation(userProfile.user_id);
+      
+      // Validate the response
+      if (!newConv || !newConv.conversation_id) {
+        throw new Error('Invalid conversation response from server');
+      }
+      
       setConversations(prev => [newConv, ...prev]);
       setActiveConversation(newConv);
       setMessages([]);
       setActivePlan(null);
+      setSelectedStepKey(null);
+      setShowStepsDetails(false);
+      
+      console.log('New conversation created successfully:', newConv.conversation_id);
     } catch (error) {
       console.error('Error creating conversation:', error);
+      
+      // Create a fallback local conversation if API fails
+      const fallbackConv: Conversation = {
+        conversation_id: `local_${Date.now()}`,
+        title: 'New Chat',
+        created_at: new Date().toISOString(),
+        last_activity: new Date().toISOString(),
+        total_cost: 0,
+        total_tokens: 0,
+        is_favorite: false,
+        is_archived: false,
+        messages: []
+      };
+      
+      setConversations(prev => [fallbackConv, ...prev]);
+      setActiveConversation(fallbackConv);
+      setMessages([]);
+      setActivePlan(null);
+      setSelectedStepKey(null);
+      setShowStepsDetails(false);
+      
+      console.log('Created fallback conversation:', fallbackConv.conversation_id);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -603,13 +688,6 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
     
     return (
     <div className="plan-execution">
-      <div className="plan-header">
-        <h4 className="plan-title">🤖 AI Agent Execution Plan</h4>
-        <span className={`plan-status ${planStatus.toLowerCase()}`}>
-          {planStatus.toUpperCase()}
-        </span>
-      </div>
-      
       {/* Horizontal Steps Progress Indicator */}
       {plan && (
         <div className="horizontal-steps-container">
@@ -1183,60 +1261,6 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
         </div>
       )}
 
-      {/* Final Visualization Display - After all steps complete */}
-      {plan.context?.visualizations?.charts && Array.isArray(plan.context.visualizations.charts) && plan.context.visualizations.charts.length > 0 && (
-        <div style={{marginTop: '20px', padding: '20px', backgroundColor: '#f8f9fa', borderRadius: '8px', border: '2px solid #4CAF50'}}>
-          <h3 style={{margin: '0 0 15px 0', color: '#2563eb'}}>📊 Final Visualization Results</h3>
-          {plan.context.visualizations.charts.map((chart: any, idx: number) => (
-            <div key={idx} className="chart-item" style={{marginBottom: '20px', border: '1px solid #e0e0e0', borderRadius: '8px', padding: '15px', backgroundColor: 'white'}}>
-              <p style={{marginBottom: '10px', fontWeight: 'bold'}}>📈 {chart.type} - {chart.title || 'Visualization'}</p>
-              
-              {/* Render matplotlib charts (base64 images) */}
-              {chart.type === 'matplotlib' && chart.data && (
-                <img 
-                  src={chart.data} 
-                  alt={chart.title || 'Visualization'}
-                  style={{maxWidth: '100%', height: 'auto', borderRadius: '4px'}}
-                />
-              )}
-              
-              {/* Render plotly charts */}
-              {chart.type === 'plotly' && chart.data && (
-                <div style={{width: '100%', height: '400px'}}>
-                  <Plot
-                    data={chart.data.data || []}
-                    layout={{
-                      ...(chart.data.layout || {}),
-                      autosize: true,
-                      margin: { t: 40, r: 20, b: 40, l: 40 }
-                    }}
-                    config={{
-                      displayModeBar: true,
-                      responsive: true,
-                      displaylogo: false,
-                      modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
-                    }}
-                    style={{width: '100%', height: '100%'}}
-                  />
-                </div>
-              )}
-              
-              {/* Debug info */}
-              {!['matplotlib', 'plotly'].includes(chart.type) && (
-                <div style={{
-                  background: '#f8f9fa', 
-                  padding: '15px', 
-                  borderRadius: '4px',
-                  color: '#6c757d'
-                }}>
-                  Chart data available ({chart.type}) - {JSON.stringify(chart).substring(0, 100)}...
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
       {plan.estimated_cost && plan.estimated_cost > 0 && (
         <div className="plan-cost">
           <strong>Estimated cost:</strong> ${plan.estimated_cost.toFixed(3)}
@@ -1310,8 +1334,20 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
         <div className="chat-history-section">
           <div className="chat-history-header">
             <h3>Recent Conversations</h3>
-            <button className="new-chat-btn" onClick={handleNewConversation}>
-              <FiPlus size={12} /> New
+            <button 
+              className={`new-chat-btn ${isLoading ? 'loading' : ''}`}
+              onClick={handleNewConversation}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <>
+                  <FiLoader size={12} className="spin" /> Creating...
+                </>
+              ) : (
+                <>
+                  <FiPlus size={12} /> New
+                </>
+              )}
             </button>
           </div>
 
