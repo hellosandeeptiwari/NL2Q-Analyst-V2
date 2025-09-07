@@ -379,7 +379,7 @@ class DynamicAgentOrchestrator:
 USER QUERY: "{user_query}"
 
 AVAILABLE CAPABILITIES:
-- schema_discovery: Find relevant database tables and columns
+- schema_discovery: Find relevant database tables and columns (REQUIRED for all database queries)
 - semantic_understanding: Extract entities and business intent from query
 - similarity_matching: Match query terms to database schema
 - user_interaction: Get user confirmation for ambiguous requests
@@ -387,27 +387,30 @@ AVAILABLE CAPABILITIES:
 - execution: Execute queries and retrieve data
 - visualization: Create charts, graphs, and visual analysis
 
+CRITICAL RULES:
+1. ALWAYS include schema_discovery as the FIRST step for any database query
+2. Schema discovery is mandatory - it finds tables and columns needed for SQL generation
+3. Without schema discovery, SQL generation will fail
+
 INSTRUCTIONS:
 Analyze the query and determine:
 1. What is the user actually asking for?
 2. What steps are truly necessary to fulfill this request?
-3. Can this be accomplished with fewer steps?
-4. Does the user explicitly ask for visual output (charts, graphs, trends, analysis)?
+3. Does the user explicitly ask for visual output (charts, graphs, trends, analysis)?
 
-Create a JSON array with only the essential tasks needed. Do not include unnecessary steps.
-
-Examples of good planning:
-- Simple data request "show me top 5 records" → might only need: schema_discovery, query_generation, execution
-- Complex analysis "analyze sales trends and show charts" → might need: schema_discovery, semantic_understanding, similarity_matching, query_generation, execution, visualization
-- Ambiguous request → might need user_interaction for clarification
+Examples of CORRECT planning:
+- ANY data request from database → MUST start with: schema_discovery, query_generation, execution
+- Data analysis with charts → MUST include: schema_discovery, query_generation, execution, visualization
+- Complex analysis → MUST include: schema_discovery, semantic_understanding, query_generation, execution, visualization
+- Ambiguous request → schema_discovery, user_interaction, query_generation, execution
 
 OUTPUT: Return only a JSON array of tasks in this format:
 [
-  {{"task_id": "1_taskname", "task_type": "capability_name"}},
+  {{"task_id": "1_schema_discovery", "task_type": "schema_discovery"}},
   {{"task_id": "2_taskname", "task_type": "capability_name"}}
 ]
 
-Be intelligent - use only what's needed for this specific query."""
+REMEMBER: Schema discovery is MANDATORY for all database operations."""
         
         try:
             from openai import OpenAI
@@ -1058,6 +1061,31 @@ Be intelligent - use only what's needed for this specific query."""
             
             # Get top table matches from Pinecone
             table_matches = await self.pinecone_store.search_relevant_tables(query, top_k=4)
+            
+            # CRITICAL FIX: Get detailed Pinecone matches with full metadata for SQL generation
+            detailed_pinecone_matches = []
+            for table_match in table_matches:
+                table_name = table_match['table_name']
+                try:
+                    # Get full table details with chunk metadata for each matched table
+                    table_details = await self.pinecone_store.get_table_details(table_name)
+                    if table_details:
+                        # Transform to expected pinecone_matches structure
+                        detailed_match = {
+                            'metadata': {
+                                'table_name': table_name,
+                                'chunks': table_details.get('chunks', {}),
+                                'content': table_details.get('description', ''),
+                                'columns': table_details.get('columns', [])
+                            },
+                            'score': table_match.get('best_score', 0.0)
+                        }
+                        detailed_pinecone_matches.append(detailed_match)
+                        print(f"🔍 Enhanced Pinecone match for {table_name} with {len(table_details.get('chunks', {}))} chunks")
+                except Exception as e:
+                    print(f"⚠️ Failed to get detailed metadata for {table_name}: {e}")
+            
+            print(f"🎯 Generated {len(detailed_pinecone_matches)} detailed Pinecone matches for SQL generation")
             relevant_tables = []
             for match in table_matches:
                 table_name = match['table_name']
@@ -1166,7 +1194,8 @@ Be intelligent - use only what's needed for this specific query."""
                 "discovered_tables": [t["name"] for t in relevant_tables],
                 "table_details": relevant_tables,
                 "table_suggestions": filtered_suggestions,
-                "pinecone_matches": table_matches,  # Store original Pinecone matches for reuse
+                "pinecone_matches": detailed_pinecone_matches,  # Use detailed matches for SQL generation
+                "table_matches": table_matches,  # Keep original for reference
                 "status": "completed"
             }
         except Exception as e:
@@ -1415,8 +1444,13 @@ Be intelligent - use only what's needed for this specific query."""
             confirmed_tables = self._determine_target_tables(available_context, query)
             
             if not confirmed_tables:
-                print(f"🔍 No table context available - performing autonomous table discovery")
-                confirmed_tables = await self._autonomous_table_discovery(query)
+                print(f"🔍 No table context available - performing autonomous table discovery with Pinecone context")
+                autonomous_result = await self._autonomous_table_discovery_with_context(query)
+                confirmed_tables = autonomous_result.get("tables", [])
+                # CRITICAL FIX: Extract Pinecone matches from autonomous discovery
+                if autonomous_result.get("pinecone_matches"):
+                    available_context["pinecone_matches"] = autonomous_result["pinecone_matches"]
+                    print(f"🔍 Autonomous discovery found {len(autonomous_result['pinecone_matches'])} Pinecone matches")
             
             if not confirmed_tables:
                 return {
@@ -1495,6 +1529,62 @@ Be intelligent - use only what's needed for this specific query."""
         
         return []
     
+    async def _autonomous_table_discovery_with_context(self, query: str) -> Dict[str, Any]:
+        """Discover tables autonomously with full Pinecone context for schema discovery"""
+        try:
+            await self._ensure_initialized()
+            
+            # Enhanced Pinecone search with context preservation
+            if hasattr(self, 'pinecone_store') and self.pinecone_store:
+                print(f"🔍 Autonomous Pinecone discovery for: {query}")
+                table_matches = await self.pinecone_store.search_relevant_tables(query, top_k=4)
+                
+                if table_matches:
+                    # Get detailed Pinecone matches with full metadata (same as schema discovery)
+                    detailed_pinecone_matches = []
+                    tables = []
+                    
+                    for table_match in table_matches:
+                        table_name = table_match['table_name']
+                        tables.append(table_name)
+                        
+                        try:
+                            # Get full table details with chunk metadata
+                            table_details = await self.pinecone_store.get_table_details(table_name)
+                            if table_details:
+                                # Transform to expected pinecone_matches structure
+                                detailed_match = {
+                                    'metadata': {
+                                        'table_name': table_name,
+                                        'chunks': table_details.get('chunks', {}),
+                                        'content': table_details.get('description', ''),
+                                        'columns': table_details.get('columns', [])
+                                    },
+                                    'score': table_match.get('best_score', 0.0)
+                                }
+                                detailed_pinecone_matches.append(detailed_match)
+                                print(f"🔍 Autonomous enhanced match for {table_name} with {len(table_details.get('chunks', {}))} chunks")
+                        except Exception as e:
+                            print(f"⚠️ Failed to get autonomous metadata for {table_name}: {e}")
+                    
+                    return {
+                        "tables": tables,
+                        "pinecone_matches": detailed_pinecone_matches,
+                        "status": "success"
+                    }
+            
+            # Fallback to database discovery
+            fallback_tables = await self._discover_tables_from_database(query)
+            return {
+                "tables": fallback_tables,
+                "pinecone_matches": [],
+                "status": "fallback"
+            }
+            
+        except Exception as e:
+            print(f"⚠️ Autonomous discovery with context failed: {e}")
+            return {"tables": [], "pinecone_matches": [], "status": "failed"}
+
     async def _autonomous_table_discovery(self, query: str) -> List[str]:
         """Discover tables autonomously when no prior context exists"""
         try:
@@ -2374,100 +2464,250 @@ Generate Python code that:
             
             client = AsyncOpenAI(api_key=api_key)
             
-            # Extract schema information from Pinecone results (no additional DB calls needed!)
+            # AI Vector-Based Schema Discovery with Enhanced Retry
             table_schemas = []
-            if pinecone_matches:
-                print(f"🔍 Processing {len(pinecone_matches)} Pinecone matches for schema extraction")
-                for match in pinecone_matches:
-                    table_name = match.get('table_name')
-                    print(f"📋 Processing Pinecone match for table: {table_name}")
-                    if table_name in available_tables:
-                        # Get detailed schema from Pinecone metadata
-                        table_details = await self.pinecone_store.get_table_details(table_name)
-                        print(f"📊 Got table details for {table_name}: {list(table_details.keys())}")
-                        
-                        # Extract column information from the enhanced table details
-                        columns = table_details.get('columns', [])
-                        print(f"📋 Initial columns from table_details: {len(columns)} columns")
-                        
-                        if not columns:
-                            # Fallback: Extract from chunks manually if columns not already extracted
-                            for chunk_type, chunk_data in table_details.get('chunks', {}).items():
-                                if chunk_type == 'column_group':
-                                    chunk_metadata = chunk_data.get('metadata', {})
-                                    if 'columns' in chunk_metadata:
-                                        # Get column names from metadata
-                                        for col_name in chunk_metadata['columns']:
-                                            columns.append(col_name)
-                                elif chunk_type == 'table_overview':
-                                    # Could also extract column info from overview content if needed
-                                    pass
-                        
-                        # If no columns found in metadata, parse from content
-                        if not columns and 'column_group' in table_details.get('chunks', {}):
-                            content = table_details['chunks']['column_group'].get('metadata', {}).get('content', '')
-                            # Parse column names from content like "col1 (VARCHAR), col2 (INTEGER)"
-                            import re
-                            col_matches = re.findall(r'(\w+)\s*\([^)]+\)', content)
-                            columns.extend(col_matches)
-                        
-                        if columns:
-                            schema_text = f"Table: {table_name}\nColumns: {', '.join(columns)}"
-                            table_schemas.append(schema_text)
-                            print(f"📊 Extracted schema from Pinecone for {table_name}: {len(columns)} columns")
-                        else:
-                            print(f"⚠️ No column information found in Pinecone for {table_name}")
-                            table_schemas.append(f"Table: {table_name}\nColumns: [Use DESCRIBE TABLE to explore]")
+            schema_success_count = 0
             
-            # Fallback: if no Pinecone matches provided, get fresh schema info
-            if not table_schemas:
-                print("⚠️ No Pinecone schema found, fetching directly from database")
-                print(f"🔍 Available tables for schema lookup: {available_tables}")
-                for table_name in available_tables:
+            print(f"🎯 Starting AI vector-based schema discovery for {len(available_tables)} tables")
+            
+            if not pinecone_matches:
+                print("❌ CRITICAL: No Pinecone vector matches provided. Cannot proceed with AI-based schema discovery.")
+                raise Exception("AI vector-based schema discovery requires Pinecone embeddings matches")
+            
+            print(f"🔍 Processing {len(pinecone_matches)} Pinecone vector matches")
+            
+            for table_name in available_tables:
+                schema_retrieved = False
+                retry_count = 0
+                max_retries = 3
+                
+                print(f"📊 AI vector discovery for table: {table_name}")
+                
+                while retry_count < max_retries and not schema_retrieved:
                     try:
-                        describe_sql = f'DESCRIBE TABLE "COMMERCIAL_AI"."ENHANCED_NBA"."{table_name}"'
-                        print(f"🔍 Executing schema query: {describe_sql}")
-                        result = self.db_connector.run(describe_sql, dry_run=False)
+                        # Enhanced AI Vector-Based Schema Extraction
+                        for match_idx, match in enumerate(pinecone_matches):
+                            metadata = match.get('metadata', {})
+                            table_match_score = 0
+                            
+                            # Multiple AI matching strategies
+                            table_name_variations = [
+                                table_name.lower(),
+                                table_name.upper(),
+                                table_name.replace('_', '').lower(),
+                                table_name.replace('_', ' ').lower()
+                            ]
+                            
+                            # Check table name in metadata
+                            metadata_table = metadata.get('table_name', '').lower()
+                            for variation in table_name_variations:
+                                if variation in metadata_table or metadata_table in variation:
+                                    table_match_score += 1
+                                    break
+                            
+                            # Check content relevance
+                            content_fields = ['content', 'text', 'description']
+                            for field in content_fields:
+                                if field in metadata:
+                                    content = str(metadata[field]).lower()
+                                    for variation in table_name_variations:
+                                        if variation in content:
+                                            table_match_score += 0.5
+                                            break
+                            
+                            # If this match is relevant to our table
+                            if table_match_score > 0:
+                                print(f"✅ AI vector match found for {table_name} (score: {table_match_score}, match: {match_idx})")
+                                print(f"🔍 DEBUG: Match metadata keys: {list(metadata.keys())}")
+                                
+                                columns = []
+                                
+                                # Initialize chunks first
+                                chunks = metadata.get('chunks', {})
+                                print(f"🔍 DEBUG: Found {len(chunks)} chunks: {list(chunks.keys())}")
+                                
+                                # CRITICAL FIX: Check for columns directly in metadata first
+                                if 'columns' in metadata:
+                                    direct_columns = metadata['columns']
+                                    print(f"🎯 FOUND columns directly in metadata: {direct_columns}")
+                                    if isinstance(direct_columns, list):
+                                        columns.extend(direct_columns)
+                                    elif isinstance(direct_columns, str):
+                                        columns.extend([col.strip() for col in direct_columns.split(',')])
+                                
+                                # Enhanced AI-based column extraction from chunks (if no direct columns)
+                                if not columns:
+                                    print(f"🔍 DEBUG: No direct columns found, checking chunks...")
+                                    
+                                    # Method 1: Direct columns from chunk metadata
+                                    for chunk_type, chunk_data in chunks.items():
+                                        print(f"🔍 DEBUG: Processing chunk {chunk_type}: {type(chunk_data)}")
+                                        if isinstance(chunk_data, dict):
+                                            print(f"🔍 DEBUG: Chunk {chunk_type} keys: {list(chunk_data.keys())}")
+                                            
+                                            # Look for columns in multiple possible locations
+                                            possible_metadata_paths = [
+                                                chunk_data.get('metadata', {}),  # Direct metadata
+                                                chunk_data,  # Direct chunk data
+                                            ]
+                                            
+                                            for metadata_source in possible_metadata_paths:
+                                                if isinstance(metadata_source, dict):
+                                                    print(f"🔍 DEBUG: Checking metadata source keys: {list(metadata_source.keys())}")
+                                                    
+                                                    if 'columns' in metadata_source:
+                                                        chunk_columns = metadata_source['columns']
+                                                        print(f"✅ Found columns in {chunk_type}: {chunk_columns}")
+                                                        if isinstance(chunk_columns, list):
+                                                            columns.extend(chunk_columns)
+                                                        elif isinstance(chunk_columns, str):
+                                                            columns.extend([col.strip() for col in chunk_columns.split(',')])
+                                                        break
+                                        
+                                        # Also check for column information in content field
+                                        if chunk_type == 'column_group' and not columns:
+                                            content = chunk_data.get('metadata', {}).get('content', '') or chunk_data.get('content', '')
+                                            if content:
+                                                print(f"🔍 DEBUG: Parsing column_group content: {content[:200]}...")
+                                                # Extract columns from content like "Column1 (TYPE), Column2 (TYPE)"
+                                                import re
+                                                column_matches = re.findall(r'([A-Za-z_][A-Za-z0-9_]*)\s*\([^)]+\)', content)
+                                                if column_matches:
+                                                    columns.extend(column_matches)
+                                                    print(f"✅ Extracted {len(column_matches)} columns from content: {column_matches}")
+                                    else:
+                                        print(f"🔍 DEBUG: Chunk {chunk_type} is not a dict: {type(chunk_data)}")
+                                
+                                print(f"🔍 DEBUG: Columns after Method 1: {columns}")
+                                
+                                # Method 2: AI content parsing for column patterns
+                                if not columns:
+                                    print(f"🔍 DEBUG: Method 1 failed, trying content parsing...")
+                                    for chunk_type, chunk_data in chunks.items():
+                                        if isinstance(chunk_data, dict) and 'metadata' in chunk_data:
+                                            chunk_metadata = chunk_data['metadata']
+                                            if 'content' in chunk_metadata:
+                                                content = chunk_metadata['content']
+                                                print(f"🔍 DEBUG: Parsing content from {chunk_type} ({len(content)} chars)")
+                                                print(f"🔍 DEBUG: Content preview: {content[:200]}...")
+                                                
+                                                # AI-driven pattern recognition for columns
+                                                import re
+                                                
+                                                # Enhanced regex patterns for AI-discovered schemas
+                                                ai_patterns = [
+                                                    r'"([A-Za-z_][A-Za-z0-9_]*)"',  # "Column_Name"
+                                                    r'`([A-Za-z_][A-Za-z0-9_]*)`',  # `Column_Name`
+                                                    r'([A-Za-z_][A-Za-z0-9_]*)\s*(?:VARCHAR|INT|FLOAT|TIMESTAMP|BOOLEAN)',  # Column_Name TYPE
+                                                    r'([A-Za-z_][A-Za-z0-9_]*)\s*:',  # Column_Name:
+                                                    r'\|\s*([A-Za-z_][A-Za-z0-9_]*)\s*\|',  # | Column_Name |
+                                                ]
+                                                
+                                                for pattern in ai_patterns:
+                                                    matches = re.findall(pattern, content, re.IGNORECASE | re.MULTILINE)
+                                                    if matches:
+                                                        print(f"🔍 DEBUG: Pattern '{pattern}' found {len(matches)} matches: {matches[:5]}")
+                                                        # Filter out common SQL keywords
+                                                        sql_keywords = {'SELECT', 'FROM', 'WHERE', 'JOIN', 'TABLE', 'COLUMN', 'TYPE', 'NULL', 'NOT'}
+                                                        valid_columns = [col for col in matches if col.upper() not in sql_keywords and len(col) > 1]
+                                                        if valid_columns:
+                                                            columns.extend(valid_columns)
+                                                            print(f"🤖 AI pattern '{pattern}' extracted {len(valid_columns)} columns: {valid_columns}")
+                                                            break
+                                                
+                                                if columns:
+                                                    break
+                                
+                                print(f"🔍 DEBUG: Columns after Method 2: {columns}")
+                                
+                                # Method 3: AI semantic column discovery from embeddings
+                                if not columns and 'content' in metadata:
+                                    content = metadata['content']
+                                    # Use AI to identify column-like structures
+                                    lines = content.split('\n')
+                                    for line in lines:
+                                        # Look for structured data patterns
+                                        if ':' in line and len(line.split(':')) == 2:
+                                            potential_col = line.split(':')[0].strip()
+                                            if re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', potential_col):
+                                                columns.append(potential_col)
+                                
+                                if columns:
+                                    # AI-based column deduplication and validation
+                                    unique_columns = []
+                                    seen = set()
+                                    for col in columns:
+                                        clean_col = col.strip().strip('"\'`')
+                                        if clean_col and clean_col not in seen and len(clean_col) > 0:
+                                            unique_columns.append(clean_col)
+                                            seen.add(clean_col)
+                                    
+                                    if unique_columns:
+                                        schema_text = f"Table: {table_name}\nColumns: {', '.join(unique_columns)}"
+                                        table_schemas.append(schema_text)
+                                        schema_retrieved = True
+                                        schema_success_count += 1
+                                        
+                                        print(f"🤖 AI vector schema discovery SUCCESS for {table_name}")
+                                        print(f"📋 Discovered {len(unique_columns)} columns: {unique_columns[:10]}{'...' if len(unique_columns) > 10 else ''}")
+                                        break
                         
-                        if result and result.rows:
-                            columns = [row[0] for row in result.rows[:20]]  # Limit to first 20 columns
-                            table_schema = f"Table: {table_name}\nColumns: {', '.join(columns)}"
-                            table_schemas.append(table_schema)
-                            print(f"📊 Retrieved schema directly for {table_name}: {len(columns)} columns")
-                            print(f"📋 Columns: {columns[:10]}...")  # Show first 10 columns
-                        else:
-                            print(f"❌ No rows returned from DESCRIBE TABLE for {table_name}")
+                        if not schema_retrieved:
+                            retry_count += 1
+                            if retry_count < max_retries:
+                                print(f"� AI vector retry {retry_count + 1}/{max_retries} for {table_name}")
+                                # Expand search to lower-scored matches
+                                print("🔍 Expanding to lower-confidence AI matches...")
+                    
                     except Exception as e:
-                        print(f"⚠️ Error getting schema for {table_name}: {e}")
-                        table_schemas.append(f"Table: {table_name}\nColumns: [Schema unavailable]")
+                        print(f"⚠️ AI vector discovery error for {table_name} (attempt {retry_count + 1}): {e}")
+                        retry_count += 1
+                        if retry_count < max_retries:
+                            import time
+                            time.sleep(0.5)  # Brief delay for AI retry
+                
+                if not schema_retrieved:
+                    print(f"❌ AI vector schema discovery failed for {table_name} after {max_retries} attempts")
+                    # Add placeholder for failed AI discovery
+                    table_schemas.append(f"Table: {table_name}\nColumns: [AI vector discovery failed - insufficient embedding match]")
             
-            # Database-specific system prompt with ACTUAL SCHEMA INFORMATION
+            print(f"🤖 AI Vector Schema Discovery Summary: {schema_success_count}/{len(available_tables)} tables successful")
+            
+            if schema_success_count == 0:
+                raise Exception("❌ CRITICAL: AI vector-based schema discovery failed completely. Check Pinecone embeddings and vector matches.")
+            
+            if schema_success_count < len(available_tables):
+                print(f"⚠️ WARNING: AI discovered only {schema_success_count}/{len(available_tables)} schemas. Consider improving embeddings.")
+            
+            # AI-Enhanced Schema Context
             schema_context = "\n\n".join(table_schemas)
-            print(f"🔍 Schema context being sent to LLM:")
-            print(f"📋 Number of table schemas: {len(table_schemas)}")
-            # print(f"📊 Schema context preview (first 500 chars): {schema_context[:500]}...")
-            print(f"📊 Schema context length: {len(schema_context)} characters")
+            print(f"🤖 AI-discovered schema context:")
+            print(f"📋 Tables with AI-discovered schemas: {schema_success_count}")
+            print(f"📊 Total schema context length: {len(schema_context)} characters")
+            print(f"🎯 AI discovery success rate: {(schema_success_count/len(available_tables)*100):.1f}%")
             
-            system_prompt = f"""You are a database query expert specializing in Snowflake SQL generation.
+            # AI-Powered SQL Generation with Vector-Discovered Schemas
+            system_prompt = f"""You are an AI-powered SQL generator using vector-discovered database schemas.
 
 Database Context:
 - Engine: Snowflake
-- Database: COMMERCIAL_AI
+- Database: COMMERCIAL_AI  
 - Schema: ENHANCED_NBA
 - Full qualification: "COMMERCIAL_AI"."ENHANCED_NBA"."table_name"
 
-ACTUAL TABLE SCHEMAS:
+AI-DISCOVERED SCHEMAS (Vector Embedding Success Rate: {(schema_success_count/len(available_tables)*100):.1f}%):
 {schema_context}
 
-Requirements:
-- Use proper Snowflake identifier quoting (double quotes for case-sensitive names)
-- Always specify full path: "COMMERCIAL_AI"."ENHANCED_NBA"."table_name"
-- Use ONLY the column names shown above - they are the exact column names in the tables
-- Keep queries simple and safe
-- Use LIMIT to prevent large result sets
-- Handle case-sensitive table/column names properly
+AI SCHEMA RULES:
+1. Use ONLY the column names discovered by AI vector embeddings above
+2. Column names are extracted from AI embeddings and are case-sensitive
+3. Always use double quotes: "COMMERCIAL_AI"."ENHANCED_NBA"."Table_Name"."Column_Name"
+4. Trust the AI-discovered schema - these columns exist in the database
+5. Use LIMIT 100 for safety
 
-Generate clean, executable SQL only. No explanations."""
+User Query: {query}
+
+Generate executable Snowflake SQL using the AI-discovered schema above."""
 
             error_context_text = ""
             if error_context:

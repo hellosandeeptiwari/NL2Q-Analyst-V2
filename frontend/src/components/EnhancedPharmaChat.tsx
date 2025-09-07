@@ -334,6 +334,7 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messageResults, setMessageResults] = useState<{[messageId: string]: any}>({});
   const [currentMessage, setCurrentMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [activePlan, setActivePlan] = useState<QueryPlan | null>(null);
@@ -887,6 +888,21 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
           status: planResult.status === 'failed' ? 'error' : planResult.status
         };
         
+        // Store results with this message
+        if (planResult.status === 'completed' && planResult.results) {
+          console.log('Storing results for message:', assistantMessage.message_id, {
+            planResult: planResult,
+            results: planResult.results
+          });
+          setMessageResults(prev => ({
+            ...prev,
+            [assistantMessage.message_id]: {
+              plan: planResult,
+              results: planResult.results
+            }
+          }));
+        }
+        
         // Add assistant message and clear active plan after a short delay
         setTimeout(() => {
           setMessages(prev => [...prev, assistantMessage]);
@@ -921,6 +937,21 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                 timestamp: new Date().toISOString(),
                 status: updatedPlan.status === 'failed' ? 'error' : updatedPlan.status
               };
+              
+              // Store results with this message
+              if (updatedPlan.status === 'completed' && updatedPlan.results) {
+                console.log('Storing results for polled message:', assistantMessage.message_id, {
+                  updatedPlan: updatedPlan,
+                  results: updatedPlan.results
+                });
+                setMessageResults(prev => ({
+                  ...prev,
+                  [assistantMessage.message_id]: {
+                    plan: updatedPlan,
+                    results: updatedPlan.results
+                  }
+                }));
+              }
               
               setTimeout(() => {
                 setMessages(prev => [...prev, assistantMessage]);
@@ -1467,64 +1498,13 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                           </div>
                         )}
                         
-                        {/* Show data results if available - check multiple possible result keys */}
+                        {/* Show data summary only (not full table) - full results are shown in dedicated section below */}
                         {(stepResult.data || stepResult.results) && Array.isArray(stepResult.data || stepResult.results) && (stepResult.data || stepResult.results).length > 0 && (
                           <div>
-                            {(() => {
-                              const dataArray = stepResult.data || stepResult.results;
-                              return (
-                                <>
-                                  <p><strong>Query Results ({dataArray.length} rows):</strong></p>
-                                  <div className="results-table" style={{
-                                    maxHeight: '400px', 
-                                    overflowY: 'auto', 
-                                    border: '1px solid #e0e0e0', 
-                                    borderRadius: '4px',
-                                    marginTop: '10px'
-                                  }}>
-                                    <table style={{width: '100%', borderCollapse: 'collapse'}}>
-                                      <thead style={{background: '#f8f9fa', position: 'sticky', top: 0}}>
-                                        <tr>
-                                          {Object.keys(dataArray[0]).map((key: string) => (
-                                            <th key={key} style={{
-                                              padding: '8px 12px', 
-                                              borderBottom: '2px solid #dee2e6',
-                                              fontWeight: 'bold',
-                                              textAlign: 'left'
-                                            }}>{key}</th>
-                                          ))}
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {dataArray.slice(0, 10).map((row: any, idx: number) => (
-                                          <tr key={idx} style={{borderBottom: '1px solid #e9ecef'}}>
-                                            {Object.values(row).map((value, vidx) => (
-                                              <td key={vidx} style={{
-                                                padding: '8px 12px',
-                                                maxWidth: '200px',
-                                                overflow: 'hidden',
-                                                textOverflow: 'ellipsis',
-                                                whiteSpace: 'nowrap'
-                                              }}>{String(value)}</td>
-                                            ))}
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                    {dataArray.length > 10 && (
-                                      <p style={{
-                                        fontSize: '12px', 
-                                        color: '#6b7280', 
-                                        padding: '10px',
-                                        margin: 0,
-                                        background: '#f8f9fa',
-                                        borderTop: '1px solid #e9ecef'
-                                      }}>... and {dataArray.length - 10} more rows</p>
-                                    )}
-                                  </div>
-                                </>
-                              );
-                            })()}
+                            <p><strong>Query Results:</strong> {(stepResult.data || stepResult.results).length} rows retrieved successfully</p>
+                            <p style={{color: '#6b7280', fontSize: '13px', fontStyle: 'italic'}}>
+                              📊 Full results and visualizations are displayed in the dedicated section below
+                            </p>
                           </div>
                         )}
                         
@@ -1552,258 +1532,6 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
         })}
             </div>
           )}
-        </div>
-      )}
-
-      {/* Enhanced Results & Visualization Section */}
-      {enhancedSteps.length > 0 && (plan.status === 'completed' || plan.status === 'failed') && (
-        <div className="results-visualization-container">
-          <div className="results-header">
-            <div className="results-icon">📊</div>
-            <div className="results-title-section">
-              <h3 className="results-title">Results & Visualization</h3>
-              <p className="results-subtitle">Your analysis results and generated charts</p>
-            </div>
-          </div>
-          <div className="results-content">
-            {(() => {
-              // Use enhanced steps for better result mapping
-              const lastStep = enhancedSteps[enhancedSteps.length - 1];
-              let stepResult = lastStep?.output_data;
-              const stepId = lastStep?.step_id || 'unknown_step'; // Define stepId here
-              
-              // If no result in last step, search for execution results
-              if (!stepResult) {
-                console.log('No result in last step, searching for execution results...');
-                for (const step of enhancedSteps) {
-                  if (step.task_type === 'execution' && step.output_data) {
-                    console.log(`Found execution results in ${step.step_id}:`, step.output_data);
-                    stepResult = step.output_data;
-                    break;
-                  }
-                }
-              }
-              
-              // Additional fallback: search raw results for data
-              if (!stepResult) {
-                for (const [key, result] of Object.entries(plan.results || {})) {
-                  if (result && typeof result === 'object' && ((result as any).data || (result as any).charts)) {
-                    console.log(`Found results in ${key}:`, result);
-                    stepResult = result as any;
-                    break;
-                  }
-                }
-              }
-              
-              // Debug logging
-              console.log('Results debugging:', {
-                lastStepId: lastStep?.step_id,
-                lastStepType: lastStep?.task_type,
-                stepResult,
-                allResultKeys: Object.keys(plan.results || {}),
-                hasData: stepResult?.data,
-                hasCharts: stepResult?.charts,
-                dataLength: Array.isArray(stepResult?.data) ? stepResult?.data?.length : 'not array'
-              });
-              
-              // NEW: Enhanced debugging for chart detection
-              console.log('=== COMPREHENSIVE CHART DEBUG ===');
-              console.log('All plan results:', plan.results);
-              console.log('Looking for visualization results in keys:', Object.keys(plan.results || {}));
-              
-              // Check all result keys for chart data
-              Object.keys(plan.results || {}).forEach(key => {
-                const result = plan.results[key];
-                console.log(`Result ${key}:`, {
-                  hasCharts: !!result.charts,
-                  chartsLength: result.charts?.length,
-                  chartTypes: result.charts?.map((c: any) => c.type),
-                  allKeys: Object.keys(result)
-                });
-              });
-              
-              // Additional debug for charts
-              if (stepResult?.charts) {
-                console.log('Charts details:', stepResult.charts.map((chart: any, idx: number) => ({
-                  index: idx,
-                  type: chart.type,
-                  title: chart.title,
-                  hasData: !!chart.data,
-                  dataType: typeof chart.data,
-                  dataKeys: chart.data && typeof chart.data === 'object' ? Object.keys(chart.data) : 'not an object'
-                })));
-              }
-              
-              return (
-                <div className="step-result">
-                  {stepResult?.error ? (
-                    <div className="step-error">
-                      <p style={{color: '#DC2626'}}>❌ {stepResult.error}</p>
-                    </div>
-                  ) : stepResult ? (
-                    <div>
-                      {/* Debug: Log what we have in stepResult */}
-                      {(() => {
-                        console.log('=== TABLE RENDERING DEBUG ===');
-                        console.log('stepResult:', stepResult);
-                        console.log('stepResult.results exists:', !!stepResult.results);
-                        console.log('stepResult.results is array:', Array.isArray(stepResult.results));
-                        console.log('stepResult.results length:', stepResult.results?.length);
-                        console.log('stepResult.data exists:', !!stepResult.data);
-                        console.log('stepResult keys:', Object.keys(stepResult));
-                        console.log('=== END DEBUG ===');
-                        return null; // IIFE that returns null for React
-                      })()}
-                      
-                      {/* Show Enhanced Table Data (Primary for data queries) */}
-                      {stepResult.results && Array.isArray(stepResult.results) && stepResult.results.length > 0 ? (
-                        <EnhancedTable 
-                          data={stepResult.results}
-                          title="Query Results"
-                          description="Data retrieved from your query"
-                          maxHeight="500px"
-                        />
-                      ) : (
-                        <div className="no-table-data">
-                          {(() => {
-                            console.log('No table data to display - stepResult.results not found or empty');
-                            console.log('Available stepResult keys:', Object.keys(stepResult));
-                            return null;
-                          })()}
-                        </div>
-                      )}
-
-                      {/* Show SQL Query if available */}
-                      {stepResult.sql_query && (
-                        <div className="sql-display-container">
-                          <div className="sql-header">
-                            <h4 className="sql-title">Generated SQL Query</h4>
-                          </div>
-                          <div className="sql-content">
-                            <pre className="sql-code">{stepResult.sql_query}</pre>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Show visualizations if available */}
-                      {stepResult.chart_config && (
-                        <div>
-                          <p><strong>Visualization Created:</strong></p>
-                          <div className="chart-placeholder">
-                            📊 Chart Type: {stepResult.chart_config.chart_type || 'Data Visualization'}
-                          </div>
-                        </div>
-                      )}
-                      
-                      {/* Enhanced Charts Display */}
-                      {stepResult.charts && Array.isArray(stepResult.charts) && stepResult.charts.length > 0 && (
-                        <div className="charts-container">
-                          <div className="charts-header">
-                            <h4 className="charts-title">Generated Visualizations ({stepResult.charts.length})</h4>
-                            <p className="charts-description">Interactive charts created from your data analysis</p>
-                          </div>
-                          <div className="charts-grid">
-                            {stepResult.charts.map((chart: any, idx: number) => {
-                              const chartKey = `${stepId}_${idx}`;
-                              const customizedChart = getCustomizedChartData(chart, idx, stepId);
-                              const currentChartType = customChartTypes[chartKey] || chart.type;
-                              const currentColorScheme = customColors[chartKey] || ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
-                              
-                              return (
-                                <div key={idx} className="enhanced-chart-card">
-                                  <div className="chart-card-header">
-                                    <div className="left-section">
-                                      <div className="chart-type-badge">{currentChartType}</div>
-                                      <h5 className="chart-title">{chart.title || 'Data Visualization'}</h5>
-                                    </div>
-                                    
-                                    {/* Chart Customizer */}
-                                    <ChartCustomizer
-                                      chartData={customizedChart}
-                                      onChartTypeChange={(type) => handleChartTypeChange(idx, stepId, type)}
-                                      onColorSchemeChange={(colors) => handleColorSchemeChange(idx, stepId, colors)}
-                                      onDownloadChart={(format) => handleDownloadChart(idx, stepId, format)}
-                                      currentChartType={currentChartType}
-                                      currentColors={currentColorScheme}
-                                    />
-                                  </div>
-                                  
-                                  <div className="chart-content" data-chart-id={chartKey}>
-                                    {/* Render matplotlib charts (base64 images) */}
-                                    {chart.type === 'matplotlib' && chart.data && (
-                                      <img 
-                                        src={chart.data} 
-                                        alt={chart.title || 'Visualization'}
-                                        className="chart-image"
-                                      />
-                                    )}
-                                    
-                                    {/* Render plotly charts (original plotly charts or converted charts) */}
-                                    {(chart.type === 'plotly' || customChartTypes[chartKey]) && chart.data && (
-                                      <div className="plotly-chart-container">
-                                        <Plot
-                                          key={`${chartKey}_${currentChartType}`}
-                                          data={customizedChart.data?.data || chart.data.data || []}
-                                          layout={{
-                                            ...(customizedChart.data?.layout || chart.data.layout || {}),
-                                            autosize: true,
-                                            margin: { t: 40, r: 20, b: 40, l: 40 },
-                                            paper_bgcolor: 'rgba(0,0,0,0)',
-                                            plot_bgcolor: 'rgba(0,0,0,0)'
-                                          }}
-                                          config={{
-                                            displayModeBar: true,
-                                            responsive: true,
-                                            displaylogo: false,
-                                            modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
-                                          }}
-                                          style={{width: '100%', height: '100%'}}
-                                        />
-                                      </div>
-                                    )}
-                                    
-                                    {/* Fallback for other chart types */}
-                                    {!['matplotlib', 'plotly'].includes(chart.type) && !customChartTypes[chartKey] && (
-                                      <div className="chart-fallback">
-                                        <div className="fallback-icon">📊</div>
-                                        <p className="fallback-text">Chart data available ({chart.type})</p>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                      
-                      {/* Show summary */}
-                      {stepResult.summary && (
-                        <div>
-                          <p><strong>Summary:</strong></p>
-                          <p>{stepResult.summary}</p>
-                        </div>
-                      )}
-                      
-                      {/* Show final status */}
-                      {stepResult.status === 'completed' && (
-                        <p style={{color: '#059669'}}>✅ Analysis completed successfully</p>
-                      )}
-                    </div>
-                  ) : (
-                    <p style={{color: '#6B7280'}}>⏳ Generating results...</p>
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-        </div>
-      )}
-
-      {/* Optional: Show execution time if available */}
-      {plan.estimated_execution_time && (
-        <div className="plan-time">
-          <strong>Execution time:</strong> {plan.estimated_execution_time}
         </div>
       )}
     </div>
@@ -1871,29 +1599,385 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
   };
 
   // Render message
-  const renderMessage = (message: ChatMessage) => (
-    <div key={message.message_id} className={`message ${message.message_type === 'user_query' ? 'user' : 'assistant'}`}>
-      <div className="message-avatar">
-        {message.message_type === 'user_query' ? 
-          (userProfile?.full_name.charAt(0) || 'U') : 'AI'
-        }
-      </div>
-      <div className="message-content">
-        <div className="message-bubble">
-          {message.content}
+  const renderMessage = (message: ChatMessage) => {
+    // Check if this assistant message has stored results
+    const messageResult = messageResults[message.message_id];
+    
+    // For the latest message, also check current activePlan as fallback
+    const isLatestMessage = message.message_id === messages[messages.length - 1]?.message_id;
+    const fallbackPlan = isLatestMessage && activePlan && activePlan.status === 'completed' ? activePlan : null;
+    
+    const shouldShowResults = message.message_type === 'system_response' && (
+      messageResult || 
+      fallbackPlan || 
+      (activePlan && activePlan.status === 'completed' && Object.keys(activePlan.results || {}).length > 0)
+    );
+
+    // Debug logging
+    if (message.message_type === 'system_response') {
+      console.log('Rendering assistant message:', message.message_id, {
+        messageResult: messageResult,
+        fallbackPlan: fallbackPlan,
+        shouldShowResults: shouldShowResults,
+        isLatestMessage: isLatestMessage,
+        activePlan: activePlan,
+        allMessageResults: messageResults
+      });
+    }
+
+    return (
+      <div key={message.message_id} className={`message ${message.message_type === 'user_query' ? 'user' : 'assistant'}`}>
+        <div className="message-avatar">
+          {message.message_type === 'user_query' ? 
+            (userProfile?.full_name.charAt(0) || 'U') : 'AI'
+          }
         </div>
-        <div className="message-metadata">
-          <span>{formatTimestamp(message.timestamp)}</span>
-          {message.cost_usd && (
-            <span className="cost">${message.cost_usd.toFixed(3)}</span>
-          )}
-          {message.response_time_ms && (
-            <span className="response-time">{message.response_time_ms}ms</span>
+        <div className="message-content">
+          <div className="message-bubble">
+            {message.content}
+          </div>
+          <div className="message-metadata">
+            <span>{formatTimestamp(message.timestamp)}</span>
+            {message.cost_usd && (
+              <span className="cost">${message.cost_usd.toFixed(3)}</span>
+            )}
+            {message.response_time_ms && (
+              <span className="response-time">{message.response_time_ms}ms</span>
+            )}
+          </div>
+          
+          {/* Attach results directly to assistant messages */}
+          {shouldShowResults && (
+            <div className="message-results" style={{
+              marginTop: '16px',
+              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(16, 185, 129, 0.05) 100%)',
+              border: '1px solid rgba(59, 130, 246, 0.1)',
+              borderRadius: '12px',
+              padding: '20px',
+              boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)'
+            }}>
+              {(() => {
+                // Use stored results or fallback to current activePlan
+                const planData = messageResult || fallbackPlan || (activePlan && activePlan.status === 'completed' ? activePlan : null);
+                const resultsData = messageResult ? messageResult.results : 
+                                  fallbackPlan ? fallbackPlan.results : 
+                                  (activePlan && activePlan.status === 'completed' ? activePlan.results : {});
+                
+                // Get both visualization and execution results
+                // The results are stored with keys like "2_execution", "3_visualization" etc.
+                const executionStep = Object.entries(resultsData || {}).find(([key, result]: [string, any]) => 
+                  key.includes('execution') && result?.results && result.results.length > 0
+                );
+                
+                const visualizationStep = Object.entries(resultsData || {}).find(([key, result]: [string, any]) => 
+                  key.includes('visualization') && result?.charts && result.charts.length > 0
+                );
+
+                const executionResult = executionStep ? executionStep[1] as any : null;
+                const visualizationResult = visualizationStep ? visualizationStep[1] as any : null;
+
+                // Combine both results
+                const stepResult: any = {
+                  results: executionResult?.results || [],
+                  sql_query: executionResult?.sql_query || '',
+                  charts: visualizationResult?.charts || []
+                };
+
+                console.log('Rendering results for message:', message.message_id, {
+                  hasMessageResult: !!messageResult,
+                  hasFallbackPlan: !!fallbackPlan,
+                  hasActivePlan: !!activePlan,
+                  resultsData: resultsData,
+                  executionStep: executionStep,
+                  visualizationStep: visualizationStep,
+                  executionResult: executionResult,
+                  visualizationResult: visualizationResult,
+                  stepResult: stepResult,
+                  planData: planData
+                });
+
+                return (
+                  <div>
+                    {/* Debug info */}
+                    <div style={{ 
+                      background: '#f3f4f6', 
+                      padding: '8px', 
+                      fontSize: '11px', 
+                      fontFamily: 'monospace',
+                      marginBottom: '12px',
+                      borderRadius: '4px'
+                    }}>
+                      Debug: Charts({stepResult.charts?.length || 0}) | Data({stepResult.results?.length || 0}) | SQL({stepResult.sql_query ? 'Yes' : 'No'}) | PlanData({!!planData ? 'Yes' : 'No'})
+                    </div>
+                    
+                    {/* Force show for debugging - Remove this later */}
+                    {planData && (
+                      <div style={{ 
+                        background: '#fff3cd', 
+                        padding: '8px', 
+                        fontSize: '11px', 
+                        fontFamily: 'monospace',
+                        marginBottom: '12px',
+                        borderRadius: '4px'
+                      }}>
+                        FORCE DEBUG: resultsData keys: {Object.keys(resultsData || {}).join(', ')}
+                      </div>
+                    )}
+                    
+                    {/* Side-by-side layout for charts and tables */}
+                    {(stepResult.charts?.length > 0 || stepResult.results?.length > 0 || true) && (
+                      <div style={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: '1fr 1fr', 
+                        gap: '16px', 
+                        marginBottom: '16px',
+                        minHeight: '300px'
+                      }}>
+                        
+                        {/* Left side: Charts */}
+                        <div style={{
+                          background: 'rgba(255, 255, 255, 0.7)',
+                          borderRadius: '8px',
+                          padding: '16px',
+                          border: '1px solid rgba(59, 130, 246, 0.1)'
+                        }}>
+                          {stepResult.charts && stepResult.charts.length > 0 ? (
+                            <div>
+                              <h5 style={{
+                                margin: '0 0 12px 0',
+                                fontSize: '14px',
+                                fontWeight: '600',
+                                color: '#1F2937'
+                              }}>📊 Visualization ({stepResult.charts.length})</h5>
+                              {stepResult.charts.map((chart: any, idx: number) => {
+                                const stepId = messageResult?.plan?.plan_id || message.message_id;
+                                const chartKey = `${stepId}_${idx}`;
+                                
+                                return (
+                                  <div key={idx} style={{ marginBottom: '12px' }}>
+                                    {chart.type === 'matplotlib' && chart.data && (
+                                      <img 
+                                        src={chart.data} 
+                                        alt={chart.title || 'Visualization'}
+                                        style={{ width: '100%', borderRadius: '4px' }}
+                                      />
+                                    )}
+                                    
+                                    {chart.type === 'plotly' && chart.data && (
+                                      <div style={{ height: '250px' }}>
+                                        <Plot
+                                          data={chart.data.data || []}
+                                          layout={{
+                                            ...(chart.data.layout || {}),
+                                            autosize: true,
+                                            margin: { t: 30, r: 15, b: 30, l: 30 },
+                                            paper_bgcolor: 'rgba(0,0,0,0)',
+                                            plot_bgcolor: 'rgba(0,0,0,0)'
+                                          }}
+                                          config={{
+                                            displayModeBar: false,
+                                            responsive: true
+                                          }}
+                                          style={{width: '100%', height: '100%'}}
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div style={{ 
+                              textAlign: 'center', 
+                              padding: '40px 10px', 
+                              color: '#9CA3AF',
+                              fontSize: '12px'
+                            }}>
+                              <div style={{ fontSize: '32px', marginBottom: '8px' }}>📊</div>
+                              <p style={{ margin: 0 }}>No charts generated</p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Right side: Data Table */}
+                        <div style={{
+                          background: 'rgba(255, 255, 255, 0.7)',
+                          borderRadius: '8px',
+                          padding: '16px',
+                          border: '1px solid rgba(16, 185, 129, 0.1)'
+                        }}>
+                          {stepResult.results && stepResult.results.length > 0 ? (
+                            <div>
+                              <h5 style={{
+                                margin: '0 0 12px 0',
+                                fontSize: '14px',
+                                fontWeight: '600',
+                                color: '#1F2937'
+                              }}>📋 Data ({stepResult.results.length} rows)</h5>
+                              <div style={{
+                                borderRadius: '4px',
+                                overflow: 'hidden',
+                                border: '1px solid rgba(229, 231, 235, 0.8)',
+                                maxHeight: '250px'
+                              }}>
+                                <EnhancedTable 
+                                  data={stepResult.results}
+                                  title=""
+                                  description=""
+                                  maxHeight="250px"
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <div style={{ 
+                              textAlign: 'center', 
+                              padding: '40px 10px', 
+                              color: '#9CA3AF',
+                              fontSize: '12px'
+                            }}>
+                              <div style={{ fontSize: '32px', marginBottom: '8px' }}>📋</div>
+                              <p style={{ margin: 0 }}>No data available</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* AI Agent Execution Plan */}
+                    {planData && ((planData.plan || planData).tasks || (planData.plan || planData).reasoning_steps) && (
+                      <div style={{
+                        background: 'rgba(99, 102, 241, 0.05)',
+                        border: '1px solid rgba(99, 102, 241, 0.1)',
+                        borderRadius: '8px',
+                        padding: '16px',
+                        marginTop: '12px'
+                      }}>
+                        <h5 style={{
+                          margin: '0 0 12px 0',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          color: '#1F2937',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px'
+                        }}>🤖 AI Agent Execution Plan</h5>
+                        
+                        {/* Get the actual plan object */}
+                        {(() => {
+                          const actualPlan = planData.plan || planData;
+                          return (
+                            <>
+                              {/* Reasoning Steps */}
+                              {actualPlan.reasoning_steps && (
+                                <div style={{ marginBottom: '12px' }}>
+                                  <div style={{
+                                    fontSize: '12px',
+                                    fontWeight: '500',
+                                    color: '#6366F1',
+                                    marginBottom: '8px'
+                                  }}>Reasoning Process:</div>
+                                  <ul style={{
+                                    margin: 0,
+                                    paddingLeft: '16px',
+                                    fontSize: '12px',
+                                    lineHeight: '1.5',
+                                    color: '#4B5563'
+                                  }}>
+                                    {actualPlan.reasoning_steps.map((step: string, idx: number) => (
+                                      <li key={idx} style={{ marginBottom: '4px' }}>{step}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+
+                              {/* Task Execution Steps */}
+                              {actualPlan.tasks && actualPlan.tasks.length > 0 && (
+                                <div>
+                                  <div style={{
+                                    fontSize: '12px',
+                                    fontWeight: '500',
+                                    color: '#6366F1',
+                                    marginBottom: '8px'
+                                  }}>Execution Steps ({actualPlan.tasks.length}):</div>
+                                  <div style={{
+                                    display: 'flex',
+                                    flexWrap: 'wrap',
+                                    gap: '6px'
+                                  }}>
+                                    {actualPlan.tasks.map((task: any, idx: number) => (
+                                      <span key={idx} style={{
+                                        background: 'rgba(99, 102, 241, 0.1)',
+                                        color: '#4338CA',
+                                        padding: '4px 8px',
+                                        borderRadius: '4px',
+                                        fontSize: '11px',
+                                        fontWeight: '500'
+                                      }}>
+                                        {idx + 1}. {task.task_type?.replace(/_/g, ' ') || task.agent}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Plan Metadata */}
+                              {(actualPlan.estimated_execution_time || actualPlan.plan_id) && (
+                                <div style={{
+                                  marginTop: '12px',
+                                  paddingTop: '8px',
+                                  borderTop: '1px solid rgba(99, 102, 241, 0.1)',
+                                  fontSize: '11px',
+                                  color: '#6B7280',
+                                  display: 'flex',
+                                  gap: '16px'
+                                }}>
+                                  {actualPlan.estimated_execution_time && (
+                                    <span>⏱️ Est. Time: {actualPlan.estimated_execution_time}</span>
+                                  )}
+                                  {actualPlan.plan_id && (
+                                    <span>🆔 Plan ID: {actualPlan.plan_id.substring(0, 8)}...</span>
+                                  )}
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {/* SQL Query */}
+                    {stepResult.sql_query && (
+                      <div style={{
+                        background: 'rgba(15, 23, 42, 0.95)',
+                        borderRadius: '6px',
+                        padding: '12px',
+                        marginTop: '8px'
+                      }}>
+                        <div style={{
+                          fontSize: '12px',
+                          fontWeight: '500',
+                          color: '#94A3B8',
+                          marginBottom: '8px'
+                        }}>Generated SQL Query:</div>
+                        <pre style={{
+                          margin: 0,
+                          color: '#E2E8F0',
+                          fontSize: '11px',
+                          lineHeight: '1.4',
+                          overflow: 'auto',
+                          fontFamily: 'Monaco, Consolas, monospace'
+                        }}>{stepResult.sql_query}</pre>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
           )}
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   if (!userProfile) {
     return <div className="loading-indicator">Loading...</div>;
@@ -2008,16 +2092,6 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
             <DatabaseConnectionIndicator />
           </div>
           <div className="chat-actions">
-            {incrementalResults.length > 0 && (
-              <button 
-                className={`action-btn ${showIncrementalResults ? 'active' : ''}`}
-                onClick={() => setShowIncrementalResults(!showIncrementalResults)}
-                title={showIncrementalResults ? 'Hide incremental results' : 'Show incremental results'}
-              >
-                <FiBarChart2 size={14} /> {showIncrementalResults ? 'Hide' : 'Show'} Progress
-              </button>
-            )}
-            
             {onNavigateToSettings && (
               <button className="action-btn" onClick={onNavigateToSettings}>
                 <FiSettings size={14} /> Settings
@@ -2040,27 +2114,39 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
 
         {/* Messages */}
         <div className="messages-container">
-          {/* Progress Indicator */}
-          {(isLoading || showProgress) && progressSteps.length > 0 && (
-            <ProgressIndicator
-              steps={progressSteps}
-              currentStep={currentProgressStep || undefined}
-              totalEstimatedTime={estimatedTotalTime || undefined}
-              elapsedTime={analysisStartTime ? (Date.now() - analysisStartTime) / 1000 : 0}
-              showTimeEstimate={true}
-            />
-          )}
-
-          {/* Incremental Results */}
-          {showIncrementalResults && incrementalResults.length > 0 && (
-            <IncrementalResults
-              results={incrementalResults}
-              showPreviews={true}
-              maxPreviewRows={5}
-            />
-          )}
-
-          {messages.map(renderMessage)}
+          {messages.map((message, index) => {
+            // Check if this user message is being processed (no assistant response after it)
+            const isUserMessageBeingProcessed = message.message_type === 'user_query' && 
+                                              isLoading &&
+                                              (index === messages.length - 1 || 
+                                               (index < messages.length - 1 && messages[index + 1].message_type === 'user_query'));
+            
+            return (
+              <div key={message.message_id}>
+                {renderMessage(message)}
+                
+                {/* Show progress indicator right after user query being processed */}
+                {isUserMessageBeingProcessed && progressSteps.length > 0 && (
+                  <div 
+                    key={`progress-${message.message_id}`}
+                    style={{ 
+                      margin: '16px 0', 
+                      padding: '0 60px',
+                      animation: 'slideIn 0.3s ease-out'
+                    }}
+                  >
+                    <ProgressIndicator
+                      steps={progressSteps}
+                      currentStep={currentProgressStep || undefined}
+                      totalEstimatedTime={estimatedTotalTime || undefined}
+                      elapsedTime={analysisStartTime ? (Date.now() - analysisStartTime) / 1000 : 0}
+                      showTimeEstimate={true}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
           
           {activePlan && renderPlanExecution(activePlan)}
           
