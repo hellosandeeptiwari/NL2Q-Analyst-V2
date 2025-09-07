@@ -282,6 +282,17 @@
   border-color: #9ca3af;
 }
 
+.action-btn.active {
+  background: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
+}
+
+.action-btn.active:hover {
+  background: #2563eb;
+  border-color: #2563eb;
+}
+
 /* Messages Area */
 .messages-container {
   flex: 1;

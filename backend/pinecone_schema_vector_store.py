@@ -426,7 +426,10 @@ Data Analytics Focus: {self._get_analytics_focus(table_name)}"""
         
         # Notify progress callback of total tables
         if progress_callback:
-            progress_callback("start", total=len(all_tables))
+            if asyncio.iscoroutinefunction(progress_callback):
+                await progress_callback("start", total=len(all_tables))
+            else:
+                progress_callback("start", total=len(all_tables))
         
         # Check existing indexed tables efficiently
         check_start = time.time()
@@ -441,7 +444,10 @@ Data Analytics Focus: {self._get_analytics_focus(table_name)}"""
         if not tables_to_index:
             print("✅ All tables already indexed!")
             if progress_callback:
-                progress_callback("complete")
+                if asyncio.iscoroutinefunction(progress_callback):
+                    await progress_callback("complete")
+                else:
+                    progress_callback("complete")
             return
         
         # Performance configuration info
@@ -466,13 +472,19 @@ Data Analytics Focus: {self._get_analytics_focus(table_name)}"""
             for table_name in batch:
                 try:
                     if progress_callback:
-                        progress_callback("table_start", current_table=table_name)
+                        if asyncio.iscoroutinefunction(progress_callback):
+                            await progress_callback("table_start", current_table=table_name)
+                        else:
+                            progress_callback("table_start", current_table=table_name)
                     
                     result = await self._process_table_optimized(db_adapter, table_name)
                     if isinstance(result, Exception):
                         print(f"   ⚠️ Failed to process {table_name}: {result}")
                         if progress_callback:
-                            progress_callback("error", current_table=table_name, error=str(result))
+                            if asyncio.iscoroutinefunction(progress_callback):
+                                await progress_callback("error", current_table=table_name, error=str(result))
+                            else:
+                                progress_callback("error", current_table=table_name, error=str(result))
                     else:
                         chunks = result
                         all_chunks.extend(chunks)
@@ -480,11 +492,17 @@ Data Analytics Focus: {self._get_analytics_focus(table_name)}"""
                         print(f"   ✅ Prepared {table_name}: {len(chunks)} chunks")
                         
                         if progress_callback:
-                            progress_callback("table_complete", current_table=table_name, processed=processed_tables, total=len(all_tables))
+                            if asyncio.iscoroutinefunction(progress_callback):
+                                await progress_callback("table_complete", current_table=table_name, processed=processed_tables, total=len(all_tables))
+                            else:
+                                progress_callback("table_complete", current_table=table_name, processed=processed_tables, total=len(all_tables))
                 except Exception as e:
                     print(f"   ⚠️ Failed to process {table_name}: {e}")
                     if progress_callback:
-                        progress_callback("error", current_table=table_name, error=str(e))
+                        if asyncio.iscoroutinefunction(progress_callback):
+                            await progress_callback("error", current_table=table_name, error=str(e))
+                        else:
+                            progress_callback("error", current_table=table_name, error=str(e))
             
             # Batch generate embeddings for all chunks
             if all_chunks:
@@ -512,7 +530,10 @@ Data Analytics Focus: {self._get_analytics_focus(table_name)}"""
         avg_time_per_table = total_time / len(tables_to_index) if tables_to_index else 0
         
         if progress_callback:
-            progress_callback("complete")
+            if asyncio.iscoroutinefunction(progress_callback):
+                await progress_callback("complete")
+            else:
+                progress_callback("complete")
         
         print(f"🎉 Pinecone schema indexing complete!")
         print(f"📈 Performance summary:")
@@ -735,7 +756,7 @@ Data Analytics Focus: {self._get_analytics_focus(table_name)}"""
                         nested_metadata = json.loads(metadata["metadata"])
                         columns = nested_metadata.get("columns", [])
                         column_group = nested_metadata.get("column_group", "unknown")
-                        print(f"📋 Extracted {len(columns)} columns from group '{column_group}': {columns}")
+                        # print(f"📋 Extracted {len(columns)} columns from group '{column_group}': {columns}")
                     except (json.JSONDecodeError, TypeError) as e:
                         print(f"❌ Failed to parse nested metadata: {e}")
                         columns = []
@@ -747,6 +768,6 @@ Data Analytics Focus: {self._get_analytics_focus(table_name)}"""
         
         # Store all found columns
         table_details["columns"] = all_columns
-        print(f"✅ Total columns found for {table_name}: {len(all_columns)} - {all_columns}")
+        # print(f"✅ Total columns found for {table_name}: {len(all_columns)} - {all_columns}")
         
         return table_details

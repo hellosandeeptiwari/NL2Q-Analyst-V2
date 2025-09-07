@@ -5,9 +5,20 @@ from typing import Dict, Any, List
 import asyncio
 import json
 import time
+import logging
 from datetime import datetime
 from dotenv import load_dotenv
 import os
+
+# Suppress noisy WebSocket connection logs
+try:
+    access_logger = logging.getLogger("uvicorn.access")
+    access_logger.setLevel(logging.WARNING)
+    access_logger.addFilter(lambda record: not any(phrase in record.getMessage() for phrase in [
+        "WebSocket /ws/progress", "connection open", "connection closed"
+    ]))
+except Exception:
+    pass  # Best effort - don't fail startup if logging config fails
 
 # Load environment variables from .env file
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
@@ -41,14 +52,21 @@ indexing_progress = {
     "completedTables": []
 }
 
-async def broadcast_progress():
+async def broadcast_progress(data=None):
     """Broadcast progress to all connected WebSocket clients"""
     if active_connections:
-        message = json.dumps({
-            "type": "indexing_progress",
-            "data": indexing_progress
-        })
-        print(f"📡 Broadcasting to {len(active_connections)} WebSocket clients: {indexing_progress['stage']}")
+        if data is not None:
+            # Execution progress from orchestrator - forward as-is
+            message = json.dumps(data)
+            print(f"📡 Broadcasting execution progress to {len(active_connections)} clients: {data.get('stepName', 'Unknown step')}")
+        else:
+            # Indexing progress (backward compatibility)
+            message = json.dumps({
+                "type": "indexing_progress",
+                "data": indexing_progress
+            })
+            print(f"📡 Broadcasting indexing progress to {len(active_connections)} clients: {indexing_progress['stage']}")
+        
         disconnected = []
         for connection in active_connections:
             try:
@@ -64,7 +82,7 @@ async def broadcast_progress():
     else:
         print(f"📡 No active WebSocket connections to broadcast progress")
 
-def update_progress(stage: str, current_table: str = "", processed: int = None, total: int = None, error: str = None):
+async def update_progress(stage: str, current_table: str = "", processed: int = None, total: int = None, error: str = None):
     """Update indexing progress and broadcast to clients"""
     global indexing_progress
     
@@ -123,8 +141,18 @@ def update_progress(stage: str, current_table: str = "", processed: int = None, 
         })
         print(f"❌ Indexing failed! Final state: {indexing_progress}")
     
-    # Broadcast to all connected clients
-    asyncio.create_task(broadcast_progress())
+    # Broadcast real-time indexing progress to all connected clients
+    await broadcast_progress({
+        "type": "indexing_progress",
+        "stage": indexing_progress["stage"],
+        "isIndexing": indexing_progress["isIndexing"],
+        "totalTables": indexing_progress["totalTables"],
+        "processedTables": indexing_progress["processedTables"],
+        "currentTable": indexing_progress["currentTable"],
+        "estimatedTimeRemaining": indexing_progress.get("estimatedTimeRemaining"),
+        "errors": indexing_progress["errors"],
+        "completedTables": indexing_progress["completedTables"]
+    })
 
 async def startup_tasks():
     """Initialize and auto-index on startup if needed"""
@@ -952,7 +980,7 @@ async def perform_schema_indexing(force_reindex: bool = False):
         total_tables = len(result.rows) if not result.error else 0
         
         # Initialize progress tracking
-        update_progress("start", total=total_tables)
+        await update_progress("start", total=total_tables)
         
         # Use the orchestrator's optimized indexing if available
         if orchestrator and hasattr(orchestrator, '_perform_full_database_indexing'):
@@ -966,7 +994,7 @@ async def perform_schema_indexing(force_reindex: bool = False):
             
             # Clear existing index if force reindex
             if force_reindex:
-                update_progress("table_start", "Clearing existing index...")
+                await update_progress("table_start", "Clearing existing index...")
                 pinecone_store.clear_index()
                 print("🧹 Cleared existing index for fresh indexing")
             
@@ -981,7 +1009,7 @@ async def perform_schema_indexing(force_reindex: bool = False):
         stats = pinecone_store.index.describe_index_stats()
         
         # Update progress to complete
-        update_progress("complete")
+        await update_progress("complete")
         
         # Update status
         indexing_status.update({
@@ -1000,7 +1028,7 @@ async def perform_schema_indexing(force_reindex: bool = False):
         traceback.print_exc()
         
         # Update progress to failed
-        update_progress("failed", error=str(e))
+        await update_progress("failed", error=str(e))
         
         indexing_status.update({
             "isIndexing": False,

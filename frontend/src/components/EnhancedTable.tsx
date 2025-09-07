@@ -8,6 +8,9 @@ interface EnhancedTableProps {
   description?: string;
   maxHeight?: string;
   onExport?: (data: any[], format: 'csv' | 'excel') => void;
+  showPagination?: boolean;
+  showExport?: boolean;
+  compact?: boolean;
 }
 
 interface SortConfig {
@@ -20,7 +23,10 @@ const EnhancedTable: React.FC<EnhancedTableProps> = ({
   title = "Query Results",
   description = "Data retrieved from your query",
   maxHeight = "400px",
-  onExport
+  onExport,
+  showPagination = true,
+  showExport = true,
+  compact = false
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);

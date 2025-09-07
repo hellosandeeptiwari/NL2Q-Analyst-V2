@@ -10,6 +10,69 @@ from dataclasses import dataclass
 from enum import Enum
 import os
 
+# Import progress broadcasting function
+def broadcast_progress_sync(data):
+    """Synchronous broadcast progress updates - will be overridden by main.py if available"""
+    print(f"📡 Progress: {data}")
+
+# Override with actual broadcast function if available
+try:
+    import sys
+    if 'backend.main' in sys.modules:
+        from backend.main import broadcast_progress
+        broadcast_progress_sync = broadcast_progress
+    elif 'main' in sys.modules:
+        from main import broadcast_progress  
+        broadcast_progress_sync = broadcast_progress
+except (ImportError, ValueError):
+    pass  # Use fallback function above
+
+async def async_broadcast_progress(data):
+    """Async wrapper for progress broadcasting"""
+    try:
+        if asyncio.iscoroutinefunction(broadcast_progress_sync):
+            await broadcast_progress_sync(data)
+        else:
+            # Run sync function in background
+            import threading
+            threading.Thread(target=broadcast_progress_sync, args=(data,), daemon=True).start()
+    except Exception as e:
+        print(f"⚠️ Progress broadcast failed: {e}")
+
+def estimate_token_count(text: str) -> int:
+    """
+    Rough estimation of token count for text
+    Actual tokenization varies by model, but this gives a reasonable approximation
+    """
+    # Rough approximation: 1 token ≈ 4 characters for English text
+    # More conservative estimate for technical content
+    return len(text) // 3
+
+def calculate_optimal_tokens(prompt_length: int, context_size: int = 0, complexity_factor: float = 1.0) -> int:
+    """
+    Calculate optimal token limits based on input characteristics
+    """
+    # Base calculation
+    estimated_input_tokens = estimate_token_count(str(prompt_length)) + estimate_token_count(str(context_size))
+    
+    # Response size estimation based on input complexity
+    # Simple queries: 500-1000 tokens
+    # Medium queries: 1000-2500 tokens  
+    # Complex queries: 2500-5000 tokens
+    
+    if estimated_input_tokens < 500:
+        base_response_tokens = 1000
+    elif estimated_input_tokens < 1500:
+        base_response_tokens = 2500
+    else:
+        base_response_tokens = 4000
+        
+    # Apply complexity factor
+    optimal_tokens = int(base_response_tokens * complexity_factor)
+    
+    # Cap at reasonable limits
+    return min(max(optimal_tokens, 1000), 8000)
+
 @dataclass
 class AgentCapability:
     """Defines what an agent can do"""
@@ -53,6 +116,10 @@ class DynamicAgentOrchestrator:
         self._index_initialized = False
         self.db_connector = None
         self.pinecone_store = None
+        
+        # Token usage tracking for optimization
+        self.token_usage_history = []
+        self.optimal_token_cache = {}  # Cache optimal tokens for similar queries
         
     async def initialize_on_startup(self):
         """Initialize the system on startup"""
@@ -194,11 +261,11 @@ class DynamicAgentOrchestrator:
                 print("📋 Resuming indexing - keeping existing vectors")
 
             # Index the complete database schema with new optimized chunking
-            # Define a local progress callback to avoid import issues
-            def local_progress_callback(stage: str, current_table: str = "", processed: int = None, total: int = None, error: str = None):
+            # Define a local async progress callback for real-time updates
+            async def local_progress_callback(stage: str, current_table: str = "", processed: int = None, total: int = None, error: str = None):
                 try:
                     from backend.main import update_progress
-                    update_progress(stage, current_table, processed, total, error)
+                    await update_progress(stage, current_table, processed, total, error)
                 except ImportError:
                     print(f"Progress: {stage} - {current_table} ({processed}/{total})")
                 except Exception as e:
@@ -351,25 +418,158 @@ Be intelligent - use only what's needed for this specific query."""
             print(f"🧠 Using model for planning: {model_to_use}")
             print(f"🔍 OpenAI API Key available: {'Yes' if os.getenv('OPENAI_API_KEY') else 'No'}")
             print(f"📝 Planning prompt length: {len(planning_prompt)} characters")
+            
+            # Calculate dynamic token limit based on content complexity
+            prompt_length = len(planning_prompt)
+            context_size = len(str(available_context)) if "available_context" in locals() and available_context else 0
+            
+            # Determine complexity factor based on query characteristics
+            complexity_factor = 1.0
+            
+            # Increase complexity for multiple conditions
+            query_lower = user_query.lower()
+            if any(word in query_lower for word in ['compare', 'analyze', 'correlation', 'trend', 'complex']):
+                complexity_factor += 0.3
+            if any(word in query_lower for word in ['join', 'aggregate', 'group by', 'multiple tables']):
+                complexity_factor += 0.2
+            if context_size > 1000:
+                complexity_factor += 0.2
+                
+            # Calculate optimal token limit
+            dynamic_token_limit = calculate_optimal_tokens(prompt_length, context_size, complexity_factor)
+            
+            print(f"🎯 Calculated optimal token limit: {dynamic_token_limit}")
+            print(f"📊 Factors - Prompt: {prompt_length} chars, Context: {context_size} chars, Complexity: {complexity_factor:.1f}x")
+            
             print(f"📋 Full planning prompt:\n{planning_prompt}")
             
-            print(f"🚀 Calling o3-mini for planning...")
-            response = client.chat.completions.create(
-                model=model_to_use,
-                messages=[{"role": "user", "content": planning_prompt}],
-                max_completion_tokens=1000  # o3-mini uses max_completion_tokens and doesn't support temperature
-            )
-            print(f"✅ o3-mini responded successfully")
-            
-            # Parse the response to extract task plan
-            content = response.choices[0].message.content.strip()
-            print(f"� o3-mini full response:")
-            print(f"--- START o3-mini RESPONSE ---")
-            print(content)
-            print(f"--- END o3-mini RESPONSE ---")
-            print(f"📊 Response length: {len(content)} characters")
-            print(f"🔍 Response starts with: '{content[:50]}...'")
-            print(f"🔍 Response ends with: '...{content[-50:]}'")
+            # Retry mechanism for o3-mini API calls
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    print(f"🚀 Calling o3-mini for planning (attempt {attempt + 1}/{max_retries})...")
+                    print(f"🎯 Token limit: {dynamic_token_limit}")
+                    response = client.chat.completions.create(
+                        model=model_to_use,
+                        messages=[{"role": "user", "content": planning_prompt}],
+                        max_completion_tokens=dynamic_token_limit  # Dynamic token limit based on complexity
+                    )
+                    print(f"✅ o3-mini responded successfully")
+                    
+                    # Monitor token usage
+                    if hasattr(response, 'usage') and response.usage:
+                        usage = response.usage
+                        print(f"📊 Token usage - Prompt: {usage.prompt_tokens}, Completion: {usage.completion_tokens}, Total: {usage.total_tokens}")
+                        print(f"📈 Token efficiency: {(usage.completion_tokens / dynamic_token_limit * 100):.1f}% of limit used")
+                    
+                    # Check if response was truncated
+                    finish_reason = response.choices[0].finish_reason
+                    print(f"🏁 Finish reason: {finish_reason}")
+                    
+                    if finish_reason == 'length':
+                        print(f"⚠️ Response truncated! Model hit the {dynamic_token_limit} token limit")
+                        
+                        # Analyze if we can recover or need more tokens
+                        content = response.choices[0].message.content.strip()
+                        content_length = len(content)
+                        
+                        print(f"� Truncated content length: {content_length} chars")
+                        
+                        # If content is very short, might be a different issue
+                        if content_length < 100:
+                            print(f"⚠️ Very short response suggests API issue, not just truncation")
+                        
+                        # Try with higher token limit on next attempt
+                        if attempt < max_retries - 1:
+                            old_limit = dynamic_token_limit
+                            dynamic_token_limit = min(dynamic_token_limit + 2000, 8000)  # Bigger increase, cap at 8000
+                            print(f"🔄 Retrying with increased token limit: {old_limit} → {dynamic_token_limit}")
+                            continue
+                        print(f"🔧 Attempting to fix truncated JSON...")
+                        print(f"⚠️ Response was truncated due to token limit!")
+                        if attempt < max_retries - 1:
+                            print(f"🔄 Retrying with different approach...")
+                            continue
+                    print(f"🔍 Finish reason: {finish_reason}")
+                    
+                    # Parse the response to extract task plan
+                    content = response.choices[0].message.content.strip()
+                    
+                    # Validate that we got a reasonable response
+                    if len(content) < 10:
+                        print(f"⚠️ Response too short ({len(content)} chars), retrying...")
+                        continue
+                        
+                    if not ('[' in content or '{' in content):
+                        print(f"⚠️ Response doesn't contain JSON markers, retrying...")
+                        continue
+                    
+                    print(f"� o3-mini full response:")
+                    print(f"--- START o3-mini RESPONSE ---")
+                    print(content)
+                    print(f"--- END o3-mini RESPONSE ---")
+                    print(f"📊 Response length: {len(content)} characters")
+                    print(f"🔍 Response starts with: '{content[:50]}...'")
+                    print(f"🔍 Response ends with: '...{content[-50:]}'")
+                    
+                    # CRITICAL: Check for obvious truncation indicators
+                    if not content.rstrip().endswith((']', '}')) and not content.rstrip().endswith('"]'):
+                        print(f"🚨 TRUNCATION DETECTED: Response doesn't end properly!")
+                        if attempt < max_retries - 1:
+                            print(f"🔄 Retrying due to truncation...")
+                            continue
+                        print(f"🔧 Attempting to fix truncated JSON...")
+                        
+                        # Try to auto-complete common truncation patterns
+                        content = content.rstrip()
+                        
+                        # If it ends with an incomplete string, try to close it
+                        if content.endswith('"'):
+                            # Already has closing quote
+                            pass
+                        elif '"' in content and not content.count('"') % 2 == 0:
+                            # Odd number of quotes - missing closing quote
+                            content += '"'
+                            print(f"🔧 Added missing closing quote")
+                        
+                        # If missing closing brace for object
+                        if content.rstrip().endswith(',') or content.rstrip().endswith(':'):
+                            # Remove trailing comma/colon and close properly
+                            content = content.rstrip().rstrip(',').rstrip(':')
+                        
+                        # Try to close JSON structure intelligently
+                        open_braces = content.count('{') - content.count('}')
+                        open_brackets = content.count('[') - content.count(']')
+                        
+                        if open_braces > 0:
+                            content += '}' * open_braces
+                            print(f"🔧 Added {open_braces} closing braces")
+                            
+                        if open_brackets > 0:
+                            content += ']' * open_brackets
+                            print(f"🔧 Added {open_brackets} closing brackets")
+                            
+                        print(f"🔧 Fixed content: '{content}'")
+                        
+                        # Validate the fixed JSON
+                        try:
+                            test_parse = json.loads(content)
+                            print(f"✅ JSON auto-completion successful!")
+                        except json.JSONDecodeError as validation_error:
+                            print(f"⚠️ JSON still invalid after auto-completion: {validation_error}")
+                            print(f"🔧 Fixed content that still fails: {repr(content)}")
+                            # Continue anyway - main parser will handle the final fallback
+                    
+                    # If we get here, we have a valid response
+                    break
+                    
+                except Exception as api_error:
+                    print(f"⚠️ o3-mini API call failed (attempt {attempt + 1}): {api_error}")
+                    if attempt == max_retries - 1:
+                        raise api_error
+                    print(f"🔄 Retrying in a moment...")
+                    import time
+                    time.sleep(1)  # Brief delay before retry
             
             # Clean up the response for JSON parsing
             original_content = content
@@ -406,6 +606,16 @@ Be intelligent - use only what's needed for this specific query."""
                 print(f"📊 Parsed data type: {type(tasks_data)}")
                 print(f"📊 Number of tasks: {len(tasks_data) if isinstance(tasks_data, list) else 'Not a list'}")
                 
+                # Log successful token management
+                if hasattr(response, 'usage') and response.usage:
+                    usage = response.usage
+                    efficiency = (usage.completion_tokens / dynamic_token_limit * 100)
+                    print(f"🎯 Token Management Summary:")
+                    print(f"   • Limit set: {dynamic_token_limit}")
+                    print(f"   • Actually used: {usage.completion_tokens}")
+                    print(f"   • Efficiency: {efficiency:.1f}%")
+                    print(f"   • Status: {'✅ Optimal' if 50 <= efficiency <= 90 else '⚠️ Suboptimal' if efficiency < 50 else '🔥 Near limit'}")
+                
                 if isinstance(tasks_data, list):
                     for i, task in enumerate(tasks_data):
                         print(f"  Task {i+1}: {task}")
@@ -440,6 +650,39 @@ Be intelligent - use only what's needed for this specific query."""
             print(f"🔍 Full error details:")
             import traceback
             traceback.print_exc()
+            
+            # Try GPT-4o-mini as fallback (from OPENAI_MODEL env var)
+            try:
+                fallback_model = self.fast_model  # This uses OPENAI_MODEL from env (gpt-4o-mini)
+                print(f"🤖 Attempting {fallback_model} fallback for planning...")
+                fallback_response = self.client.chat.completions.create(
+                    model=fallback_model,
+                    messages=[
+                        {"role": "system", "content": "You are a helpful AI agent that creates execution plans for data analysis queries."},
+                        {"role": "user", "content": f"Create a plan for this query: {user_query}. Return ONLY valid JSON."}
+                    ],
+                    max_tokens=3000,  # Increased for complex plans
+                    temperature=0.1
+                )
+                
+                fallback_content = fallback_response.choices[0].message.content.strip()
+                print(f"✅ {fallback_model} fallback response received")
+                
+                # Clean and parse GPT-4 response
+                if "```json" in fallback_content:
+                    fallback_content = fallback_content.split("```json")[1].split("```")[0].strip()
+                elif "```" in fallback_content:
+                    fallback_content = fallback_content.split("```")[1].strip()
+                
+                fallback_plan = json.loads(fallback_content)
+                print(f"✅ {fallback_model} fallback plan parsed successfully!")
+                return fallback_plan
+                
+            except Exception as fallback_error:
+                print(f"❌ {fallback_model} fallback also failed: {fallback_error}")
+                print("🔄 Using dynamic default plan as final fallback...")
+                return self._create_default_plan(user_query)
+            
             print("🔄 Falling back to dynamic default plan...")
             return self._create_default_plan(user_query)
     
@@ -598,8 +841,18 @@ Be intelligent - use only what's needed for this specific query."""
         """
         results = {}
         completed_tasks = set()
+        total_tasks = len(tasks)
         
-        print(f"🚀 Executing {len(tasks)} planned tasks for query: '{user_query[:50]}...'")
+        print(f"🚀 Executing {total_tasks} planned tasks for query: '{user_query[:50]}...'")
+        
+        # Initialize progress
+        await async_broadcast_progress({
+            "stage": "execution_started",
+            "totalSteps": total_tasks,
+            "completedSteps": 0,
+            "currentStep": None,
+            "tasks": [{"id": task.task_id, "type": task.task_type.value, "status": "pending"} for task in tasks]
+        })
         
         while len(completed_tasks) < len(tasks):
             # Find tasks ready to execute (dependencies met)
@@ -617,14 +870,46 @@ Be intelligent - use only what's needed for this specific query."""
             for task in ready_tasks:
                 print(f"▶️  Executing {task.task_id}: {task.task_type.value}")
                 
+                # Broadcast task start
+                await async_broadcast_progress({
+                    "stage": "task_started",
+                    "currentStep": task.task_id,
+                    "stepName": task.task_type.value.replace('_', ' ').title(),
+                    "completedSteps": len(completed_tasks),
+                    "totalSteps": total_tasks,
+                    "progress": (len(completed_tasks) / total_tasks) * 100
+                })
+                
                 try:
                     task_result = await self._execute_single_task(task, results, user_query, user_id)
                     results[task.task_id] = task_result
                     completed_tasks.add(task.task_id)
                     print(f"✅ Completed {task.task_id}")
                     
+                    # Broadcast task completion
+                    await async_broadcast_progress({
+                        "stage": "task_completed",
+                        "currentStep": task.task_id,
+                        "stepName": task.task_type.value.replace('_', ' ').title(),
+                        "completedSteps": len(completed_tasks),
+                        "totalSteps": total_tasks,
+                        "progress": (len(completed_tasks) / total_tasks) * 100
+                    })
+                    
                 except Exception as e:
                     print(f"❌ Task {task.task_id} failed: {e}")
+                    
+                    # Broadcast task error
+                    await async_broadcast_progress({
+                        "stage": "task_error",
+                        "currentStep": task.task_id,
+                        "stepName": task.task_type.value.replace('_', ' ').title(),
+                        "error": str(e),
+                        "completedSteps": len(completed_tasks),
+                        "totalSteps": total_tasks,
+                        "progress": (len(completed_tasks) / total_tasks) * 100
+                    })
+                    
                     # Decide whether to continue or abort
                     if task.task_type in [TaskType.USER_INTERACTION, TaskType.VALIDATION]:
                         # Critical tasks - abort
@@ -1156,7 +1441,8 @@ Be intelligent - use only what's needed for this specific query."""
             "entities": [],
             "matched_tables": [],
             "user_preferences": {},
-            "semantic_intent": None
+            "semantic_intent": None,
+            "pinecone_matches": []  # Add this to store Pinecone matches
         }
         
         for key, value in inputs.items():
@@ -1179,6 +1465,11 @@ Be intelligent - use only what's needed for this specific query."""
             
             if "approved_tables" in value:
                 context["user_preferences"]["tables"] = value.get("approved_tables", [])
+            
+            # CRITICAL FIX: Extract pinecone_matches from schema discovery results
+            if "pinecone_matches" in value:
+                context["pinecone_matches"].extend(value.get("pinecone_matches", []))
+                print(f"🔍 Found {len(value.get('pinecone_matches', []))} Pinecone matches in context")
         
         return context
     
@@ -1215,16 +1506,61 @@ Be intelligent - use only what's needed for this specific query."""
                 if matches:
                     return [matches[0]['table_name']]
             
-            # Method 2: Query pattern analysis
-            query_lower = query.lower()
-            if 'nba' in query_lower:
-                return ['nba_final_output']  # Educated guess
-            
-            # Method 3: Could add database introspection here
-            return []
+            # Method 2: Database introspection for table discovery
+            return await self._discover_tables_from_database(query)
             
         except Exception as e:
             print(f"⚠️ Autonomous discovery failed: {e}")
+            return []
+    
+    async def _discover_tables_from_database(self, query: str) -> List[str]:
+        """Discover relevant tables from database using query analysis"""
+        try:
+            # Get all available tables
+            show_tables_sql = 'SHOW TABLES IN "COMMERCIAL_AI"."ENHANCED_NBA"'
+            result = self.db_connector.run(show_tables_sql, dry_run=False)
+            
+            if not result or not result.rows:
+                print("⚠️ Could not retrieve table list from database")
+                return []
+            
+            available_tables = [row[1] for row in result.rows]  # Table name is in second column
+            print(f"🔍 Available tables in database: {available_tables}")
+            
+            # Analyze query for table name hints
+            query_lower = query.lower()
+            query_words = set(query_lower.split())
+            
+            # Score tables based on name similarity to query terms
+            table_scores = []
+            for table in available_tables:
+                table_lower = table.lower()
+                table_words = set(table_lower.replace('_', ' ').split())
+                
+                # Calculate overlap score
+                overlap = len(query_words.intersection(table_words))
+                
+                # Boost score for exact substring matches
+                substring_matches = sum(1 for word in query_words if word in table_lower)
+                
+                total_score = overlap + (substring_matches * 0.5)
+                
+                if total_score > 0:
+                    table_scores.append((table, total_score))
+            
+            # Sort by score and return top matches
+            table_scores.sort(key=lambda x: x[1], reverse=True)
+            
+            if table_scores:
+                top_tables = [table for table, score in table_scores[:3]]  # Top 3 matches
+                print(f"🎯 Top table matches for query '{query}': {top_tables}")
+                return top_tables
+            else:
+                print(f"⚠️ No table matches found for query: {query}")
+                return available_tables[:3]  # Return first 3 tables as fallback
+                
+        except Exception as e:
+            print(f"⚠️ Database table discovery failed: {e}")
             return []
     
     async def _generate_sql_with_context(self, query: str, tables: List[str], context: Dict) -> Dict[str, Any]:
@@ -2041,14 +2377,18 @@ Generate Python code that:
             # Extract schema information from Pinecone results (no additional DB calls needed!)
             table_schemas = []
             if pinecone_matches:
+                print(f"🔍 Processing {len(pinecone_matches)} Pinecone matches for schema extraction")
                 for match in pinecone_matches:
                     table_name = match.get('table_name')
+                    print(f"📋 Processing Pinecone match for table: {table_name}")
                     if table_name in available_tables:
                         # Get detailed schema from Pinecone metadata
                         table_details = await self.pinecone_store.get_table_details(table_name)
+                        print(f"📊 Got table details for {table_name}: {list(table_details.keys())}")
                         
                         # Extract column information from the enhanced table details
                         columns = table_details.get('columns', [])
+                        print(f"📋 Initial columns from table_details: {len(columns)} columns")
                         
                         if not columns:
                             # Fallback: Extract from chunks manually if columns not already extracted
@@ -2082,9 +2422,11 @@ Generate Python code that:
             # Fallback: if no Pinecone matches provided, get fresh schema info
             if not table_schemas:
                 print("⚠️ No Pinecone schema found, fetching directly from database")
+                print(f"🔍 Available tables for schema lookup: {available_tables}")
                 for table_name in available_tables:
                     try:
                         describe_sql = f'DESCRIBE TABLE "COMMERCIAL_AI"."ENHANCED_NBA"."{table_name}"'
+                        print(f"🔍 Executing schema query: {describe_sql}")
                         result = self.db_connector.run(describe_sql, dry_run=False)
                         
                         if result and result.rows:
@@ -2092,12 +2434,20 @@ Generate Python code that:
                             table_schema = f"Table: {table_name}\nColumns: {', '.join(columns)}"
                             table_schemas.append(table_schema)
                             print(f"📊 Retrieved schema directly for {table_name}: {len(columns)} columns")
+                            print(f"📋 Columns: {columns[:10]}...")  # Show first 10 columns
+                        else:
+                            print(f"❌ No rows returned from DESCRIBE TABLE for {table_name}")
                     except Exception as e:
                         print(f"⚠️ Error getting schema for {table_name}: {e}")
                         table_schemas.append(f"Table: {table_name}\nColumns: [Schema unavailable]")
             
             # Database-specific system prompt with ACTUAL SCHEMA INFORMATION
             schema_context = "\n\n".join(table_schemas)
+            print(f"🔍 Schema context being sent to LLM:")
+            print(f"📋 Number of table schemas: {len(table_schemas)}")
+            # print(f"📊 Schema context preview (first 500 chars): {schema_context[:500]}...")
+            print(f"📊 Schema context length: {len(schema_context)} characters")
+            
             system_prompt = f"""You are a database query expert specializing in Snowflake SQL generation.
 
 Database Context:
@@ -2137,7 +2487,7 @@ Return only the SQL query, properly formatted for Snowflake."""
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=0.1,
-                max_tokens=500
+                max_tokens=1500  # Increased for complex SQL queries
             )
             
             sql_query = response.choices[0].message.content.strip()

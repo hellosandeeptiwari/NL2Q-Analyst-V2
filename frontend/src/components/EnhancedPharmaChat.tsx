@@ -10,6 +10,8 @@ import {
 import Plot from 'react-plotly.js';
 import EnhancedTable from './EnhancedTable';
 import ChartCustomizer from './ChartCustomizer';
+import ProgressIndicator from './ProgressIndicator';
+import IncrementalResults from './IncrementalResults';
 import { downloadChartAsPNG, downloadChartAsPDF, downloadChartAsSVG, applyChartColors, convertChartType } from '../utils/chartUtils';
 
 // Types
@@ -34,6 +36,26 @@ interface ChatMessage {
   status: 'pending' | 'processing' | 'completed' | 'error';
   response_time_ms?: number;
   cost_usd?: number;
+}
+
+interface ProgressStep {
+  id: string;
+  name: string;
+  status: 'pending' | 'running' | 'completed' | 'error';
+  startTime?: number;
+  endTime?: number;
+  progress?: number;
+}
+
+interface PartialResult {
+  id: string;
+  stepId: string;
+  stepName: string;
+  type: 'query' | 'chart' | 'insight' | 'error';
+  data?: any;
+  timestamp: number;
+  isComplete: boolean;
+  preview?: boolean;
 }
 
 interface Conversation {
@@ -335,6 +357,20 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
   const [customChartTypes, setCustomChartTypes] = useState<{[key: string]: string}>({});
   const [customColors, setCustomColors] = useState<{[key: string]: string[]}>({});
 
+  // Progress tracking state
+  const [progressSteps, setProgressSteps] = useState<ProgressStep[]>([]);
+  const [currentProgressStep, setCurrentProgressStep] = useState<string | null>(null);
+  const [analysisStartTime, setAnalysisStartTime] = useState<number | null>(null);
+  const [estimatedTotalTime, setEstimatedTotalTime] = useState<number | null>(null);
+  const [showProgress, setShowProgress] = useState(false);
+
+  // Incremental results state
+  const [incrementalResults, setIncrementalResults] = useState<PartialResult[]>([]);
+  const [showIncrementalResults, setShowIncrementalResults] = useState(true);
+
+  // WebSocket for real-time progress
+  const [websocket, setWebsocket] = useState<WebSocket | null>(null);
+
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -385,6 +421,129 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
     initializeData();
   }, []);
 
+  // Setup WebSocket connection for real-time progress
+  useEffect(() => {
+    const connectWebSocket = () => {
+      const ws = new WebSocket('ws://localhost:8000/ws/progress');
+      
+      ws.onopen = () => {
+        console.log('Connected to progress WebSocket');
+        setWebsocket(ws);
+      };
+      
+      ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          console.log('Received WebSocket message:', message);
+          
+          // Handle different message types
+          if (message.type === 'execution_progress') {
+            // New execution progress format
+            const progressData = message.data;
+            
+            if (progressData.stage === 'execution_started') {
+              // Initialize progress steps from backend
+              const steps = progressData.tasks?.map((task: any, index: number) => ({
+                id: task.id,
+                name: task.type.replace('_', ' ').split(' ').map((word: string) => 
+                  word.charAt(0).toUpperCase() + word.slice(1)
+                ).join(' '),
+                status: 'pending' as const,
+                progress: 0
+              })) || [];
+              
+              setProgressSteps(steps);
+              setShowProgress(true);
+              setAnalysisStartTime(Date.now());
+              setEstimatedTotalTime(30); // Default estimate
+              
+            } else if (progressData.stage === 'task_started') {
+              setCurrentProgressStep(progressData.currentStep);
+              updateProgressStep(progressData.currentStep, 'running', progressData.progress);
+              
+            } else if (progressData.stage === 'task_completed') {
+              updateProgressStep(progressData.currentStep, 'completed', 100);
+              
+            } else if (progressData.stage === 'task_error') {
+              updateProgressStep(progressData.currentStep, 'error', progressData.progress);
+            }
+            
+          } else if (message.type === 'indexing_progress') {
+            // Handle indexing progress from schema indexing/force ingestion
+            const indexingData = message.data;
+            console.log('📊 Indexing progress:', indexingData);
+            
+            // You can add specific UI updates for indexing progress here
+            if (indexingData.isIndexing) {
+              console.log(`Indexing: ${indexingData.stage} - ${indexingData.processedTables}/${indexingData.totalTables} tables`);
+            }
+            
+          } else {
+            // Legacy format - treat as execution progress
+            const progressData = message;
+            
+            if (progressData.stage === 'execution_started') {
+              // Initialize progress steps from backend
+              const steps = progressData.tasks?.map((task: any, index: number) => ({
+                id: task.id,
+                name: task.type.replace('_', ' ').split(' ').map((word: string) => 
+                  word.charAt(0).toUpperCase() + word.slice(1)
+                ).join(' '),
+                status: 'pending' as const,
+                progress: 0
+              })) || [];
+              
+              setProgressSteps(steps);
+              setShowProgress(true);
+              setAnalysisStartTime(Date.now());
+              setEstimatedTotalTime(30); // Default estimate
+              
+            } else if (progressData.stage === 'task_started') {
+              setCurrentProgressStep(progressData.currentStep);
+              updateProgressStep(progressData.currentStep, 'running', progressData.progress);
+              
+            } else if (progressData.stage === 'task_completed') {
+              updateProgressStep(progressData.currentStep, 'completed', 100);
+              
+            } else if (progressData.stage === 'task_error') {
+              updateProgressStep(progressData.currentStep, 'error', progressData.progress);
+            }
+          }
+          
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
+        }
+      };
+      
+      ws.onclose = () => {
+        console.log('WebSocket connection closed, attempting to reconnect...');
+        setTimeout(connectWebSocket, 3000); // Reconnect after 3 seconds
+      };
+      
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+      };
+    };
+    
+    connectWebSocket();
+    
+    // Cleanup WebSocket when component unmounts
+    return () => {
+      if (websocket) {
+        websocket.close();
+      }
+    };
+  }, []);
+
+  // Auto-cleanup WebSocket
+  useEffect(() => {
+    return () => {
+      if (websocket) {
+        websocket.close();
+      }
+    };
+  }, [websocket]);
+
   // Refresh database status function
   const refreshDatabaseStatus = async () => {
     try {
@@ -416,6 +575,92 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
     }
   }, [activePlan]);
 
+  // Auto-hide progress indicator after completion
+  useEffect(() => {
+    const completedSteps = progressSteps.filter(step => step.status === 'completed').length;
+    const totalSteps = progressSteps.length;
+    
+    if (totalSteps > 0 && completedSteps === totalSteps) {
+      // All steps completed - hide progress after 3 seconds
+      const timer = setTimeout(() => {
+        setShowProgress(false);
+        setProgressSteps([]);
+        setCurrentProgressStep(null);
+      }, 3000);
+      
+      return () => clearTimeout(timer);
+    } else if (totalSteps > 0 && completedSteps < totalSteps) {
+      // Progress is active - show it
+      setShowProgress(true);
+    }
+  }, [progressSteps]);
+
+  // Progress tracking functions
+  const initializeProgress = (steps: string[], estimatedTime?: number) => {
+    const progressSteps = steps.map((stepName, index) => ({
+      id: `step_${index}`,
+      name: stepName,
+      status: 'pending' as const
+    }));
+    
+    setProgressSteps(progressSteps);
+    setCurrentProgressStep(null);
+    setAnalysisStartTime(Date.now());
+    setEstimatedTotalTime(estimatedTime || null);
+    setIncrementalResults([]);
+  };
+
+  const updateProgressStep = (stepId: string, status: 'running' | 'completed' | 'error', progress?: number) => {
+    setProgressSteps(prev => prev.map(step => {
+      if (step.id === stepId) {
+        const updatedStep = { 
+          ...step, 
+          status, 
+          progress: progress || step.progress
+        };
+        
+        if (status === 'running' && !step.startTime) {
+          updatedStep.startTime = Date.now();
+        } else if ((status === 'completed' || status === 'error') && step.startTime) {
+          updatedStep.endTime = Date.now();
+        }
+        
+        return updatedStep;
+      }
+      return step;
+    }));
+
+    if (status === 'running') {
+      setCurrentProgressStep(stepId);
+    } else if (status === 'completed' || status === 'error') {
+      // Move to next step if current step is completed
+      const currentIndex = progressSteps.findIndex(s => s.id === stepId);
+      const nextStep = progressSteps[currentIndex + 1];
+      if (nextStep && nextStep.status === 'pending') {
+        setCurrentProgressStep(nextStep.id);
+      } else {
+        setCurrentProgressStep(null);
+      }
+    }
+  };
+
+  const addIncrementalResult = (result: Omit<PartialResult, 'timestamp' | 'id'>) => {
+    const newResult: PartialResult = {
+      ...result,
+      id: `result_${Date.now()}_${Math.random()}`,
+      timestamp: Date.now()
+    };
+    
+    setIncrementalResults(prev => [...prev, newResult]);
+    return newResult.id;
+  };
+
+  const updateIncrementalResult = (resultId: string, updates: Partial<PartialResult>) => {
+    setIncrementalResults(prev => prev.map(result => 
+      result.id === resultId ? { ...result, ...updates } : result
+    ));
+  };
+
   // Handle sending messages
   const handleSendMessage = async () => {
     if (!currentMessage.trim() || !activeConversation || !userProfile) return;
@@ -433,6 +678,7 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
     const messageContent = currentMessage;
     setCurrentMessage('');
     setIsLoading(true);
+    setAnalysisStartTime(Date.now()); // Start timing the analysis
 
     try {
       // Build context from current analysis for intent detection
@@ -540,6 +786,13 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
 
       // If planning is needed, proceed with the full workflow
       console.log('Intent requires planning, sending to agent...');
+      
+      // Progress will be initialized via WebSocket when backend starts execution
+      // Reset any existing progress
+      setProgressSteps([]);
+      setCurrentProgressStep(null);
+      setIncrementalResults([]);
+      
       const planResult = await api.sendQuery(messageContent, userProfile.user_id, activeConversation.conversation_id);
       
       // Add debugging to see what we're getting
@@ -551,9 +804,39 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
       const enhancedPlan = enhancePlanForUI(planResult);
       setActivePlan(enhancedPlan);
       
+      // Progress updates will be handled via WebSocket real-time updates
+      // Add incremental results for completed results
+      if (planResult.status === 'completed' && planResult.results) {
+        Object.entries(planResult.results).forEach(([stepId, result]: [string, any]) => {
+          if (result.results && Array.isArray(result.results) && result.results.length > 0) {
+            addIncrementalResult({
+              stepId,
+              stepName: `Data Query Results`,
+              type: 'query',
+              data: result.results,
+              isComplete: true
+            });
+          }
+          
+          if (result.charts && Array.isArray(result.charts) && result.charts.length > 0) {
+            result.charts.forEach((chart: any, chartIndex: number) => {
+              addIncrementalResult({
+                stepId: `${stepId}_chart_${chartIndex}`,
+                stepName: `${chart.title || 'Visualization'}`,
+                type: 'chart',
+                data: chart.data,
+                isComplete: true
+              });
+            });
+          }
+        });
+      }
+      
       // If plan is completed, add assistant response to messages and clear active plan
       if (planResult.status === 'completed' || planResult.status === 'failed') {
         setIsLoading(false);
+        // Clear progress tracking since analysis is complete
+        setAnalysisStartTime(null);
         
         // Update context with new analysis results if completed
         if (planResult.status === 'completed') {
@@ -1455,10 +1738,11 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                                       />
                                     )}
                                     
-                                    {/* Render plotly charts */}
-                                    {chart.type === 'plotly' && chart.data && (
+                                    {/* Render plotly charts (original plotly charts or converted charts) */}
+                                    {(chart.type === 'plotly' || customChartTypes[chartKey]) && chart.data && (
                                       <div className="plotly-chart-container">
                                         <Plot
+                                          key={`${chartKey}_${currentChartType}`}
                                           data={customizedChart.data?.data || chart.data.data || []}
                                           layout={{
                                             ...(customizedChart.data?.layout || chart.data.layout || {}),
@@ -1479,7 +1763,7 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                                     )}
                                     
                                     {/* Fallback for other chart types */}
-                                    {!['matplotlib', 'plotly'].includes(chart.type) && (
+                                    {!['matplotlib', 'plotly'].includes(chart.type) && !customChartTypes[chartKey] && (
                                       <div className="chart-fallback">
                                         <div className="fallback-icon">📊</div>
                                         <p className="fallback-text">Chart data available ({chart.type})</p>
@@ -1724,6 +2008,16 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
             <DatabaseConnectionIndicator />
           </div>
           <div className="chat-actions">
+            {incrementalResults.length > 0 && (
+              <button 
+                className={`action-btn ${showIncrementalResults ? 'active' : ''}`}
+                onClick={() => setShowIncrementalResults(!showIncrementalResults)}
+                title={showIncrementalResults ? 'Hide incremental results' : 'Show incremental results'}
+              >
+                <FiBarChart2 size={14} /> {showIncrementalResults ? 'Hide' : 'Show'} Progress
+              </button>
+            )}
+            
             {onNavigateToSettings && (
               <button className="action-btn" onClick={onNavigateToSettings}>
                 <FiSettings size={14} /> Settings
@@ -1746,48 +2040,40 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
 
         {/* Messages */}
         <div className="messages-container">
+          {/* Progress Indicator */}
+          {(isLoading || showProgress) && progressSteps.length > 0 && (
+            <ProgressIndicator
+              steps={progressSteps}
+              currentStep={currentProgressStep || undefined}
+              totalEstimatedTime={estimatedTotalTime || undefined}
+              elapsedTime={analysisStartTime ? (Date.now() - analysisStartTime) / 1000 : 0}
+              showTimeEstimate={true}
+            />
+          )}
+
+          {/* Incremental Results */}
+          {showIncrementalResults && incrementalResults.length > 0 && (
+            <IncrementalResults
+              results={incrementalResults}
+              showPreviews={true}
+              maxPreviewRows={5}
+            />
+          )}
+
           {messages.map(renderMessage)}
           
           {activePlan && renderPlanExecution(activePlan)}
           
           {isLoading && (
             <div className="loading-indicator">
-              <FiLoader className="loading-icon" />
               <div className="loading-content">
-                {activePlan ? (
-                  <div>
-                    <span>Processing: {activePlan.current_step || 'Initializing...'}</span>
-                    <div className="progress-bar" style={{
-                      width: '200px',
-                      height: '4px',
-                      backgroundColor: '#e0e0e0',
-                      borderRadius: '2px',
-                      margin: '8px 0',
-                      overflow: 'hidden'
-                    }}>
-                      <div 
-                        className="progress-fill"
-                        style={{
-                          width: `${activePlan.progress || 0}%`,
-                          height: '100%',
-                          backgroundColor: '#4285f4',
-                          borderRadius: '2px',
-                          transition: 'width 0.3s ease'
-                        }}
-                      />
-                    </div>
-                    <span style={{fontSize: '12px', color: '#666'}}>
-                      {activePlan.progress || 0}% complete - This may take 1-2 minutes
-                    </span>
+                {/* Progress is now handled by the main ProgressIndicator via WebSocket */}
+                <div className="loading-state">
+                  <div className="loading-content">
+                    <div className="loading-spinner"></div>
+                    <p>{activePlan ? 'Processing your query...' : 'Initializing analysis...'}</p>
                   </div>
-                ) : (
-                  <span>AI is analyzing your request...</span>
-                )}
-              </div>
-              <div className="loading-dots">
-                <div className="loading-dot"></div>
-                <div className="loading-dot"></div>
-                <div className="loading-dot"></div>
+                </div>
               </div>
             </div>
           )}

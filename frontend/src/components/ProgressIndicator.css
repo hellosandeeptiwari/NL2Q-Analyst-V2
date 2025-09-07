@@ -1,0 +1,257 @@
+/* Progress Indicator Styles */
+
+.progress-indicator {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 20px;
+  margin: 16px 0;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.progress-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: #1e293b;
+  font-size: 1.1rem;
+}
+
+.progress-icon {
+  color: #3b82f6;
+  font-size: 1.2rem;
+}
+
+.progress-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  color: #64748b;
+}
+
+.time-icon {
+  color: #64748b;
+}
+
+.elapsed-time {
+  font-weight: 500;
+  color: #1e293b;
+}
+
+.estimated-remaining {
+  color: #64748b;
+}
+
+/* Overall Progress Bar */
+.overall-progress {
+  margin-bottom: 20px;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background: #f1f5f9;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6 0%, #1d4ed8 100%);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.progress-text {
+  font-size: 0.9rem;
+  color: #64748b;
+  text-align: center;
+}
+
+/* Individual Steps */
+.progress-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.progress-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  position: relative;
+}
+
+.step-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.step-number {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  font-weight: 600;
+  background: #f1f5f9;
+  color: #64748b;
+  border: 2px solid #e2e8f0;
+  transition: all 0.3s ease;
+}
+
+.progress-step.completed .step-number {
+  background: #10b981;
+  color: white;
+  border-color: #10b981;
+}
+
+.progress-step.running .step-number {
+  background: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
+}
+
+.progress-step.error .step-number {
+  background: #ef4444;
+  color: white;
+  border-color: #ef4444;
+}
+
+.progress-step.active .step-number {
+  transform: scale(1.1);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2);
+}
+
+.check-mark {
+  font-size: 1rem;
+}
+
+.error-mark {
+  font-size: 1rem;
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.step-connector {
+  width: 2px;
+  height: 20px;
+  background: #e2e8f0;
+  margin-top: 4px;
+}
+
+.progress-step:last-child .step-connector {
+  display: none;
+}
+
+.progress-step.completed .step-connector {
+  background: #10b981;
+}
+
+.step-content {
+  flex: 1;
+  padding-top: 4px;
+}
+
+.step-name {
+  font-weight: 500;
+  color: #1e293b;
+  margin-bottom: 4px;
+}
+
+.progress-step.completed .step-name {
+  color: #059669;
+}
+
+.progress-step.running .step-name {
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.progress-step.error .step-name {
+  color: #dc2626;
+}
+
+/* Step Progress Bar */
+.step-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.step-progress-bar {
+  flex: 1;
+  height: 4px;
+  background: #f1f5f9;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.step-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6 0%, #1d4ed8 100%);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.step-progress-text {
+  font-size: 0.8rem;
+  color: #64748b;
+  font-weight: 500;
+  min-width: 35px;
+}
+
+.step-duration {
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .progress-indicator {
+    padding: 16px;
+  }
+
+  .progress-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .progress-time {
+    font-size: 0.8rem;
+  }
+
+  .step-number {
+    width: 28px;
+    height: 28px;
+    font-size: 0.8rem;
+  }
+
+  .step-name {
+    font-size: 0.9rem;
+  }
+}
