@@ -282,6 +282,7 @@ const enhancePlanForUI = (backendPlan: QueryPlan): QueryPlan => {
     'similarity_matching': { name: 'Similarity Matching', description: 'Matching query terms to database schema', stepId: '3_similarity_matching' },
     'user_interaction': { name: 'Table Selection', description: 'Selecting the best tables for analysis', stepId: '4_user_verification' },
     'query_generation': { name: 'SQL Generation', description: 'Creating optimized database query', stepId: '5_query_generation' },
+    'python_generation': { name: 'Python Generation', description: 'Generating Python code for data analysis', stepId: '5_5_python_generation' },
     'execution': { name: 'Data Retrieval', description: 'Executing query and fetching results', stepId: '6_query_execution' },
     'visualization': { name: 'Chart Creation', description: 'Generating visualizations from data', stepId: '7_visualization' }
   };
@@ -357,6 +358,9 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
   const [chartCustomizations, setChartCustomizations] = useState<{[key: string]: any}>({});
   const [customChartTypes, setCustomChartTypes] = useState<{[key: string]: string}>({});
   const [customColors, setCustomColors] = useState<{[key: string]: string[]}>({});
+  
+  // Code display state
+  const [expandedCodeStep, setExpandedCodeStep] = useState<string | null>(null);
 
   // Progress tracking state
   const [progressSteps, setProgressSteps] = useState<ProgressStep[]>([]);
@@ -772,6 +776,9 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
         console.log(intentResult.isContextQuestion ? 'Handling context question' : 'Treating as casual conversation');
         setIsLoading(false);
         
+        // Clear activePlan for conversational responses to prevent showing old execution plans
+        setActivePlan(null);
+        
         const assistantMessage: ChatMessage = {
           message_id: `msg_${Date.now()}_assistant`,
           conversation_id: activeConversation.conversation_id,
@@ -801,9 +808,20 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
       console.log('Plan status:', planResult.status);
       console.log('Plan tasks:', planResult.tasks);
       
-      // Enhance the plan for UI display
-      const enhancedPlan = enhancePlanForUI(planResult);
-      setActivePlan(enhancedPlan);
+      // Check if this plan contains meaningful database operations
+      const hasDbOperations = planResult.tasks && planResult.tasks.some((task: any) => 
+        task.task_type && ['schema_discovery', 'query_generation', 'execution', 'sql_generation'].includes(task.task_type)
+      );
+      
+      // Only set activePlan if there are actual database operations
+      if (hasDbOperations) {
+        // Enhance the plan for UI display
+        const enhancedPlan = enhancePlanForUI(planResult);
+        setActivePlan(enhancedPlan);
+      } else {
+        // For simple conversational responses, clear the plan
+        setActivePlan(null);
+      }
       
       // Progress updates will be handled via WebSocket real-time updates
       // Add incremental results for completed results
@@ -1189,10 +1207,7 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
           {/* Toggle Button */}
           <div className="steps-toggle-header" onClick={() => setShowStepsDetails(!showStepsDetails)}>
             <span className="steps-toggle-title">
-              🤖 AI Agent Execution Plan 
-              <span className="steps-status">
-                {isCompleted ? 'COMPLETED' : isFailed ? 'FAILED' : 'IN PROGRESS'}
-              </span>
+              🤖 AI Agent Execution Plan
             </span>
             <FiChevronDown className={`toggle-icon ${showStepsDetails ? 'rotated' : ''}`} />
           </div>
@@ -1299,6 +1314,85 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                                 {stepResult?.sql_query && (
                                   <div className="sql-preview">
                                     <code>{stepResult.sql_query.substring(0, 100)}...</code>
+                                    <button 
+                                      className="code-expand-btn"
+                                      onClick={() => setExpandedCodeStep(
+                                        expandedCodeStep === selectedStepKey + '_sql' ? null : selectedStepKey + '_sql'
+                                      )}
+                                      style={{
+                                        marginLeft: '8px',
+                                        padding: '2px 8px',
+                                        fontSize: '11px',
+                                        background: '#3B82F6',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      {expandedCodeStep === selectedStepKey + '_sql' ? 'Hide' : 'View Full SQL'}
+                                    </button>
+                                  </div>
+                                )}
+                                {expandedCodeStep === selectedStepKey + '_sql' && stepResult?.sql_query && (
+                                  <div className="code-full-display" style={{
+                                    marginTop: '8px',
+                                    padding: '12px',
+                                    background: '#F8F9FA',
+                                    border: '1px solid #E5E7EB',
+                                    borderRadius: '4px',
+                                    fontFamily: 'monospace',
+                                    fontSize: '12px',
+                                    whiteSpace: 'pre-wrap',
+                                    maxHeight: '200px',
+                                    overflow: 'auto'
+                                  }}>
+                                    {stepResult.sql_query}
+                                  </div>
+                                )}
+                              </>
+                            );
+                          } else if (selectedStep?.name.includes('Python')) {
+                            return (
+                              <>
+                                <p>✅ Python code generated successfully</p>
+                                {stepResult?.python_code && (
+                                  <div className="python-preview">
+                                    <code>{stepResult.python_code.substring(0, 100)}...</code>
+                                    <button 
+                                      className="code-expand-btn"
+                                      onClick={() => setExpandedCodeStep(
+                                        expandedCodeStep === selectedStepKey + '_python' ? null : selectedStepKey + '_python'
+                                      )}
+                                      style={{
+                                        marginLeft: '8px',
+                                        padding: '2px 8px',
+                                        fontSize: '11px',
+                                        background: '#10B981',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      {expandedCodeStep === selectedStepKey + '_python' ? 'Hide' : 'View Full Python'}
+                                    </button>
+                                  </div>
+                                )}
+                                {expandedCodeStep === selectedStepKey + '_python' && stepResult?.python_code && (
+                                  <div className="code-full-display" style={{
+                                    marginTop: '8px',
+                                    padding: '12px',
+                                    background: '#F8F9FA',
+                                    border: '1px solid #E5E7EB',
+                                    borderRadius: '4px',
+                                    fontFamily: 'monospace',
+                                    fontSize: '12px',
+                                    whiteSpace: 'pre-wrap',
+                                    maxHeight: '200px',
+                                    overflow: 'auto'
+                                  }}>
+                                    {stepResult.python_code}
                                   </div>
                                 )}
                               </>
@@ -1609,9 +1703,9 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
     
     const shouldShowResults = message.message_type === 'system_response' && (
       messageResult || 
-      fallbackPlan || 
-      (activePlan && activePlan.status === 'completed' && Object.keys(activePlan.results || {}).length > 0)
+      (isLatestMessage && fallbackPlan)
     );
+    // Note: Removed the global activePlan check to prevent showing results on all messages
 
     // Debug logging
     if (message.message_type === 'system_response') {
@@ -1665,9 +1759,13 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                 
                 // Get both visualization and execution results
                 // The results are stored with keys like "2_execution", "3_visualization" etc.
-                const executionStep = Object.entries(resultsData || {}).find(([key, result]: [string, any]) => 
-                  key.includes('execution') && result?.results && result.results.length > 0
-                );
+                console.log('Available resultsData keys:', Object.keys(resultsData || {}));
+                console.log('Full resultsData:', resultsData);
+                
+                const executionStep = Object.entries(resultsData || {}).find(([key, result]: [string, any]) => {
+                  console.log(`Checking key: ${key}, includes execution: ${key.includes('execution')}, has results property: ${!!(result?.results)}, results length: ${result?.results?.length || 0}, status: ${result?.status}`);
+                  return key.includes('execution') && result?.results !== undefined; // Just check if results property exists, not if it has data
+                });
                 
                 const visualizationStep = Object.entries(resultsData || {}).find(([key, result]: [string, any]) => 
                   key.includes('visualization') && result?.charts && result.charts.length > 0
@@ -1676,11 +1774,28 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                 const executionResult = executionStep ? executionStep[1] as any : null;
                 const visualizationResult = visualizationStep ? visualizationStep[1] as any : null;
 
-                // Combine both results
+                // Also check if any step has results, not just execution
+                let allResults: any[] = [];
+                let allCharts: any[] = [];
+                let sqlQuery = '';
+                
+                Object.entries(resultsData || {}).forEach(([key, result]: [string, any]) => {
+                  if (result?.results && Array.isArray(result.results)) {
+                    allResults = allResults.concat(result.results);
+                  }
+                  if (result?.charts && Array.isArray(result.charts)) {
+                    allCharts = allCharts.concat(result.charts);
+                  }
+                  if (result?.sql_query) {
+                    sqlQuery = result.sql_query;
+                  }
+                });
+
+                // Combine both results - try multiple strategies
                 const stepResult: any = {
-                  results: executionResult?.results || [],
-                  sql_query: executionResult?.sql_query || '',
-                  charts: visualizationResult?.charts || []
+                  results: executionResult?.results || allResults || [],
+                  sql_query: executionResult?.sql_query || sqlQuery || '',
+                  charts: visualizationResult?.charts || allCharts || []
                 };
 
                 console.log('Rendering results for message:', message.message_id, {
@@ -1698,20 +1813,22 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
 
                 return (
                   <div>
-                    {/* Debug info */}
-                    <div style={{ 
-                      background: '#f3f4f6', 
-                      padding: '8px', 
-                      fontSize: '11px', 
-                      fontFamily: 'monospace',
-                      marginBottom: '12px',
-                      borderRadius: '4px'
-                    }}>
-                      Debug: Charts({stepResult.charts?.length || 0}) | Data({stepResult.results?.length || 0}) | SQL({stepResult.sql_query ? 'Yes' : 'No'}) | PlanData({!!planData ? 'Yes' : 'No'})
-                    </div>
+                    {/* Debug info - minimal version */}
+                    {planData && process.env.NODE_ENV === 'development' && (
+                      <div style={{ 
+                        background: '#f3f4f6', 
+                        padding: '8px', 
+                        fontSize: '11px', 
+                        fontFamily: 'monospace',
+                        marginBottom: '12px',
+                        borderRadius: '4px'
+                      }}>
+                        Debug: Charts({stepResult.charts?.length || 0}) | Data({stepResult.results?.length || 0}) | SQL({stepResult.sql_query ? 'Yes' : 'No'}) | PlanData({!!planData ? 'Yes' : 'No'})
+                      </div>
+                    )}
                     
-                    {/* Force show for debugging - Remove this later */}
-                    {planData && (
+                    {/* Force debugging - can be removed in production */}
+                    {false && planData && (
                       <div style={{ 
                         background: '#fff3cd', 
                         padding: '8px', 
@@ -1721,27 +1838,101 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                         borderRadius: '4px'
                       }}>
                         FORCE DEBUG: resultsData keys: {Object.keys(resultsData || {}).join(', ')}
+                        <br/>
+                        FORCE DEBUG: 3_execution content: {JSON.stringify(resultsData?.['3_execution'], null, 2)}
+                        <br/>
+                        FORCE DEBUG: executionStep found: {!!executionStep}
+                        <br/>
+                        FORCE DEBUG: allResults length: {allResults.length}
+                        <br/>
+                        FORCE DEBUG: stepResult.results length: {stepResult.results?.length || 0}
                       </div>
                     )}
                     
-                    {/* Side-by-side layout for charts and tables */}
-                    {(stepResult.charts?.length > 0 || stepResult.results?.length > 0 || true) && (
+                    {/* Emergency data display - show any data found - DISABLED for cleaner UI */}
+                    {false && Object.entries(resultsData || {}).map(([key, result]: [string, any]) => {
+                      if (key.includes('execution') && result?.results !== undefined) {
+                        return (
+                          <div key={key} style={{
+                            background: 'rgba(16, 185, 129, 0.05)',
+                            border: '1px solid rgba(16, 185, 129, 0.2)',
+                            borderRadius: '8px',
+                            padding: '16px',
+                            marginBottom: '12px'
+                          }}>
+                            <h5 style={{
+                              margin: '0 0 12px 0',
+                              fontSize: '14px',
+                              fontWeight: '600',
+                              color: '#1F2937'
+                            }}>📋 Query Execution Results from {key}</h5>
+                            
+                            {/* Show metadata */}
+                            {result.metadata && (
+                              <div style={{ marginBottom: '12px', fontSize: '12px' }}>
+                                <strong>Columns found:</strong> {result.metadata.columns?.join(', ') || 'None'}
+                                <br />
+                                <strong>Row count:</strong> {result.row_count || 0}
+                                <br />
+                                <strong>Execution time:</strong> {result.execution_time?.toFixed(2) || 0}ms
+                                <br />
+                                <strong>Status:</strong> {result.status || 'Unknown'}
+                              </div>
+                            )}
+                            
+                            {result.results && result.results.length > 0 ? (
+                              <div style={{
+                                borderRadius: '4px',
+                                overflow: 'hidden',
+                                border: '1px solid rgba(229, 231, 235, 0.8)',
+                                maxHeight: '300px'
+                              }}>
+                                <EnhancedTable 
+                                  data={result.results}
+                                  title=""
+                                  description=""
+                                  maxHeight="300px"
+                                />
+                              </div>
+                            ) : (
+                              <div style={{
+                                textAlign: 'center',
+                                padding: '20px',
+                                background: 'rgba(249, 250, 251, 0.5)',
+                                borderRadius: '4px',
+                                color: '#6B7280'
+                              }}>
+                                <div style={{ fontSize: '24px', marginBottom: '8px' }}>📄</div>
+                                <p style={{ margin: 0, fontSize: '14px' }}>Query executed successfully but returned no data</p>
+                                <p style={{ margin: '4px 0 0 0', fontSize: '12px' }}>
+                                  The query conditions may be too restrictive or the table may not contain matching records.
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })}
+                    
+                    {/* Side-by-side layout for charts and tables - Only show when there's actual data */}
+                    {(stepResult.charts?.length > 0 || stepResult.results?.length > 0) && (
                       <div style={{ 
-                        display: 'grid', 
-                        gridTemplateColumns: '1fr 1fr', 
+                        display: stepResult.charts?.length > 0 && stepResult.results?.length > 0 ? 'grid' : 'block',
+                        gridTemplateColumns: stepResult.charts?.length > 0 && stepResult.results?.length > 0 ? '1fr 1fr' : '1fr',
                         gap: '16px', 
                         marginBottom: '16px',
-                        minHeight: '300px'
+                        minHeight: stepResult.charts?.length > 0 || stepResult.results?.length > 0 ? '300px' : 'auto'
                       }}>
                         
-                        {/* Left side: Charts */}
-                        <div style={{
-                          background: 'rgba(255, 255, 255, 0.7)',
-                          borderRadius: '8px',
-                          padding: '16px',
-                          border: '1px solid rgba(59, 130, 246, 0.1)'
-                        }}>
-                          {stepResult.charts && stepResult.charts.length > 0 ? (
+                        {/* Left side: Charts - Only show if there are actual charts */}
+                        {stepResult.charts && stepResult.charts.length > 0 && (
+                          <div style={{
+                            background: 'rgba(255, 255, 255, 0.7)',
+                            borderRadius: '8px',
+                            padding: '16px',
+                            border: '1px solid rgba(59, 130, 246, 0.1)'
+                          }}>
                             <div>
                               <h5 style={{
                                 margin: '0 0 12px 0',
@@ -1786,27 +1977,17 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                                 );
                               })}
                             </div>
-                          ) : (
-                            <div style={{ 
-                              textAlign: 'center', 
-                              padding: '40px 10px', 
-                              color: '#9CA3AF',
-                              fontSize: '12px'
-                            }}>
-                              <div style={{ fontSize: '32px', marginBottom: '8px' }}>📊</div>
-                              <p style={{ margin: 0 }}>No charts generated</p>
-                            </div>
-                          )}
-                        </div>
+                          </div>
+                        )}
 
-                        {/* Right side: Data Table */}
-                        <div style={{
-                          background: 'rgba(255, 255, 255, 0.7)',
-                          borderRadius: '8px',
-                          padding: '16px',
-                          border: '1px solid rgba(16, 185, 129, 0.1)'
-                        }}>
-                          {stepResult.results && stepResult.results.length > 0 ? (
+                        {/* Right side: Data Table - Only show if there are actual results */}
+                        {stepResult.results && stepResult.results.length > 0 && (
+                          <div style={{
+                            background: 'rgba(255, 255, 255, 0.7)',
+                            borderRadius: '8px',
+                            padding: '16px',
+                            border: '1px solid rgba(16, 185, 129, 0.1)'
+                          }}>
                             <div>
                               <h5 style={{
                                 margin: '0 0 12px 0',
@@ -1828,48 +2009,57 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                                 />
                               </div>
                             </div>
-                          ) : (
-                            <div style={{ 
-                              textAlign: 'center', 
-                              padding: '40px 10px', 
-                              color: '#9CA3AF',
-                              fontSize: '12px'
-                            }}>
-                              <div style={{ fontSize: '32px', marginBottom: '8px' }}>📋</div>
-                              <p style={{ margin: 0 }}>No data available</p>
-                            </div>
-                          )}
-                        </div>
+                          </div>
+                        )}
                       </div>
                     )}
 
-                    {/* AI Agent Execution Plan */}
-                    {planData && ((planData.plan || planData).tasks || (planData.plan || planData).reasoning_steps) && (
+                    {/* AI Agent Execution Plan - Enhanced Card Format */}
+                    {planData && (() => {
+                      const actualPlan = planData.plan || planData;
+                      const hasDbOperations = actualPlan.tasks && actualPlan.tasks.some((task: any) => 
+                        task.task_type && ['schema_discovery', 'query_generation', 'execution', 'sql_generation', 'python_generation', 'visualization_builder'].includes(task.task_type)
+                      );
+                      const hasExecutableSteps = actualPlan.reasoning_steps && actualPlan.reasoning_steps.some((step: string) => 
+                        step.toLowerCase().includes('sql') || 
+                        step.toLowerCase().includes('query') || 
+                        step.toLowerCase().includes('database') ||
+                        step.toLowerCase().includes('table')
+                      );
+                      
+                      return (hasDbOperations || hasExecutableSteps);
+                    })() && (
                       <div style={{
                         background: 'rgba(99, 102, 241, 0.05)',
-                        border: '1px solid rgba(99, 102, 241, 0.1)',
-                        borderRadius: '8px',
-                        padding: '16px',
-                        marginTop: '12px'
+                        border: '1px solid rgba(99, 102, 241, 0.2)',
+                        borderRadius: '12px',
+                        padding: '20px',
+                        marginTop: '16px'
                       }}>
-                        <h5 style={{
-                          margin: '0 0 12px 0',
-                          fontSize: '14px',
-                          fontWeight: '600',
-                          color: '#1F2937',
+                        <div style={{
                           display: 'flex',
                           alignItems: 'center',
-                          gap: '8px'
-                        }}>🤖 AI Agent Execution Plan</h5>
+                          marginBottom: '16px'
+                        }}>
+                          <h5 style={{
+                            margin: 0,
+                            fontSize: '16px',
+                            fontWeight: '600',
+                            color: '#1F2937',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px'
+                          }}>🤖 AI Agent Execution Plan</h5>
+                        </div>
                         
                         {/* Get the actual plan object */}
                         {(() => {
                           const actualPlan = planData.plan || planData;
                           return (
                             <>
-                              {/* Reasoning Steps */}
+                              {/* Reasoning Process */}
                               {actualPlan.reasoning_steps && (
-                                <div style={{ marginBottom: '12px' }}>
+                                <div style={{ marginBottom: '16px' }}>
                                   <div style={{
                                     fontSize: '12px',
                                     fontWeight: '500',
@@ -1890,53 +2080,297 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                                 </div>
                               )}
 
-                              {/* Task Execution Steps */}
+                              {/* Execution Steps - Enhanced Interactive Card Layout */}
                               {actualPlan.tasks && actualPlan.tasks.length > 0 && (
                                 <div>
                                   <div style={{
                                     fontSize: '12px',
                                     fontWeight: '500',
                                     color: '#6366F1',
-                                    marginBottom: '8px'
+                                    marginBottom: '12px'
                                   }}>Execution Steps ({actualPlan.tasks.length}):</div>
+                                  
+                                  {/* Visual Step Cards */}
                                   <div style={{
                                     display: 'flex',
+                                    gap: '12px',
                                     flexWrap: 'wrap',
-                                    gap: '6px'
+                                    marginBottom: '16px'
                                   }}>
-                                    {actualPlan.tasks.map((task: any, idx: number) => (
-                                      <span key={idx} style={{
-                                        background: 'rgba(99, 102, 241, 0.1)',
-                                        color: '#4338CA',
-                                        padding: '4px 8px',
-                                        borderRadius: '4px',
-                                        fontSize: '11px',
-                                        fontWeight: '500'
-                                      }}>
-                                        {idx + 1}. {task.task_type?.replace(/_/g, ' ') || task.agent}
-                                      </span>
-                                    ))}
+                                    {actualPlan.tasks.map((task: any, idx: number) => {
+                                      const taskName = task.task_type?.replace(/_/g, ' ') || task.agent;
+                                      const displayName = taskName.replace(/\b\w/g, (l: string) => l.toUpperCase());
+                                      const stepKey = `step_${idx}`;
+                                      const isSelected = selectedStepKey === stepKey;
+                                      
+                                      return (
+                                        <div 
+                                          key={idx} 
+                                          style={{
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'center',
+                                            minWidth: '120px',
+                                            cursor: 'pointer',
+                                            transform: isSelected ? 'scale(1.05)' : 'scale(1)',
+                                            transition: 'all 0.2s ease'
+                                          }}
+                                          onClick={() => setSelectedStepKey(isSelected ? null : stepKey)}
+                                        >
+                                          {/* Step Circle */}
+                                          <div style={{
+                                            width: '40px',
+                                            height: '40px',
+                                            borderRadius: '50%',
+                                            background: isSelected ? '#6366F1' : '#10B981',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            marginBottom: '8px',
+                                            transition: 'all 0.3s ease',
+                                            border: isSelected ? '2px solid #4F46E5' : '2px solid transparent',
+                                            boxShadow: isSelected ? '0 4px 12px rgba(99, 102, 241, 0.3)' : 'none'
+                                          }}>
+                                            <FiCheck style={{ color: 'white', fontSize: '18px' }} />
+                                          </div>
+                                          
+                                          {/* Step Label */}
+                                          <div style={{
+                                            fontSize: '12px',
+                                            fontWeight: '500',
+                                            color: isSelected ? '#6366F1' : '#10B981',
+                                            textAlign: 'center',
+                                            lineHeight: '1.3'
+                                          }}>
+                                            {displayName}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
                                   </div>
+                                  
+                                  {/* Step Details Panel */}
+                                  {selectedStepKey && (() => {
+                                    const stepIndex = parseInt(selectedStepKey.replace('step_', ''));
+                                    const selectedTask = actualPlan.tasks[stepIndex];
+                                    const taskType = selectedTask?.task_type;
+                                    
+                                    // Find the corresponding result data
+                                    const stepResults = actualPlan.results || messageResult?.results || {};
+                                    let stepData = null;
+                                    
+                                    // Try to find step data by task type or index
+                                    if (stepResults[taskType]) {
+                                      stepData = stepResults[taskType];
+                                    } else if (stepResults[`${stepIndex + 1}_${taskType}`]) {
+                                      stepData = stepResults[`${stepIndex + 1}_${taskType}`];
+                                    } else {
+                                      // Look for any matching results
+                                      Object.keys(stepResults).forEach(key => {
+                                        if (key.includes(taskType) || key.includes(String(stepIndex + 1))) {
+                                          stepData = stepResults[key];
+                                        }
+                                      });
+                                    }
+                                    
+                                    return (
+                                      <div style={{
+                                        background: 'rgba(99, 102, 241, 0.1)',
+                                        border: '1px solid rgba(99, 102, 241, 0.2)',
+                                        borderRadius: '8px',
+                                        padding: '16px',
+                                        marginTop: '8px'
+                                      }}>
+                                        <div style={{
+                                          fontSize: '14px',
+                                          fontWeight: '600',
+                                          color: '#4F46E5',
+                                          marginBottom: '12px',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '8px'
+                                        }}>
+                                          <FiInfo size={16} />
+                                          {selectedTask?.task_type?.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())} Details
+                                        </div>
+                                        
+                                        {/* Show step-specific content */}
+                                        {(() => {
+                                          const taskType = selectedTask?.task_type;
+                                          
+                                          // Query Generation Step - Show SQL
+                                          if (taskType === 'query_generation' && stepData?.sql_query) {
+                                            return (
+                                              <div>
+                                                <div style={{
+                                                  fontSize: '12px',
+                                                  fontWeight: '500',
+                                                  color: '#6366F1',
+                                                  marginBottom: '8px'
+                                                }}>Generated SQL Query:</div>
+                                                <pre style={{
+                                                  background: 'rgba(15, 23, 42, 0.95)',
+                                                  color: '#E2E8F0',
+                                                  padding: '12px',
+                                                  borderRadius: '6px',
+                                                  fontSize: '11px',
+                                                  lineHeight: '1.4',
+                                                  overflow: 'auto',
+                                                  fontFamily: 'Monaco, Consolas, monospace',
+                                                  margin: 0
+                                                }}>{stepData.sql_query}</pre>
+                                              </div>
+                                            );
+                                          }
+                                          
+                                          // Python Generation Step - Show Python Code
+                                          if (taskType === 'python_generation' && stepData?.python_code) {
+                                            return (
+                                              <div>
+                                                <div style={{
+                                                  fontSize: '12px',
+                                                  fontWeight: '500',
+                                                  color: '#6366F1',
+                                                  marginBottom: '8px'
+                                                }}>Generated Python Code:</div>
+                                                <pre style={{
+                                                  background: 'rgba(15, 23, 42, 0.95)',
+                                                  color: '#E2E8F0',
+                                                  padding: '12px',
+                                                  borderRadius: '6px',
+                                                  fontSize: '11px',
+                                                  lineHeight: '1.4',
+                                                  overflow: 'auto',
+                                                  fontFamily: 'Monaco, Consolas, monospace',
+                                                  margin: 0,
+                                                  maxHeight: '300px'
+                                                }}>{stepData.python_code}</pre>
+                                              </div>
+                                            );
+                                          }
+                                          
+                                          // Schema Discovery - Show Tables
+                                          if (taskType === 'schema_discovery' && stepData?.discovered_tables) {
+                                            return (
+                                              <div>
+                                                <div style={{
+                                                  fontSize: '12px',
+                                                  fontWeight: '500',
+                                                  color: '#6366F1',
+                                                  marginBottom: '8px'
+                                                }}>Discovered Tables ({stepData.discovered_tables.length}):</div>
+                                                <div style={{
+                                                  display: 'flex',
+                                                  flexWrap: 'wrap',
+                                                  gap: '6px'
+                                                }}>
+                                                  {stepData.discovered_tables.map((table: string, i: number) => (
+                                                    <span key={i} style={{
+                                                      background: 'rgba(59, 130, 246, 0.1)',
+                                                      color: '#1E40AF',
+                                                      padding: '4px 8px',
+                                                      borderRadius: '4px',
+                                                      fontSize: '11px'
+                                                    }}>
+                                                      {table}
+                                                    </span>
+                                                  ))}
+                                                </div>
+                                              </div>
+                                            );
+                                          }
+                                          
+                                          // Execution Step - Show Data Summary
+                                          if (taskType === 'execution' && stepData?.results) {
+                                            return (
+                                              <div>
+                                                <div style={{
+                                                  fontSize: '12px',
+                                                  fontWeight: '500',
+                                                  color: '#6366F1',
+                                                  marginBottom: '8px'
+                                                }}>Execution Summary:</div>
+                                                <div style={{
+                                                  fontSize: '12px',
+                                                  color: '#4B5563'
+                                                }}>
+                                                  <p style={{ margin: '4px 0' }}>✅ Query executed successfully</p>
+                                                  <p style={{ margin: '4px 0' }}>📊 Retrieved {stepData.results.length} rows</p>
+                                                  {stepData.results.length > 0 && (
+                                                    <p style={{ margin: '4px 0' }}>🔍 Columns: {Object.keys(stepData.results[0]).join(', ')}</p>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            );
+                                          }
+                                          
+                                          // Visualization Builder Step - Show Charts Info
+                                          if (taskType === 'visualization_builder' && stepData?.charts) {
+                                            return (
+                                              <div>
+                                                <div style={{
+                                                  fontSize: '12px',
+                                                  fontWeight: '500',
+                                                  color: '#6366F1',
+                                                  marginBottom: '8px'
+                                                }}>Visualization Summary:</div>
+                                                <div style={{
+                                                  fontSize: '12px',
+                                                  color: '#4B5563'
+                                                }}>
+                                                  <p style={{ margin: '4px 0' }}>📊 Generated {stepData.charts.length} visualization(s)</p>
+                                                  {stepData.charts.map((chart: any, i: number) => (
+                                                    <p key={i} style={{ margin: '4px 0' }}>
+                                                      • {chart.type || 'Chart'} - {chart.title || `Chart ${i + 1}`}
+                                                    </p>
+                                                  ))}
+                                                </div>
+                                              </div>
+                                            );
+                                          }
+                                          
+                                          // Default - Show Summary
+                                          return (
+                                            <div style={{
+                                              fontSize: '12px',
+                                              color: '#4B5563',
+                                              fontStyle: 'italic'
+                                            }}>
+                                              {stepData ? 
+                                                `Step completed successfully. Click other steps to see their details.` : 
+                                                `Step completed. No detailed output available for this step type.`
+                                              }
+                                            </div>
+                                          );
+                                        })()}
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                               )}
 
                               {/* Plan Metadata */}
                               {(actualPlan.estimated_execution_time || actualPlan.plan_id) && (
                                 <div style={{
-                                  marginTop: '12px',
-                                  paddingTop: '8px',
+                                  paddingTop: '12px',
                                   borderTop: '1px solid rgba(99, 102, 241, 0.1)',
-                                  fontSize: '11px',
+                                  fontSize: '12px',
                                   color: '#6B7280',
                                   display: 'flex',
-                                  gap: '16px'
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center'
                                 }}>
-                                  {actualPlan.estimated_execution_time && (
-                                    <span>⏱️ Est. Time: {actualPlan.estimated_execution_time}</span>
-                                  )}
-                                  {actualPlan.plan_id && (
-                                    <span>🆔 Plan ID: {actualPlan.plan_id.substring(0, 8)}...</span>
-                                  )}
+                                  <div>
+                                    <span>🔄 Analyzed database structure and content</span>
+                                  </div>
+                                  <div style={{ display: 'flex', gap: '16px' }}>
+                                    {actualPlan.estimated_execution_time && (
+                                      <span>⏱️ Est. Time: {actualPlan.estimated_execution_time}</span>
+                                    )}
+                                    {actualPlan.plan_id && (
+                                      <span>🆔 Plan ID: {actualPlan.plan_id.substring(0, 8)}...</span>
+                                    )}
+                                  </div>
                                 </div>
                               )}
                             </>
@@ -1945,8 +2379,8 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                       </div>
                     )}
 
-                    {/* SQL Query */}
-                    {stepResult.sql_query && (
+                    {/* SQL Query - Hidden by default */}
+                    {false && stepResult.sql_query && (
                       <div style={{
                         background: 'rgba(15, 23, 42, 0.95)',
                         borderRadius: '6px',
@@ -2135,20 +2569,119 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                       animation: 'slideIn 0.3s ease-out'
                     }}
                   >
-                    <ProgressIndicator
-                      steps={progressSteps}
-                      currentStep={currentProgressStep || undefined}
-                      totalEstimatedTime={estimatedTotalTime || undefined}
-                      elapsedTime={analysisStartTime ? (Date.now() - analysisStartTime) / 1000 : 0}
-                      showTimeEstimate={true}
-                    />
+                    {/* AI Agent Execution Plan Card - replacing ProgressIndicator */}
+                    <div style={{
+                      background: 'rgba(99, 102, 241, 0.05)',
+                      border: '1px solid rgba(99, 102, 241, 0.2)',
+                      borderRadius: '12px',
+                      padding: '20px',
+                      marginBottom: '16px',
+                      animation: 'slideIn 0.3s ease-out'
+                    }}>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        marginBottom: '16px'
+                      }}>
+                        <h5 style={{
+                          margin: 0,
+                          fontSize: '16px',
+                          fontWeight: '600',
+                          color: '#1F2937',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px'
+                        }}>🤖 AI Agent Execution Plan</h5>
+                      </div>
+
+                      {/* Progress Steps as Cards */}
+                      <div style={{
+                        display: 'flex',
+                        gap: '12px',
+                        flexWrap: 'wrap',
+                        marginBottom: '16px'
+                      }}>
+                        {progressSteps.map((step, index) => {
+                          const isCompleted = step.status === 'completed';
+                          const isRunning = step.status === 'running';
+                          const isPending = step.status === 'pending';
+                          
+                          return (
+                            <div key={step.id} style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              minWidth: '120px'
+                            }}>
+                              {/* Step Circle */}
+                              <div style={{
+                                width: '40px',
+                                height: '40px',
+                                borderRadius: '50%',
+                                background: isCompleted ? '#10B981' : isRunning ? '#F59E0B' : '#E5E7EB',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                marginBottom: '8px',
+                                transition: 'all 0.3s ease'
+                              }}>
+                                {isCompleted ? (
+                                  <FiCheck style={{ color: 'white', fontSize: '18px' }} />
+                                ) : isRunning ? (
+                                  <FiLoader style={{ color: 'white', fontSize: '16px', animation: 'spin 1s linear infinite' }} />
+                                ) : (
+                                  <span style={{ color: '#9CA3AF', fontSize: '14px', fontWeight: '600' }}>
+                                    {index + 1}
+                                  </span>
+                                )}
+                              </div>
+                              
+                              {/* Step Label */}
+                              <div style={{
+                                fontSize: '12px',
+                                fontWeight: '500',
+                                color: isCompleted ? '#10B981' : isRunning ? '#F59E0B' : '#6B7280',
+                                textAlign: 'center',
+                                lineHeight: '1.3'
+                              }}>
+                                {step.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Execution Summary */}
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        paddingTop: '12px',
+                        borderTop: '1px solid rgba(99, 102, 241, 0.1)',
+                        fontSize: '12px',
+                        color: '#6B7280'
+                      }}>
+                        <div>
+                          <span>🔄 Planned {progressSteps.length} execution steps</span>
+                        </div>
+                        <div>
+                          {estimatedTotalTime && (
+                            <span>⏱️ Est. Time: {estimatedTotalTime}s</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
             );
           })}
           
-          {activePlan && renderPlanExecution(activePlan)}
+          {activePlan && showProgress && 
+           activePlan.tasks && activePlan.tasks.length > 0 && 
+           activePlan.tasks.some((task: any) => 
+             task.task_type && ['schema_discovery', 'query_generation', 'execution', 'sql_generation'].includes(task.task_type)
+           ) && renderPlanExecution(activePlan)}
           
           {isLoading && (
             <div className="loading-indicator">

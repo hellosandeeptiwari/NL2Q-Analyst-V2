@@ -91,7 +91,8 @@ class TaskType(Enum):
     QUERY_GENERATION = "query_generation"
     VALIDATION = "validation"
     EXECUTION = "execution"
-    VISUALIZATION = "visualization"
+    PYTHON_GENERATION = "python_generation"
+    VISUALIZATION_BUILDER = "visualization_builder"
     USER_INTERACTION = "user_interaction"
 
 @dataclass
@@ -364,6 +365,26 @@ class DynamicAgentOrchestrator:
                 cost_factor=0.3,
                 reliability_score=0.89,
                 specialized_domains=["visualization", "charts", "reporting"]
+            ),
+            
+            "python_generator": AgentCapability(
+                agent_name="python_generator",
+                description="Generates Python/pandas code for data analysis and visualization",
+                input_types=["query_results", "user_query", "data_schema"],
+                output_types=["python_code", "analysis_plan", "code_explanation"],
+                cost_factor=0.4,
+                reliability_score=0.91,
+                specialized_domains=["python", "pandas", "data_analysis", "code_generation"]
+            ),
+            
+            "visualization_builder": AgentCapability(
+                agent_name="visualization_builder", 
+                description="Executes Python code and builds interactive charts/visualizations",
+                input_types=["python_code", "query_results", "execution_context"],
+                output_types=["rendered_charts", "chart_data", "visualization_metadata"],
+                cost_factor=0.2,
+                reliability_score=0.88,
+                specialized_domains=["chart_execution", "plotly", "matplotlib", "rendering"]
             )
         }
     
@@ -385,7 +406,8 @@ AVAILABLE CAPABILITIES:
 - user_interaction: Get user confirmation for ambiguous requests
 - query_generation: Generate SQL queries
 - execution: Execute queries and retrieve data
-- visualization: Create charts, graphs, and visual analysis
+- python_generation: Generate Python/pandas code for data analysis
+- visualization_builder: Execute Python code and create interactive charts
 
 CRITICAL RULES:
 1. ALWAYS include schema_discovery as the FIRST step for any database query
@@ -400,8 +422,8 @@ Analyze the query and determine:
 
 Examples of CORRECT planning:
 - ANY data request from database → MUST start with: schema_discovery, query_generation, execution
-- Data analysis with charts → MUST include: schema_discovery, query_generation, execution, visualization
-- Complex analysis → MUST include: schema_discovery, semantic_understanding, query_generation, execution, visualization
+- Data analysis with charts → MUST include: schema_discovery, query_generation, execution, python_generation, visualization_builder
+- Complex analysis → MUST include: schema_discovery, semantic_understanding, query_generation, execution, python_generation, visualization_builder
 - Ambiguous request → schema_discovery, user_interaction, query_generation, execution
 
 OUTPUT: Return only a JSON array of tasks in this format:
@@ -819,17 +841,27 @@ REMEMBER: Schema discovery is MANDATORY for all database operations."""
             )
         ]
         
-        # Add visualization task only if needed
+        # Add visualization tasks only if needed
         if needs_visualization:
-            print("📊 Adding visualization task based on query intent")
+            print("📊 Adding Python generation and visualization builder tasks based on query intent")
             tasks.append(
                 AgentTask(
-                    task_id="7_visualization",
-                    task_type=TaskType.VISUALIZATION,
-                    input_data={"results": "from_task_6", "original_query": user_query},
-                    required_output={"charts": "interactive_charts", "summary": "narrative_summary"},
-                    constraints={"interactive": True},
+                    task_id="7_python_generation",
+                    task_type=TaskType.PYTHON_GENERATION,
+                    input_data={"results": "from_task_6", "original_query": user_query, "schema_context": "from_task_1"},
+                    required_output={"python_code": "generated_python_code", "analysis_plan": "code_explanation"},
+                    constraints={"safe_execution": True, "libraries": ["pandas", "plotly", "matplotlib"]},
                     dependencies=["6_query_execution"]
+                )
+            )
+            tasks.append(
+                AgentTask(
+                    task_id="8_visualization_builder",
+                    task_type=TaskType.VISUALIZATION_BUILDER,
+                    input_data={"python_code": "from_task_7", "results": "from_task_6", "original_query": user_query},
+                    required_output={"charts": "interactive_charts", "summary": "narrative_summary", "chart_metadata": "visualization_info"},
+                    constraints={"interactive": True, "safe_execution": True},
+                    dependencies=["7_python_generation"]
                 )
             )
         else:
@@ -946,8 +978,10 @@ REMEMBER: Schema discovery is MANDATORY for all database operations."""
             return await self._execute_query_generation(resolved_input)
         elif task.task_type == TaskType.EXECUTION:
             return await self._execute_query_execution(resolved_input)
-        elif task.task_type == TaskType.VISUALIZATION:
-            return await self._execute_visualization(resolved_input)
+        elif task.task_type == TaskType.PYTHON_GENERATION:
+            return await self._execute_python_generation(resolved_input)
+        elif task.task_type == TaskType.VISUALIZATION_BUILDER:
+            return await self._execute_visualization_builder(resolved_input)
         else:
             raise ValueError(f"Unknown task type: {task.task_type}")
     
@@ -960,7 +994,8 @@ REMEMBER: Schema discovery is MANDATORY for all database operations."""
             TaskType.USER_INTERACTION: "user_verifier",
             TaskType.QUERY_GENERATION: "query_builder",
             TaskType.EXECUTION: "query_executor",
-            TaskType.VISUALIZATION: "visualizer"
+            TaskType.PYTHON_GENERATION: "python_generator",
+            TaskType.VISUALIZATION_BUILDER: "visualization_builder"
         }
         return agent_mapping.get(task_type, "schema_discoverer")
     
@@ -1715,6 +1750,39 @@ REMEMBER: Schema discovery is MANDATORY for all database operations."""
                     
                     if result and hasattr(result, 'success') and result.success:
                         data = result.data if hasattr(result, 'data') and result.data is not None else []
+                        
+                        # If no rows returned and we had a WHERE clause, try without it
+                        if len(data) == 0 and 'WHERE' in sql_query.upper():
+                            print(f"🔄 No rows returned with WHERE clause, trying without filters...")
+                            try:
+                                # Create a simpler query without WHERE clause
+                                base_query = sql_query.split('WHERE')[0].strip()
+                                simple_query = f"{base_query} LIMIT 10"
+                                print(f"🔧 Fallback query: {simple_query}")
+                                
+                                fallback_result = await sql_runner.execute_query(simple_query, user_id=user_id)
+                                if fallback_result and hasattr(fallback_result, 'success') and fallback_result.success:
+                                    fallback_data = fallback_result.data if hasattr(fallback_result, 'data') and fallback_result.data is not None else []
+                                    if len(fallback_data) > 0:
+                                        print(f"✅ Fallback query returned {len(fallback_data)} rows")
+                                        return {
+                                            "results": fallback_data,
+                                            "row_count": len(fallback_data),
+                                            "execution_time": getattr(fallback_result, 'execution_time', 0) or 0,
+                                            "metadata": {
+                                                "columns": getattr(fallback_result, 'columns', []) or [],
+                                                "was_sampled": getattr(fallback_result, 'was_sampled', False),
+                                                "job_id": getattr(fallback_result, 'job_id', None),
+                                                "fallback_used": True,
+                                                "original_query": sql_query
+                                            },
+                                            "sql_executed": simple_query,
+                                            "execution_attempt": attempt,
+                                            "status": "completed"
+                                        }
+                            except Exception as fallback_error:
+                                print(f"⚠️ Fallback query failed: {fallback_error}")
+                        
                         return {
                             "results": data,
                             "row_count": len(data) if data else 0,
@@ -2449,6 +2517,244 @@ Generate Python code that:
                 "status": "failed"
             }
 
+    async def _execute_python_generation(self, inputs: Dict) -> Dict[str, Any]:
+        """Generate Python visualization code without executing it"""
+        try:
+            user_query = inputs.get('original_query', '')
+            
+            # Find execution results from previous tasks
+            exec_result = self._find_task_result_by_type(inputs, "execution")
+            data = exec_result.get("results", [])
+            
+            if not data:
+                return {
+                    "error": "No data available for Python code generation",
+                    "status": "failed"
+                }
+
+            print(f"🐍 Generating Python code for {len(data)} rows of data")
+            
+            # Try OpenAI-based generation first
+            try:
+                python_result = await self._generate_python_visualization_code(
+                    query=user_query,
+                    data=data,
+                    attempt=1,
+                    previous_error=None
+                )
+                
+                if python_result.get('status') == 'success':
+                    python_code = python_result.get('python_code', '')
+                    
+                    print(f"✅ OpenAI Python code generated successfully ({len(python_code)} characters)")
+                    
+                    return {
+                        "python_code": python_code,
+                        "data": data,
+                        "user_query": user_query,
+                        "summary": f"Generated Python visualization code ({len(python_code)} characters)",
+                        "generation_method": "openai",
+                        "status": "success"
+                    }
+                else:
+                    print(f"⚠️ OpenAI generation failed: {python_result.get('error')}, falling back to basic generation")
+                    
+            except Exception as openai_error:
+                print(f"⚠️ OpenAI generation error: {openai_error}, falling back to basic generation")
+            
+            # Fallback to basic Python code generation
+            print("🔄 Using basic Python code generation as fallback")
+            python_code = self._generate_basic_python_code(data, user_query)
+            
+            if python_code:
+                print(f"✅ Basic Python code generated successfully ({len(python_code)} characters)")
+                return {
+                    "python_code": python_code,
+                    "data": data,
+                    "user_query": user_query,
+                    "summary": f"Generated basic Python visualization code ({len(python_code)} characters)",
+                    "generation_method": "basic",
+                    "status": "success"
+                }
+            else:
+                return {
+                    "error": "Failed to generate Python code using both OpenAI and basic methods",
+                    "status": "failed"
+                }
+                
+        except Exception as e:
+            error_msg = f"Python generation error: {e}"
+            print(f"❌ Python generation failed: {error_msg}")
+            return {
+                "error": error_msg,
+                "status": "failed"
+            }
+                
+        except Exception as e:
+            error_msg = f"Python generation error: {e}"
+            print(f"❌ Python generation failed: {error_msg}")
+            return {
+                "error": error_msg,
+                "status": "failed"
+            }
+
+    async def _execute_visualization_builder(self, inputs: Dict) -> Dict[str, Any]:
+        """Execute previously generated Python code to build visualizations"""
+        try:
+            # Find python generation result from previous tasks
+            python_generation_result = self._find_task_result_by_type(inputs, "python_generation")
+            
+            if not python_generation_result:
+                return {
+                    "error": "No Python generation result available for visualization building",
+                    "available_inputs": list(inputs.keys()),
+                    "status": "failed"
+                }
+            
+            python_code = python_generation_result.get('python_code', '')
+            data = python_generation_result.get('data', [])
+            
+            if not python_code:
+                return {
+                    "error": "No Python code available for visualization building",
+                    "status": "failed"
+                }
+            
+            if not data:
+                return {
+                    "error": "No data available for visualization building",
+                    "status": "failed"
+                }
+
+            print(f"🎨 Building visualizations from Python code ({len(python_code)} characters)")
+            
+            # Execute the Python code to generate visualizations
+            execution_result = await self._execute_python_visualization(python_code, data)
+            
+            if execution_result.get('status') == 'success':
+                charts = execution_result.get('charts', [])
+                
+                print(f"✅ Built {len(charts)} visualizations successfully")
+                
+                return {
+                    "charts": charts,
+                    "chart_types": execution_result.get('chart_types', []),
+                    "summary": f"Built {len(charts)} visualizations from generated Python code",
+                    "execution_output": execution_result.get('execution_output', ''),
+                    "python_code": python_code,
+                    "status": "success"
+                }
+            else:
+                error_msg = execution_result.get('error', 'Unknown error')
+                print(f"❌ Visualization building failed: {error_msg}")
+                return {
+                    "error": f"Visualization building failed: {error_msg}",
+                    "status": "failed"
+                }
+                
+        except Exception as e:
+            error_msg = f"Visualization building error: {e}"
+            print(f"❌ Visualization building failed: {error_msg}")
+            return {
+                "error": error_msg,
+                "status": "failed"
+            }
+
+    def _generate_python_from_chart_spec(self, chart_spec, data: List[Dict]) -> str:
+        """Generate Python code from chart specification"""
+        try:
+            # Basic template for generating visualizations
+            python_code = f"""
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+# Create DataFrame from data
+data = {data}
+df = pd.DataFrame(data)
+
+# Create visualization based on data characteristics
+if len(df.columns) >= 2:
+    # For frequency data, use bar chart
+    if 'frequency' in df.columns.str.lower().tolist() or 'count' in df.columns.str.lower().tolist():
+        # Find the categorical column and frequency column
+        cat_col = [col for col in df.columns if col.lower() not in ['frequency', 'count']][0]
+        freq_col = [col for col in df.columns if col.lower() in ['frequency', 'count']][0]
+        
+        fig = px.bar(df, 
+                    x=cat_col, 
+                    y=freq_col,
+                    title='Frequency Distribution',
+                    labels={{cat_col: cat_col.replace('_', ' ').title(), 
+                            freq_col: freq_col.replace('_', ' ').title()}})
+        
+        # Customize layout
+        fig.update_layout(
+            xaxis_tickangle=-45,
+            showlegend=False,
+            height=500,
+            margin=dict(l=50, r=50, t=80, b=100)
+        )
+    else:
+        # Default scatter plot for other data
+        fig = px.scatter(df, 
+                        x=df.columns[0], 
+                        y=df.columns[1] if len(df.columns) > 1 else df.columns[0],
+                        title='Data Visualization')
+else:
+    # Single column - create histogram
+    fig = px.histogram(df, 
+                      x=df.columns[0],
+                      title='Data Distribution')
+
+# Show the plot
+fig.show()
+"""
+            return python_code.strip()
+        except Exception as e:
+            print(f"⚠️ Error generating Python from chart spec: {e}")
+            return self._generate_basic_python_code(data, "")
+
+    def _generate_basic_python_code(self, data: List[Dict], user_query: str) -> str:
+        """Generate basic Python visualization code as fallback"""
+        python_code = f"""
+import pandas as pd
+import plotly.express as px
+import matplotlib.pyplot as plt
+
+# Create DataFrame from data
+data = {data}
+df = pd.DataFrame(data)
+
+print("Data shape:", df.shape)
+print("Columns:", df.columns.tolist())
+print("\\nFirst few rows:")
+print(df.head())
+
+# Auto-detect chart type based on data
+if len(df.columns) >= 2:
+    # Check if we have frequency/count data
+    freq_cols = [col for col in df.columns if any(word in col.lower() for word in ['frequency', 'count', 'freq'])]
+    cat_cols = [col for col in df.columns if col not in freq_cols]
+    
+    if freq_cols and cat_cols:
+        # Bar chart for frequency data
+        fig = px.bar(df, x=cat_cols[0], y=freq_cols[0], 
+                    title='Frequency Distribution')
+    else:
+        # Scatter plot for general data
+        fig = px.scatter(df, x=df.columns[0], y=df.columns[1], 
+                        title='Data Visualization')
+else:
+    # Histogram for single column
+    fig = px.histogram(df, x=df.columns[0], title='Data Distribution')
+
+# Display the chart
+fig.show()
+"""
+        return python_code.strip()
+
     async def _generate_database_aware_sql(self, query: str, available_tables: List[str], 
                                          error_context: str = "", pinecone_matches: List[Dict] = None) -> Dict[str, Any]:
         """Generate SQL with database-specific awareness using schema from Pinecone"""
@@ -2839,7 +3145,8 @@ Return only the SQL query, properly formatted for Snowflake."""
                 if columns and any("recommended" in col.lower() for col in columns):
                     rec_col = next((col for col in columns if "recommended" in col.lower()), None)
                     if rec_col:
-                        where_clause = f' WHERE "{rec_col}" IS NOT NULL AND "{rec_col}" != \'\' AND "{rec_col}" != \'{{}}\''
+                        # More permissive WHERE clause - just exclude obvious empty values
+                        where_clause = f' WHERE "{rec_col}" IS NOT NULL AND LENGTH(TRIM("{rec_col}")) > 0'
             
             # Build the SQL query with proper schema.table format
             if columns:
