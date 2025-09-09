@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import ReactMarkdown from 'react-markdown';
 import './EnhancedPharmaChat.css';
 import { 
   FiSend, FiCopy, FiCheck, FiDatabase, FiSettings, 
@@ -962,10 +963,39 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                   newContext.chartTypes.push(chart.type);
                 }
               });
+              
+              // Preserve actual chart data for follow-ups
+              const cleanChartData = result.charts.map((chart: any) => {
+                if (chart.data && chart.data.data && chart.data.data[0]) {
+                  const plotData = chart.data.data[0];
+                  return {
+                    type: chart.type,
+                    title: chart.data.layout?.title?.text || 'Chart',
+                    data_points: {
+                      x_values: plotData.x || [],
+                      y_values: plotData.y || [],
+                      labels: plotData.x || [],
+                      values: plotData.y || []
+                    }
+                  };
+                }
+                return { type: chart.type, data_points: {} };
+              });
+              newContext.chartData = cleanChartData;
             }
+            
             if (result.data || result.table_data) {
               newContext.hasTable = true;
+              const tableData = result.data || result.table_data;
+              
+              // Preserve actual table data for follow-ups
+              if (Array.isArray(tableData) && tableData.length > 0) {
+                newContext.tableData = tableData.slice(0, 50); // Keep more rows for follow-ups
+                newContext.tableColumns = Object.keys(tableData[0] || {});
+                newContext.rowCount = tableData.length;
+              }
             }
+            
             if (result.summary) {
               newContext.lastAnalysis += result.summary + ' ';
             }
@@ -1946,7 +1976,24 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
         </div>
         <div className="message-content">
           <div className="message-bubble">
-            {message.content}
+            {message.message_type === 'system_response' ? (
+              <ReactMarkdown
+                components={{
+                  // Custom styling for markdown elements
+                  p: ({children}) => <p style={{margin: '0 0 8px 0'}}>{children}</p>,
+                  ul: ({children}) => <ul style={{margin: '8px 0', paddingLeft: '20px'}}>{children}</ul>,
+                  li: ({children}) => <li style={{margin: '4px 0'}}>{children}</li>,
+                  strong: ({children}) => <strong style={{color: '#1e40af', fontWeight: '600'}}>{children}</strong>,
+                  h1: ({children}) => <h1 style={{fontSize: '1.25rem', fontWeight: '600', margin: '16px 0 8px 0', color: '#1f2937'}}>{children}</h1>,
+                  h2: ({children}) => <h2 style={{fontSize: '1.1rem', fontWeight: '600', margin: '12px 0 6px 0', color: '#374151'}}>{children}</h2>,
+                  h3: ({children}) => <h3 style={{fontSize: '1rem', fontWeight: '600', margin: '8px 0 4px 0', color: '#4b5563'}}>{children}</h3>
+                }}
+              >
+                {message.content}
+              </ReactMarkdown>
+            ) : (
+              message.content
+            )}
           </div>
           <div className="message-metadata">
             <span>{formatTimestamp(message.timestamp)}</span>

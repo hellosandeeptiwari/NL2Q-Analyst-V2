@@ -217,17 +217,15 @@ orchestrator = DynamicAgentOrchestrator()
 @app.post("/api/agent/detect-intent")
 async def detect_intent(request: Request):
     """
-    Detect if a user query needs planning or can be handled as casual conversation using GPT-4o-mini.
-    Also detects context-aware questions about current results.
+    Simple LLM-based intent detection - one word classification
     """
     try:
         body = await request.json()
         user_query = body.get("query", "").strip()
-        context_data = body.get("context", {})  # Current charts, tables, analysis results
+        context_data = body.get("context", {})
         
-        # Debug logging
         print(f"🔍 Intent Detection - Query: {user_query}")
-        print(f"🔍 Intent Detection - Context: {context_data}")
+        print(f"🔍 Context Available: {bool(context_data.get('hasCharts') or context_data.get('hasTable'))}")
         
         if not user_query:
             return JSONResponse(content={
@@ -235,162 +233,168 @@ async def detect_intent(request: Request):
                 "response": "Hello! How can I help you with your data analysis today?"
             })
         
-        # Use GPT-4o-mini for intelligent intent detection
+        # Use LLM for simple classification
         from openai import OpenAI
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         
-        # Build context information for the prompt
-        context_info = ""
-        if context_data:
-            if context_data.get("hasCharts"):
-                context_info += f"\n- Current visualizations: {context_data.get('chartTypes', [])}"
-            if context_data.get("hasTable"):
-                context_info += f"\n- Current table data available"
-            if context_data.get("lastAnalysis"):
-                context_info += f"\n- Previous analysis: {context_data.get('lastAnalysis', '')[:200]}..."
+        has_context = bool(context_data.get("hasCharts") or context_data.get("hasTable"))
+        context_info = "Yes - charts and data available" if has_context else "No - no current analysis"
         
-        system_prompt = f"""You are an intent classifier for a pharmaceutical data analysis assistant. 
+        # Deep cognitive intent analysis using advanced reasoning
+        prompt = f"""You are a cognitive linguist and intent analysis expert with deep understanding of human communication patterns, pragmatic inference, and theory of mind.
 
-Analyze the user's message and determine the appropriate response type.
+CONTEXT ANALYSIS:
+Current State: {context_info}
+User Query: "{user_query}"
 
-Current Context Available:{context_info}
+DEEP REASONING PROCESS:
 
-Respond with a JSON object containing:
-- "needsPlanning": boolean (true if requires new data analysis)
-- "isContextQuestion": boolean (true if asking about current results)
-- "response": string (for casual conversation or context questions)
-- "contextType": string (if isContextQuestion=true, specify: "chart", "table", "analysis", "general")
+1. SEMANTIC DECOMPOSITION:
+Analyze the semantic structure and meaning layers of this query. What is the user's fundamental information need?
 
-Response Types:
-1. CASUAL conversation (needsPlanning: false, isContextQuestion: false):
-   - Greetings: "hello", "hi", "good morning"
-   - Questions about capabilities: "what can you do?", "how does this work?"
-   - Politeness: "thank you", "thanks", "goodbye"
+2. PRAGMATIC INFERENCE:
+Beyond literal meaning, what is the user's underlying communicative intent? What gap in their mental model are they trying to fill?
 
-2. CONTEXT QUESTIONS (needsPlanning: false, isContextQuestion: true):
-   - About charts: "explain this chart", "what does this visualization show?", "why is this trending up?"
-   - About data: "what's the highest value?", "show me more details", "what caused this spike?"
-   - About analysis: "what does this mean?", "can you explain the insights?", "what should I focus on?"
-   - Follow-ups: "tell me more", "dig deeper", "what else can you tell me?"
+3. COGNITIVE STATE MODELING:
+Model the user's current mental state:
+- What knowledge do they already possess?
+- What knowledge gap are they experiencing?
+- What cognitive goal are they pursuing?
 
-3. NEW ANALYSIS (needsPlanning: true):
-   - New data requests: "show me sales data", "analyze different metrics"
-   - Different time periods: "show me last year's data"
-   - New comparisons: "compare with competitors"
+4. TEMPORAL CONTEXT ANALYSIS:
+Consider the temporal dimension:
+- Is this building upon existing information flow?
+- Is this initiating a new information exploration?
+- How does existing context influence the intent?
 
-Respond ONLY with valid JSON, no other text."""
+5. THEORY OF MIND APPLICATION:
+Put yourself in the user's cognitive position:
+- What would motivate this specific query?
+- What outcome are they mentally anticipating?
+- How does their current information state influence their request?
+
+6. INTENTIONALITY CLASSIFICATION:
+Based on deep analysis, classify the core intentionality:
+
+PLANNING: User has identified an information/analysis gap and seeks to bridge it through new data exploration. They need fresh analytical work to satisfy their cognitive goal.
+
+FOLLOWUP: User has information available but requires deeper understanding, clarification, or exploration of existing analytical results. Their cognitive need is interpretive rather than generative.
+
+CASUAL: User is in conversational/social mode rather than analytical inquiry mode. No specific information gap drives the interaction.
+
+7. META-REASONING VALIDATION:
+Critically examine your classification:
+- Does this align with the user's apparent cognitive state?
+- Could there be alternative interpretations?
+- What level of confidence do you have in this assessment?
+
+FINAL CLASSIFICATION:
+After deep cognitive analysis, provide exactly one word: planning, followup, or casual"""
 
         response = client.chat.completions.create(
-            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"User message: '{user_query}'"}
+                {
+                    "role": "system", 
+                    "content": "You are a precise intent classification system. Analyze carefully and respond with exactly one word as instructed."
+                },
+                {
+                    "role": "user", 
+                    "content": prompt
+                }
             ],
-            temperature=0.1,
-            max_tokens=300
+            temperature=0,
+            max_tokens=10,
+            top_p=1,
+            frequency_penalty=0,
+            presence_penalty=0
         )
         
-        # Parse the GPT response
-        try:
-            import json
-            gpt_response = response.choices[0].message.content.strip()
-            result = json.loads(gpt_response)
-            
-            # Validate the response structure
-            if "needsPlanning" not in result:
-                result["needsPlanning"] = True
-            if "isContextQuestion" not in result:
-                result["isContextQuestion"] = False
-            
-            # Handle context questions
-            if result.get("isContextQuestion") and context_data:
-                result["needsPlanning"] = False
-                print(f"🔍 Context question detected! Generating response...")
-                print(f"🔍 Context data: {context_data}")
-                if "response" not in result:
-                    result["response"] = await _generate_context_response(user_query, context_data, client)
-                    print(f"🔍 Generated context response: {result['response'][:100]}...")
-            
-            # If it's casual conversation but no response provided, add a default
-            elif not result["needsPlanning"] and not result.get("isContextQuestion") and "response" not in result:
-                result["response"] = "Hello! I'm your pharmaceutical data analysis assistant. I'm here to help you explore your data and generate insights. What would you like to analyze today?"
-            
-            print(f"🔍 Final intent result: {result}")
-            return JSONResponse(content=result)
-            
-        except json.JSONDecodeError:
-            print(f"Failed to parse GPT response as JSON: {gpt_response}")
-            return _fallback_intent_detection(user_query)
+        classification = response.choices[0].message.content.strip().lower()
+        print(f"🎯 LLM Classification: {classification}")
+        
+        if classification == "planning":
+            return JSONResponse(content={"needsPlanning": True})
+        elif classification == "followup":
+            # Generate context response for followup questions
+            print(f"🎯 Generating followup response for: {user_query}")
+            context_response = await _generate_context_response(user_query, context_data, client)
+            print(f"🎯 Context response: {context_response[:100]}...")
+            return JSONResponse(content={
+                "needsPlanning": False,
+                "isContextQuestion": True,
+                "response": context_response,
+                "contextType": "general"
+            })
+        else:  # casual or anything else
+            return JSONResponse(content={
+                "needsPlanning": False,
+                "response": "Hello! I'm your pharmaceutical data analysis assistant. How can I help you today?"
+            })
         
     except Exception as e:
-        print(f"Error in GPT-based intent detection: {str(e)}")
-        return _fallback_intent_detection(user_query)
+        print(f"❌ Intent detection error: {str(e)}")
+        # Safe fallback
+        return JSONResponse(content={"needsPlanning": True})
 
 async def _generate_context_response(user_query: str, context_data: dict, openai_client):
-    """Generate a response based on the current context (charts, tables, analysis)"""
+    """Simple and direct response generation - pass data and question to LLM"""
     try:
-        # Build detailed context for response generation
-        context_details = "Current Analysis Context:\n"
+        # Add user query to context data for complete picture
+        enhanced_context = {
+            **context_data,
+            "user_query": user_query,
+            "timestamp": "current_analysis"
+        }
         
-        if context_data.get("hasCharts") and context_data.get("chartData"):
-            context_details += f"- Visualizations: {', '.join(context_data.get('chartTypes', []))}\n"
-            
-            # Extract meaningful data from clean chart data
-            chart_data = context_data.get("chartData", [])
-            for chart in chart_data:
-                if 'data_points' in chart:
-                    data_points = chart['data_points']
-                    chart_title = chart.get('title', 'Chart')
-                    context_details += f"- {chart_title} Data:\n"
-                    
-                    x_values = data_points.get('x_values', [])
-                    y_values = data_points.get('y_values', [])
-                    
-                    # Show data points with values
-                    for i, (x, y) in enumerate(zip(x_values, y_values)):
-                        context_details += f"  {x}: {y}\n"
-                        if i >= 9:  # Limit to first 10 data points
-                            break
+        # Convert context data to JSON for LLM
+        import json
+        data_json = json.dumps(enhanced_context, indent=2)
         
-        if context_data.get("hasTable") and context_data.get("tableData"):
-            context_details += f"- Data table with {context_data.get('rowCount', 'multiple')} rows\n"
-            if context_data.get("tableColumns"):
-                context_details += f"- Columns: {', '.join(context_data.get('tableColumns', []))}\n"
-            
-            # Include actual table data if available
-            table_data = context_data.get("tableData", [])
-            if table_data:
-                context_details += f"- Sample data rows:\n"
-                for i, row in enumerate(table_data[:5]):  # Show first 5 rows
-                    context_details += f"  Row {i+1}: {str(row)[:200]}\n"
-        
-        if context_data.get("lastAnalysis"):
-            context_details += f"- Previous analysis: {context_data.get('lastAnalysis', '')}\n"
-        
-        prompt = f"""You are a pharmaceutical data analyst. The user is asking a follow-up question about current analysis results.
+        # Build enhanced prompt with formatting instructions
+        prompt = f"""You have access to this data from a recent analysis:
 
-{context_details}
+{data_json}
 
-User Question: "{user_query}"
+The user is asking: {user_query}
 
-Based on the data above, provide a specific answer. If you can see numerical values, identify the highest/lowest values, patterns, or specific insights the user is asking about.
+Based on the data above, provide a well-formatted response with clear structure.
 
-For questions about "highest values" or "frequencies", analyze the numbers and give concrete answers with specific values and identifiers.
+FORMATTING REQUIREMENTS:
+- Use bullet points (•) for lists
+- Use **bold** for key metrics and values  
+- Use numbered lists (1., 2., 3.) for sequential insights
+- Break content into short, readable paragraphs
+- Highlight important numbers and identifiers
+- Use clear section headers when appropriate
 
-Keep response under 150 words."""
+Be specific and include actual values from the data. Make it easy to scan and understand."""
 
         response = openai_client.chat.completions.create(
             model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,  # Lower temperature for more precise factual responses
-            max_tokens=200
+            temperature=0.1,
+            max_tokens=300
         )
         
         return response.choices[0].message.content.strip()
         
     except Exception as e:
         print(f"Error generating context response: {str(e)}")
-        return "I can see you're asking about the current analysis. Let me analyze the data... Based on the chart, I can see values for different message IDs. Could you be more specific about what aspect you'd like me to explain?"
+        return "I can analyze the current data for you. Could you be more specific about what you'd like to know?"
+
+        response = openai_client.chat.completions.create(
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            max_tokens=300
+        )
+        
+        return response.choices[0].message.content.strip()
+        
+    except Exception as e:
+        print(f"Error generating context response: {str(e)}")
+        return "I can analyze the current data for you. Could you be more specific about what you'd like to know?"
 
 def _fallback_intent_detection(user_query: str):
     """Fallback keyword-based intent detection if GPT fails"""

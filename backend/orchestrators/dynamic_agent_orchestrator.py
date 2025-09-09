@@ -401,46 +401,52 @@ class DynamicAgentOrchestrator:
             tables = context['available_tables'][:5]  # Limit to first 5 tables
             schema_context = f"\n\nAVAILABLE DATABASE CONTEXT:\nKnown tables: {', '.join(tables)}\n(Note: Full schema discovery will provide complete column details)\n"
         
-        planning_prompt = f"""You are an intelligent query orchestrator for pharmaceutical data analysis. Analyze the user's query and determine the most efficient execution plan.
+        planning_prompt = f"""You are an intelligent **Query Orchestrator** for pharmaceutical data analysis. You plan the sequence of tasks needed to fulfill the user's request and output them as a structured JSON plan.
 
 USER QUERY: "{user_query}"{schema_context}
 
-AVAILABLE CAPABILITIES:
-- schema_discovery: Find relevant database tables and columns (REQUIRED for all database queries)
-- semantic_understanding: Extract entities and business intent from query
-- similarity_matching: Match query terms to database schema
-- user_interaction: Get user confirmation for ambiguous requests
-- query_generation: Generate SQL queries
-- execution: Execute queries and retrieve data
-- python_generation: Generate Python/pandas code for data analysis
-- visualization_builder: Execute Python code and create interactive charts
+=== ROLE & GOAL ===
+You are a highly reliable planning agent ("brilliant new analyst") that:
+- Plans multi-step data workflows using available capabilities.
+- Requires explicit, structured instruction and always favors accuracy and clarity.
 
-CRITICAL RULES:
-1. ALWAYS include schema_discovery as the FIRST step for any database query
-2. Schema discovery is mandatory - it finds tables and columns needed for SQL generation
-3. Without schema discovery, SQL generation will fail
-4. For visualization requests, ALWAYS include python_generation AND visualization_builder
-5. For chart/graph/plot requests, use Plotly (not matplotlib) for better web display
+=== TOOLS & CAPABILITIES ===
+Available capabilities:
+• schema_discovery: Explore tables & columns in the database (MUST be first for any DB query).  
+• semantic_understanding: Map business intent to schema terms.  
+• similarity_matching: Match user terms to schema.  
+• user_interaction: Ask user to clarify ambiguous or missing information.  
+• query_generation: Generate SQL based on schema.  
+• execution: Run SQL and retrieve results.  
+• python_generation: Generate Python/pandas code for analysis.  
+• visualization_builder: Execute Python code to build Plotly visuals.
 
-INSTRUCTIONS:
-Analyze the query and determine:
-1. What is the user actually asking for?
-2. What steps are truly necessary to fulfill this request?
-3. Does the user explicitly ask for visual output (charts, graphs, trends, analysis)?
+=== RULES & KNOWN PATTERNS ===
+1. **schema_discovery** is MANDATORY and ALWAYS first for any database operation.  
+2. If schema_context only includes table names (no columns), still perform schema_discovery for full metadata.  
+3. Data-only requests → `schema_discovery → query_generation → execution`.  
+4. Visual/chart/trend requests → all of the above + `python_generation → visualization_builder` (Plotly only).  
+5. If the query includes domain/business terms requiring mapping → include **semantic_understanding** early.  
+6. If the query is ambiguous or could mean several things → insert **user_interaction** after schema_discovery and before SQL generation.  
+7. If any step (e.g., schema or execution) fails — handle via **user_interaction** to adjust or correct before retrying.  
+8. Always output structured JSON — NO natural language commentary outside the JSON.
 
-Examples of CORRECT planning:
-- ANY data request from database → MUST start with: schema_discovery, query_generation, execution
-- Data analysis with charts → MUST include: schema_discovery, query_generation, execution, python_generation, visualization_builder
-- Complex analysis → MUST include: schema_discovery, semantic_understanding, query_generation, execution, python_generation, visualization_builder
-- Ambiguous request → schema_discovery, user_interaction, query_generation, execution
+=== WORKFLOW BREAKDOWN EXAMPLE ===
+Example patterns:
+- Simple data retrieval → schema_discovery → query_generation → execution  
+- Visualization → schema_discovery → query_generation → execution → python_generation → visualization_builder  
+- Ambiguous query → schema_discovery → user_interaction → query_generation → execution
 
-OUTPUT: Return only a JSON array of tasks in this format:
+=== OUTPUT FORMAT ===
+Output ONLY a JSON array of task objects, each with `task_id` and `task_type`, in execution order. Example:
+
 [
   {{"task_id": "1_schema_discovery", "task_type": "schema_discovery"}},
-  {{"task_id": "2_taskname", "task_type": "capability_name"}}
+  {{"task_id": "2_query_generation", "task_type": "query_generation"}},
+  {{"task_id": "3_execution", "task_type": "execution"}}
 ]
 
-REMEMBER: Schema discovery is MANDATORY for all database operations. For visualization, include BOTH python_generation AND visualization_builder."""
+No explanations or extra text."""
         
         try:
             from openai import OpenAI
