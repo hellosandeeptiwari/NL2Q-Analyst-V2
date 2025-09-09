@@ -1,0 +1,62 @@
+# =============================================================================
+# NL2Q Analyst - Docker/Production Requirements
+# Optimized for containerized deployment and production environments
+# =============================================================================
+
+# Core Framework (Production optimized)
+fastapi==0.109.2
+uvicorn[standard]==0.27.0
+gunicorn==21.2.0
+python-dotenv==1.0.1
+
+# Database Drivers
+psycopg2-binary==2.9.9
+snowflake-connector-python==3.7.1
+sqlalchemy==2.0.25
+
+# Validation & Models
+pydantic>=2.5.3,<3.0.0
+
+# AI/ML Platform
+openai>=1.12.0,<2.0.0
+
+# Vector Databases
+pinecone-client==3.0.3
+azure-search-documents==11.4.0
+azure-core==1.29.6
+azure-identity==1.15.0
+
+# Data Science Stack (Minimal for production)
+pandas==2.2.0
+numpy==1.26.3
+plotly==5.18.0
+matplotlib==3.8.2
+
+# Web Framework Extensions
+python-multipart==0.0.6
+aiofiles==23.2.1
+requests==2.31.0
+
+# Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Async & Performance
+redis==5.0.1
+APScheduler==3.10.4
+
+# Utilities
+PyYAML==6.0.1
+python-dateutil==2.8.2
+pytz==2024.1
+
+# Health Checks & Monitoring
+psutil==5.9.8
+prometheus-client==0.19.0
+
+# =============================================================================
+# Docker Installation:
+# FROM python:3.11-slim
+# COPY requirements-docker.txt .
+# RUN pip install --no-cache-dir -r requirements-docker.txt
+# =============================================================================

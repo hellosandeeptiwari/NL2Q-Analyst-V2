@@ -1,46 +1,104 @@
-fastapi==0.104.1
-uvicorn==0.24.0
-psycopg2-binary==2.9.9
-sqlalchemy==2.0.23
-pydantic>=2.7.4
-openai>=1.99.9
-plotly==5.17.0
-pandas==2.1.4
-pytest==7.4.3
-boto3==1.34.34
-python-dotenv==1.0.0
-# snowflake-connector-python==3.6.0  # Temporarily removed due to build issues on Windows
+# =============================================================================
+# NL2Q Analyst - Comprehensive Requirements File
+# Updated: January 2025 - All Latest Compatible Versions
+# =============================================================================
 
-# Enhanced Features Dependencies
-requests==2.31.0
-aiofiles==23.2.1
+# Core Framework Dependencies
+fastapi==0.109.2
+uvicorn[standard]==0.27.0
+python-dotenv==1.0.1
+
+# Database Drivers & ORM
+psycopg2-binary==2.9.9
+snowflake-connector-python==3.7.1
+sqlalchemy==2.0.25
+
+# Validation & Models  
+pydantic>=2.5.3,<3.0.0
+
+# AI/ML Platform Integration
+openai>=1.12.0,<2.0.0
+
+# Vector Databases & Search
+pinecone-client==3.0.3
+azure-search-documents==11.4.0
+azure-core==1.29.6
+azure-identity==1.15.0
+
+# Data Science & Analytics Stack
+pandas==2.2.0
+numpy==1.26.3
+scipy==1.12.0
+scikit-learn==1.4.0
+
+# Visualization Libraries
+plotly==5.18.0
+matplotlib==3.8.2
+seaborn==0.13.2
+
+# Web Framework Extensions
+fastapi-cors==0.0.6
 python-multipart==0.0.6
-Pillow==10.1.0
-jinja2==3.1.2
-email-validator==2.1.0
+aiofiles==23.2.1
+requests==2.31.0
+httpx==0.26.0
+
+# Authentication & Security
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
-redis==5.0.1
-celery==5.3.4
+email-validator==2.1.0.post1
+
+# Async & Concurrency
+asyncio-mqtt==0.13.0
 APScheduler==3.10.4
 
-# Data Science & Analytics
-scikit-learn==1.3.2
-numpy==1.25.2
-scipy==1.11.4
-matplotlib==3.7.2
-seaborn==0.12.2
-plotly-dash==1.0.0
+# Caching & Performance
+redis==5.0.1
+celery==5.3.4
 
-# Pharma-specific
-pharmapy==0.1.0  # Placeholder for pharma utilities
-biopython==1.81
-rdkit-pypi==2023.9.1  # For molecular data
+# Image & File Processing
+Pillow==10.2.0
+jinja2==3.1.3
 
 # Development & Testing
-black==23.11.0
-flake8==6.1.0
-mypy==1.7.1
-pre-commit==3.5.0
-httpx==0.25.2
-pytest-asyncio==0.21.1
+pytest==8.0.0
+pytest-asyncio==0.23.4
+httpx==0.26.0
+black==24.1.1
+flake8==7.0.0
+mypy==1.8.0
+pre-commit==3.6.1
+
+# Data Processing & Utilities
+PyYAML==6.0.1
+toml==0.10.2
+python-dateutil==2.8.2
+pytz==2024.1
+
+# Pharmaceutical & Scientific Computing (Optional)
+# Uncomment if needed for pharma-specific features
+# biopython==1.83
+# rdkit-pypi==2023.9.5
+# pharmapy==0.1.2
+
+# Enhanced Analytics (Optional)
+# Uncomment for advanced features
+# jupyter==1.0.0
+# ipykernel==6.29.0
+# nbconvert==7.14.2
+
+# =============================================================================
+# Installation Notes:
+# 
+# 1. Python 3.9+ required
+# 2. For Windows: Install Visual C++ Build Tools if needed
+# 3. For Snowflake: May require additional system dependencies
+# 4. For Azure: Requires proper authentication setup
+# 5. For development: Consider using virtual environment
+#
+# Quick Install:
+# pip install -r requirements.txt
+#
+# For production deployment:
+# pip install -r requirements.txt --no-cache-dir
+# =============================================================================
