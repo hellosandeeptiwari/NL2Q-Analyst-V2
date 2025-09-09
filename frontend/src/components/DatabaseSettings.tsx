@@ -78,6 +78,7 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
   });
 
   const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [showScrollTop, setShowScrollTop] = useState(false);
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
@@ -117,18 +118,18 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
       ws.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
-          if (message.type === 'indexing_progress') {
+          if (message.type === 'indexing_progress' && message.data) {
             setIndexingProgress(message.data);
             // Also update the old indexing status for compatibility
             setIndexingStatus(prev => ({
               ...prev,
-              isIndexing: message.data.isIndexing,
-              totalTables: message.data.totalTables,
-              indexedTables: message.data.processedTables
+              isIndexing: message.data.isIndexing || false,
+              totalTables: message.data.totalTables || 0,
+              indexedTables: message.data.processedTables || 0
             }));
           }
         } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
+          console.error('Error parsing WebSocket message:', error, event.data);
         }
       };
       
@@ -160,6 +161,20 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
       }
     };
   }, [websocket]);
+
+  // Handle scroll to show/hide back to top button
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 300);
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const loadSavedConfig = async () => {
     try {
@@ -485,15 +500,15 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
         <div className="status-row">
           <span className="status-label">Status:</span>
           <span className={`status-badge ${
-            indexingStatus.isIndexing 
+            indexingStatus?.isIndexing 
               ? 'indexing'
-              : indexingStatus.isIndexed
+              : indexingStatus?.isIndexed
               ? 'indexed'
               : 'not-indexed'
           }`}>
-            {indexingStatus.isIndexing 
+            {indexingStatus?.isIndexing 
               ? 'Indexing...' 
-              : indexingStatus.isIndexed 
+              : indexingStatus?.isIndexed 
               ? 'Indexed' 
               : 'Not Indexed'}
           </span>
@@ -522,7 +537,7 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
         )}
 
         {/* Real-time Progress Display */}
-        {indexingProgress.isIndexing && (
+        {indexingProgress?.isIndexing && (
           <div className="indexing-progress">
             <div className="progress-header">
               <span className="progress-icon">🔄</span>
@@ -586,15 +601,15 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
         <div className="indexing-actions">
           <button
             onClick={checkIndexingStatus}
-            disabled={indexingProgress.isIndexing || isRefreshingStatus}
+            disabled={indexingProgress?.isIndexing || isRefreshingStatus}
             className="refresh-button"
           >
-            {isRefreshingStatus ? 'Refreshing...' : indexingProgress.isIndexing ? 'Indexing...' : 'Refresh Status'}
+            {isRefreshingStatus ? 'Refreshing...' : indexingProgress?.isIndexing ? 'Indexing...' : 'Refresh Status'}
           </button>
           
           <button
             onClick={resumeIndexing}
-            disabled={indexingProgress.isIndexing || isRefreshingStatus || isForceIndexing}
+            disabled={indexingProgress?.isIndexing || isRefreshingStatus || isForceIndexing}
             className="resume-index-button"
           >
             {isForceIndexing ? 'Starting Resume...' : 'Resume Indexing'}
@@ -602,7 +617,7 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
           
           <button
             onClick={forceReindex}
-            disabled={indexingStatus.isIndexing || isRefreshingStatus || isForceIndexing}
+            disabled={indexingStatus?.isIndexing || isRefreshingStatus || isForceIndexing}
             className="force-reindex-button"
           >
             {isForceIndexing ? 'Starting Re-index...' : 'Force Re-index All Tables'}
@@ -617,14 +632,22 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
       <div className="database-settings-container">
         {/* Header */}
         <div className="database-settings-header">
-          <div className="header-title">
-            <span className="header-icon">⚙️</span>
-            <h1>Database Settings</h1>
+          <div className="header-content">
+            <div className="breadcrumb">
+              <span className="breadcrumb-item">🏠 Home</span>
+              <span className="breadcrumb-separator">→</span>
+              <span className="breadcrumb-item active">⚙️ Database Settings</span>
+            </div>
+            <div className="header-title">
+              <span className="header-icon">⚙️</span>
+              <h1>Database Settings</h1>
+            </div>
           </div>
           {onNavigateBack && (
             <button
               onClick={onNavigateBack}
               className="back-button"
+              title="Return to main chat interface"
             >
               <span>←</span>
               <span>Back to Chat</span>
@@ -697,6 +720,17 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
             </div>
           </div>
         </div>
+        
+        {/* Back to Top Button */}
+        {showScrollTop && (
+          <button
+            onClick={scrollToTop}
+            className="scroll-to-top-button"
+            title="Back to top"
+          >
+            <span>↑</span>
+          </button>
+        )}
       </div>
     </div>
   );

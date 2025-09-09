@@ -36,7 +36,6 @@ class ToolType(Enum):
     SCHEMA_DISCOVERY = "schema_discovery"
     SEMANTIC_MAPPING = "semantic_mapping"
     SQL_GENERATION = "sql_generation"
-    PYTHON_GENERATION = "python_generation"
     VALIDATION = "validation"
     EXECUTION = "execution"
     VISUALIZATION = "visualization"
@@ -192,17 +191,14 @@ class AgenticOrchestrator:
             # Phase 4: SQL/Code generation
             await self._generate_query_code(plan)
             
-            # Phase 5: Python code generation 
-            await self._generate_python_code(plan)
-            
-            # Phase 6: Validation and safety checks
+            # Phase 5: Validation and safety checks
             await self._validate_query(plan)
             
-            # Phase 7: Execution (with approval if needed)
+            # Phase 6: Execution (with approval if needed)
             if plan.status != PlanStatus.REQUIRES_APPROVAL:
                 await self._execute_query(plan)
                 
-            # Phase 8: Visualization and result formatting
+            # Phase 7: Visualization and result formatting
             if plan.status == PlanStatus.COMPLETED:
                 await self._generate_visualizations(plan)
                 
@@ -406,78 +402,6 @@ class AgenticOrchestrator:
         finally:
             step.end_time = datetime.now()
     
-    async def _generate_python_code(self, plan: QueryPlan):
-        """Generate Python/pandas code for data analysis"""
-        
-        step_id = plan.add_step(ToolType.PYTHON_GENERATION, {
-            "user_query": plan.user_query,
-            "generated_sql": plan.context.get("generated_sql", ""),
-            "schema_context": plan.context.get("schema_context", {}),
-            "reasoning_steps": plan.reasoning_steps
-        })
-        
-        step = plan.get_step(step_id)
-        step.start_time = datetime.now()
-        
-        try:
-            # Generate Python code based on the SQL and query intent
-            python_prompt = f"""
-            Generate Python/pandas code to work with the SQL query results and perform additional analysis.
-            
-            Original User Query: {plan.user_query}
-            Generated SQL: {plan.context.get("generated_sql", "")}
-            
-            Create Python code that:
-            1. Loads the SQL results into a pandas DataFrame
-            2. Performs any additional data transformations needed
-            3. Calculates relevant metrics or aggregations
-            4. Prepares the data for visualization
-            5. Includes basic data validation and error handling
-            
-            Return clean Python code that follows best practices.
-            """
-            
-            # Use the same model as SQL generation for consistency
-            import openai
-            response = await openai.chat.completions.acreate(
-                model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-                messages=[
-                    {"role": "system", "content": "You are an expert Python data analyst. Generate clean, efficient Python/pandas code for data analysis."},
-                    {"role": "user", "content": python_prompt}
-                ],
-                max_completion_tokens=800,
-                temperature=0.1
-            )
-            
-            python_code = response.choices[0].message.content.strip()
-            
-            # Clean up Python code formatting
-            if python_code.startswith("```python"):
-                python_code = python_code[9:]
-            elif python_code.startswith("```"):
-                python_code = python_code[3:]
-            if python_code.endswith("```"):
-                python_code = python_code[:-3]
-            python_code = python_code.strip()
-            
-            step.output_data = {
-                "python_code": python_code,
-                "sql_query": plan.context.get("generated_sql", ""),
-                "analysis_type": "data_processing"
-            }
-            step.status = "completed"
-            
-            # Store generated Python code in plan context
-            plan.context["generated_python"] = python_code
-            plan.context["python_explanation"] = "Python code for data analysis and processing"
-            
-        except Exception as e:
-            step.error = str(e)
-            step.status = "failed"
-            raise
-        finally:
-            step.end_time = datetime.now()
-    
     async def _validate_query(self, plan: QueryPlan):
         """Perform validation checks on generated query"""
         
@@ -574,43 +498,11 @@ class AgenticOrchestrator:
         step.start_time = datetime.now()
         
         try:
-            # Generate chart recommendations using the ChartBuilder's analyze_and_recommend method
-            chart_recommendation = await self.chart_builder.analyze_and_recommend(
+            # Generate charts and insights
+            viz_result = await self.chart_builder.auto_generate_charts(
                 data=query_results.get("data", []),
-                query_context={"query": plan.user_query, "entities": plan.context.get("entities", [])}
+                query_context=plan.user_query
             )
-            
-            # Create detailed chart specification
-            chart_spec = await self.chart_builder.create_chart_spec(
-                data=query_results.get("data", []),
-                chart_type=chart_recommendation.chart_type,
-                query_context={"query": plan.user_query, "entities": plan.context.get("entities", [])}
-            )
-            
-            viz_result = {
-                "recommendation": {
-                    "chart_type": chart_recommendation.chart_type,
-                    "confidence": chart_recommendation.confidence,
-                    "reasoning": chart_recommendation.reasoning,
-                    "alternative_charts": chart_recommendation.alternative_charts
-                },
-                "chart_spec": {
-                    "chart_type": chart_spec.chart_type,
-                    "title": chart_spec.title,
-                    "x_axis": chart_spec.x_axis,
-                    "y_axis": chart_spec.y_axis,
-                    "data_config": chart_spec.data_config,
-                    "layout_config": chart_spec.layout_config,
-                    "interactive_features": chart_spec.interactive_features,
-                    "accessibility_config": chart_spec.accessibility_config
-                },
-                "charts": [{
-                    "type": chart_spec.chart_type,
-                    "title": chart_spec.title,
-                    "data": chart_spec.data_config,
-                    "config": chart_spec.layout_config
-                }]
-            }
             
             step.output_data = viz_result
             step.status = "completed"

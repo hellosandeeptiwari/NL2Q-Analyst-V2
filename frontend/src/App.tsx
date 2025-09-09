@@ -6,19 +6,17 @@ import DatabaseSettings from './components/DatabaseSettings';
 function App() {
   const [currentPage, setCurrentPage] = useState('chat');
 
-  const renderPage = () => {
-    switch (currentPage) {
-      case 'settings':
-        return <DatabaseSettings onNavigateBack={() => setCurrentPage('chat')} />;
-      case 'chat':
-      default:
-        return <EnhancedPharmaChat onNavigateToSettings={() => setCurrentPage('settings')} />;
-    }
-  };
-
   return (
     <div className="App">
-      {renderPage()}
+      {/* Keep chat component mounted to preserve state */}
+      <div style={{ display: currentPage === 'chat' ? 'block' : 'none' }}>
+        <EnhancedPharmaChat onNavigateToSettings={() => setCurrentPage('settings')} />
+      </div>
+      
+      {/* Only mount settings when needed */}
+      {currentPage === 'settings' && (
+        <DatabaseSettings onNavigateBack={() => setCurrentPage('chat')} />
+      )}
     </div>
   );
 }

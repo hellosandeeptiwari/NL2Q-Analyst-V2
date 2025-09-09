@@ -4,8 +4,8 @@ import {
   FiSend, FiCopy, FiCheck, FiDatabase, FiSettings, 
   FiBarChart2, FiTable, FiAlertTriangle, FiInfo, 
   FiChevronDown, FiChevronUp, FiLoader, FiUser,
-  FiMessageSquare, FiStar, FiArchive, FiSearch,
-  FiPlus, FiMoreHorizontal, FiDownload, FiShare2
+  FiMessageSquare, FiClock, FiArchive, FiSearch,
+  FiPlus, FiMoreHorizontal, FiDownload, FiShare2, FiZap
 } from 'react-icons/fi';
 import Plot from 'react-plotly.js';
 import EnhancedTable from './EnhancedTable';
@@ -66,7 +66,7 @@ interface Conversation {
   therapeutic_area?: string;
   total_cost: number;
   total_tokens: number;
-  is_favorite: boolean;
+  last_activity_timestamp: number;
   is_archived: boolean;
   messages: ChatMessage[];
 }
@@ -250,7 +250,7 @@ const api = {
       therapeutic_area: "Oncology",
       total_cost: 2.45,
       total_tokens: 1250,
-      is_favorite: true,
+      last_activity_timestamp: Date.now() - 60000, // 1 minute ago
       is_archived: false,
       messages: []
     },
@@ -262,7 +262,7 @@ const api = {
       therapeutic_area: "Diabetes",
       total_cost: 1.85,
       total_tokens: 980,
-      is_favorite: false,
+      last_activity_timestamp: Date.now() - 3600000, // 1 hour ago
       is_archived: false,
       messages: []
     }
@@ -341,6 +341,7 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
   const [activePlan, setActivePlan] = useState<QueryPlan | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showProfile, setShowProfile] = useState(false);
+  const [showQuickActions, setShowQuickActions] = useState(false);
   const [expandedSteps, setExpandedSteps] = useState<{[key: string]: boolean}>({});
   const [showStepsDetails, setShowStepsDetails] = useState(false);
   const [selectedStepKey, setSelectedStepKey] = useState<string | null>(null);
@@ -378,6 +379,69 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Load persisted state from localStorage on component mount
+  useEffect(() => {
+    try {
+      const savedMessages = localStorage.getItem('nl2q-chat-messages');
+      const savedMessageResults = localStorage.getItem('nl2q-message-results');
+      const savedConversations = localStorage.getItem('nl2q-conversations');
+      const savedActiveConversation = localStorage.getItem('nl2q-active-conversation');
+
+      if (savedMessages) {
+        setMessages(JSON.parse(savedMessages));
+      }
+      if (savedMessageResults) {
+        setMessageResults(JSON.parse(savedMessageResults));
+      }
+      if (savedConversations) {
+        setConversations(JSON.parse(savedConversations));
+      }
+      if (savedActiveConversation) {
+        setActiveConversation(JSON.parse(savedActiveConversation));
+      }
+    } catch (error) {
+      console.error('Error loading persisted chat state:', error);
+    }
+  }, []);
+
+  // Persist messages to localStorage whenever they change (conversation-specific)
+  useEffect(() => {
+    if (messages.length > 0 && activeConversation) {
+      // Save to conversation-specific storage
+      localStorage.setItem(`nl2q-conversation-${activeConversation.conversation_id}`, JSON.stringify({
+        messages: messages,
+        messageResults: messageResults,
+        activePlan: activePlan,
+        selectedStepKey: selectedStepKey,
+        showStepsDetails: showStepsDetails
+      }));
+      
+      // Also save to legacy storage for backwards compatibility
+      localStorage.setItem('nl2q-chat-messages', JSON.stringify(messages));
+    }
+  }, [messages, messageResults, activePlan, selectedStepKey, showStepsDetails, activeConversation]);
+
+  // Persist message results to localStorage whenever they change
+  useEffect(() => {
+    if (Object.keys(messageResults).length > 0) {
+      localStorage.setItem('nl2q-message-results', JSON.stringify(messageResults));
+    }
+  }, [messageResults]);
+
+  // Persist conversations to localStorage whenever they change
+  useEffect(() => {
+    if (conversations.length > 0) {
+      localStorage.setItem('nl2q-conversations', JSON.stringify(conversations));
+    }
+  }, [conversations]);
+
+  // Persist active conversation to localStorage whenever it changes
+  useEffect(() => {
+    if (activeConversation) {
+      localStorage.setItem('nl2q-active-conversation', JSON.stringify(activeConversation));
+    }
+  }, [activeConversation]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Scroll to bottom when messages change
@@ -405,14 +469,18 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
         const profile = api.mockGetUserProfile();
         setUserProfile(profile);
 
-        // Load conversations (using mock for now)
-        const convs = api.mockGetConversations();
-        setConversations(convs);
+        // Only load conversations if not already persisted
+        const hasPersistedConversations = localStorage.getItem('nl2q-conversations');
+        if (!hasPersistedConversations) {
+          // Load conversations (using mock for now)
+          const convs = api.mockGetConversations();
+          setConversations(convs);
 
-        // Set first conversation as active
-        if (convs.length > 0) {
-          setActiveConversation(convs[0]);
-          // In real implementation, load messages here
+          // Set first conversation as active
+          if (convs.length > 0) {
+            setActiveConversation(convs[0]);
+            // In real implementation, load messages here
+          }
         }
 
         // Load database status
@@ -680,6 +748,24 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
     };
 
     setMessages(prev => [...prev, userMessage]);
+    
+    // Update conversation activity timestamp
+    if (activeConversation) {
+      const updatedConversation = {
+        ...activeConversation,
+        last_activity_timestamp: Date.now(),
+        last_activity: new Date().toISOString()
+      };
+      setActiveConversation(updatedConversation);
+      setConversations(prev => 
+        prev.map(conv => 
+          conv.conversation_id === activeConversation.conversation_id 
+            ? updatedConversation 
+            : conv
+        )
+      );
+    }
+    
     const messageContent = currentMessage;
     setCurrentMessage('');
     setIsLoading(true);
@@ -1087,6 +1173,24 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
 
     try {
       setIsLoading(true);
+      
+      // Save current conversation state before creating new one
+      if (activeConversation) {
+        setConversations(prev => prev.map(conv => 
+          conv.conversation_id === activeConversation.conversation_id 
+            ? { ...conv, messages: messages }
+            : conv
+        ));
+        
+        localStorage.setItem(`nl2q-conversation-${activeConversation.conversation_id}`, JSON.stringify({
+          messages: messages,
+          messageResults: messageResults,
+          activePlan: activePlan,
+          selectedStepKey: selectedStepKey,
+          showStepsDetails: showStepsDetails
+        }));
+      }
+      
       const newConv = await api.createConversation(userProfile.user_id);
       
       // Validate the response
@@ -1097,9 +1201,18 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
       setConversations(prev => [newConv, ...prev]);
       setActiveConversation(newConv);
       setMessages([]);
+      setMessageResults({});
       setActivePlan(null);
       setSelectedStepKey(null);
       setShowStepsDetails(false);
+      setProgressSteps([]);
+      setCurrentProgressStep(null);
+      setIncrementalResults([]);
+      setShowProgress(false);
+      
+      // Clear localStorage for fresh start
+      localStorage.removeItem('nl2q-chat-messages');
+      localStorage.removeItem('nl2q-message-results');
       
       console.log('New conversation created successfully:', newConv.conversation_id);
     } catch (error) {
@@ -1113,7 +1226,7 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
         last_activity: new Date().toISOString(),
         total_cost: 0,
         total_tokens: 0,
-        is_favorite: false,
+        last_activity_timestamp: Date.now(),
         is_archived: false,
         messages: []
       };
@@ -1121,9 +1234,14 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
       setConversations(prev => [fallbackConv, ...prev]);
       setActiveConversation(fallbackConv);
       setMessages([]);
+      setMessageResults({});
       setActivePlan(null);
       setSelectedStepKey(null);
       setShowStepsDetails(false);
+      
+      // Clear localStorage for fresh start
+      localStorage.removeItem('nl2q-chat-messages');
+      localStorage.removeItem('nl2q-message-results');
       
       console.log('Created fallback conversation:', fallbackConv.conversation_id);
     } finally {
@@ -1133,22 +1251,110 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
 
   // Switch conversation
   const handleConversationSelect = (conversation: Conversation) => {
+    // Save current conversation state before switching
+    if (activeConversation) {
+      // Update the current conversation's messages in the conversations list
+      setConversations(prev => prev.map(conv => 
+        conv.conversation_id === activeConversation.conversation_id 
+          ? { ...conv, messages: messages }
+          : conv
+      ));
+      
+      // Save current state to localStorage for this conversation
+      localStorage.setItem(`nl2q-conversation-${activeConversation.conversation_id}`, JSON.stringify({
+        messages: messages,
+        messageResults: messageResults,
+        activePlan: activePlan,
+        selectedStepKey: selectedStepKey,
+        showStepsDetails: showStepsDetails
+      }));
+    }
+
+    // Load the selected conversation state
     setActiveConversation(conversation);
-    // Sort messages by timestamp to ensure correct order
-    const sortedMessages = (conversation.messages || []).sort((a, b) => 
-      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-    );
-    setMessages(sortedMessages);
-    setActivePlan(null);
+    
+    // Try to load saved state for this conversation
+    const savedState = localStorage.getItem(`nl2q-conversation-${conversation.conversation_id}`);
+    if (savedState) {
+      try {
+        const parsedState = JSON.parse(savedState);
+        setMessages(parsedState.messages || conversation.messages || []);
+        setMessageResults(parsedState.messageResults || {});
+        setActivePlan(parsedState.activePlan || null);
+        setSelectedStepKey(parsedState.selectedStepKey || null);
+        setShowStepsDetails(parsedState.showStepsDetails || false);
+      } catch (error) {
+        console.error('Error loading conversation state:', error);
+        // Fallback to conversation messages
+        const sortedMessages = (conversation.messages || []).sort((a, b) => 
+          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        );
+        setMessages(sortedMessages);
+        setMessageResults({});
+        setActivePlan(null);
+        setSelectedStepKey(null);
+        setShowStepsDetails(false);
+      }
+    } else {
+      // Sort messages by timestamp to ensure correct order
+      const sortedMessages = (conversation.messages || []).sort((a, b) => 
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      );
+      setMessages(sortedMessages);
+      setMessageResults({});
+      setActivePlan(null);
+      setSelectedStepKey(null);
+      setShowStepsDetails(false);
+    }
+    
+    // Clear any active progress/results since we're switching conversations
+    setProgressSteps([]);
+    setCurrentProgressStep(null);
+    setIncrementalResults([]);
+    setShowProgress(false);
+  };
+
+  // Clear current chat
+  const handleClearChat = () => {
+    if (!activeConversation) return;
+    
+    if (window.confirm('Are you sure you want to clear this chat? This action cannot be undone.')) {
+      // Clear the current conversation's messages
+      setMessages([]);
+      setMessageResults({});
+      setActivePlan(null);
+      setSelectedStepKey(null);
+      setShowStepsDetails(false);
+      setProgressSteps([]);
+      setCurrentProgressStep(null);
+      setIncrementalResults([]);
+      setShowProgress(false);
+      
+      // Update the conversation in the list
+      setConversations(prev => prev.map(conv => 
+        conv.conversation_id === activeConversation.conversation_id 
+          ? { ...conv, messages: [] }
+          : conv
+      ));
+      
+      // Update the active conversation
+      setActiveConversation(prev => prev ? { ...prev, messages: [] } : null);
+      
+      // Clear localStorage for this conversation
+      localStorage.removeItem(`nl2q-conversation-${activeConversation.conversation_id}`);
+      localStorage.removeItem('nl2q-chat-messages');
+      localStorage.removeItem('nl2q-message-results');
+      
+      console.log('Chat cleared for conversation:', activeConversation.conversation_id);
+    }
   };
 
   // Quick action buttons
   const quickActions = [
-    "Show Q4 oncology sales trends",
-    "Analyze physician prescribing patterns", 
-    "Compare therapeutic area performance",
-    "Generate market share report",
-    "Review patient adherence metrics"
+    "Analyze healthcare provider engagement metrics",
+    "Show omnichannel marketing campaign performance", 
+    "Review medical claims processing trends",
+    "Track sales rep call activity and outcomes"
   ];
 
   const handleQuickAction = (action: string) => {
@@ -1170,6 +1376,18 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
     if (diffHours < 24) return `${diffHours}h ago`;
     if (diffDays < 7) return `${diffDays}d ago`;
     return date.toLocaleDateString();
+  };
+
+  // Format recent activity indicator
+  const formatRecentActivity = (timestamp: number) => {
+    const now = Date.now();
+    const diffMs = now - timestamp;
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins < 5) return { text: 'Active now', color: '#00d084' };
+    if (diffMins < 30) return { text: 'Recent', color: '#ffa500' };
+    if (diffMins < 1440) return { text: 'Today', color: '#6c757d' };
+    return { text: '', color: 'transparent' };
   };
 
   // Render plan execution with live status
@@ -1768,8 +1986,18 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                 });
                 
                 const visualizationStep = Object.entries(resultsData || {}).find(([key, result]: [string, any]) => 
-                  key.includes('visualization') && result?.charts && result.charts.length > 0
+                  key.includes('visualization') && result?.charts !== undefined
                 );
+
+                // Debug visualization data
+                console.log('🎨 Visualization debug:', {
+                  visualizationStepFound: !!visualizationStep,
+                  allSteps: Object.keys(resultsData || {}),
+                  visualizationData: visualizationStep ? visualizationStep[1] : null,
+                  rawVisualizationStep: resultsData?.['8_visualization_builder'],
+                  chartsFound: visualizationStep ? (visualizationStep[1] as any)?.charts?.length : 0,
+                  chartTypes: visualizationStep ? (visualizationStep[1] as any)?.charts?.map((c: any) => c.type) : []
+                });
 
                 const executionResult = executionStep ? executionStep[1] as any : null;
                 const visualizationResult = visualizationStep ? visualizationStep[1] as any : null;
@@ -1797,6 +2025,67 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                   sql_query: executionResult?.sql_query || sqlQuery || '',
                   charts: visualizationResult?.charts || allCharts || []
                 };
+
+                console.log('🎨 Chart extraction debug:', {
+                  visualizationResult: visualizationResult,
+                  hasVisualizationCharts: !!(visualizationResult?.charts),
+                  visualizationChartsLength: visualizationResult?.charts?.length || 0,
+                  allCharts: allCharts,
+                  finalChartsLength: stepResult.charts.length,
+                  finalCharts: stepResult.charts,
+                  detailedChartStructure: stepResult.charts.map((chart: any, idx: number) => ({
+                    index: idx,
+                    type: chart.type,
+                    hasData: !!chart.data,
+                    dataKeys: chart.data ? Object.keys(chart.data) : null,
+                    x_column: chart.x_column,
+                    y_column: chart.y_column,
+                    title: chart.title,
+                    fullChart: chart
+                  }))
+                });
+
+                // Create fallback chart ONLY if no visualization pipeline worked
+                if (stepResult.results.length > 0 && stepResult.charts.length === 0) {
+                  console.log('🎨 No charts found, creating fallback chart from execution data');
+                  // Try to create a simple chart from the results
+                  const results = stepResult.results;
+                  if (results.length > 0) {
+                    // Look for frequency/count-like data to chart
+                    const firstRow = results[0];
+                    const columns = Object.keys(firstRow);
+                    
+                    // Check if this looks like chart-able data
+                    const hasFrequencyData = columns.some(col => 
+                      col.toLowerCase().includes('frequency') || 
+                      col.toLowerCase().includes('count') ||
+                      col.toLowerCase().includes('total')
+                    );
+                    
+                    if (hasFrequencyData) {
+                      const fallbackChart = {
+                        type: 'bar',
+                        title: 'Data Visualization',
+                        data: results,
+                        x_column: columns.find(col => !col.toLowerCase().includes('frequency') && !col.toLowerCase().includes('count')) || columns[0],
+                        y_column: columns.find(col => col.toLowerCase().includes('frequency') || col.toLowerCase().includes('count')) || columns[1]
+                      };
+                      stepResult.charts = [fallbackChart];
+                      console.log('🎨 Created fallback chart:', fallbackChart);
+                    }
+                  }
+                } else if (stepResult.charts.length > 0) {
+                  console.log('🎨 Using provided charts from visualization pipeline:', stepResult.charts.length);
+                }
+
+                // Debug: Log the SQL queries to identify the issue
+                console.log('🔍 SQL Query Debug:', {
+                  generatedQuery: resultsData?.['2_query_generation']?.sql_query,
+                  executionQuery: executionResult?.sql_query,
+                  finalQuery: stepResult.sql_query,
+                  executionResults: executionResult?.results?.length,
+                  executionStatus: resultsData?.['3_execution']?.status
+                });
 
                 console.log('Rendering results for message:', message.message_id, {
                   hasMessageResult: !!messageResult,
@@ -1839,13 +2128,15 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                       }}>
                         FORCE DEBUG: resultsData keys: {Object.keys(resultsData || {}).join(', ')}
                         <br/>
-                        FORCE DEBUG: 3_execution content: {JSON.stringify(resultsData?.['3_execution'], null, 2)}
+                        FORCE DEBUG: stepResult.charts: {JSON.stringify(stepResult.charts, null, 2)}
                         <br/>
-                        FORCE DEBUG: executionStep found: {!!executionStep}
+                        FORCE DEBUG: visualizationStep: {visualizationStep?.[0] ? `Found: ${visualizationStep?.[0]}` : 'Not found'}
                         <br/>
-                        FORCE DEBUG: allResults length: {allResults.length}
+                        FORCE DEBUG: visualizationResult: {JSON.stringify(visualizationResult, null, 2)}
                         <br/>
-                        FORCE DEBUG: stepResult.results length: {stepResult.results?.length || 0}
+                        FORCE DEBUG: allCharts length: {allCharts.length}
+                        <br/>
+                        FORCE DEBUG: stepResult.charts length: {stepResult.charts?.length || 0}
                       </div>
                     )}
                     
@@ -1917,60 +2208,313 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                     
                     {/* Side-by-side layout for charts and tables - Only show when there's actual data */}
                     {(stepResult.charts?.length > 0 || stepResult.results?.length > 0) && (
-                      <div style={{ 
+                      <div className="results-grid-container" style={{ 
                         display: stepResult.charts?.length > 0 && stepResult.results?.length > 0 ? 'grid' : 'block',
                         gridTemplateColumns: stepResult.charts?.length > 0 && stepResult.results?.length > 0 ? '1fr 1fr' : '1fr',
-                        gap: '16px', 
-                        marginBottom: '16px',
-                        minHeight: stepResult.charts?.length > 0 || stepResult.results?.length > 0 ? '300px' : 'auto'
                       }}>
                         
                         {/* Left side: Charts - Only show if there are actual charts */}
                         {stepResult.charts && stepResult.charts.length > 0 && (
-                          <div style={{
-                            background: 'rgba(255, 255, 255, 0.7)',
-                            borderRadius: '8px',
-                            padding: '16px',
-                            border: '1px solid rgba(59, 130, 246, 0.1)'
-                          }}>
-                            <div>
-                              <h5 style={{
-                                margin: '0 0 12px 0',
-                                fontSize: '14px',
-                                fontWeight: '600',
-                                color: '#1F2937'
-                              }}>📊 Visualization ({stepResult.charts.length})</h5>
+                          <div className="chart-container">
+                            <h5 className="section-header">
+                              📊 Visualization ({stepResult.charts.length})
+                            </h5>
+                            <div className="chart-wrapper">
                               {stepResult.charts.map((chart: any, idx: number) => {
                                 const stepId = messageResult?.plan?.plan_id || message.message_id;
                                 const chartKey = `${stepId}_${idx}`;
                                 
+                                // Add detailed logging for each chart
+                                console.log(`🎨 Rendering chart ${idx}:`, {
+                                  chart: chart,
+                                  type: chart.type,
+                                  hasData: !!chart.data,
+                                  dataStructure: chart.data ? Object.keys(chart.data) : 'No data',
+                                  x_column: chart.x_column,
+                                  y_column: chart.y_column,
+                                  willRenderMatplotlib: chart.type === 'matplotlib' && chart.data,
+                                  willRenderBar: chart.type === 'bar' && chart.data && chart.x_column && chart.y_column,
+                                  willRenderPlotly: chart.type === 'plotly' && chart.data,
+                                  chartDataSample: chart.data ? (Array.isArray(chart.data) ? chart.data.slice(0, 2) : chart.data) : null
+                                });
+                                
                                 return (
-                                  <div key={idx} style={{ marginBottom: '12px' }}>
+                                  <div key={idx} style={{ 
+                                    width: '100%', 
+                                    height: '100%', 
+                                    minHeight: '350px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    border: '2px dashed #e5e7eb', // Debug border to see if container is rendered
+                                    position: 'relative'
+                                  }}>
+                                    {/* Debug indicator for chart processing */}
+                                    <div style={{
+                                      position: 'absolute',
+                                      top: '8px',
+                                      right: '8px',
+                                      background: '#3b82f6',
+                                      color: 'white',
+                                      padding: '4px 8px',
+                                      borderRadius: '4px',
+                                      fontSize: '10px',
+                                      zIndex: 1000
+                                    }}>
+                                      Chart #{idx} - Type: {chart.type}
+                                    </div>
                                     {chart.type === 'matplotlib' && chart.data && (
-                                      <img 
-                                        src={chart.data} 
-                                        alt={chart.title || 'Visualization'}
-                                        style={{ width: '100%', borderRadius: '4px' }}
-                                      />
+                                      <div style={{ 
+                                        width: '100%', 
+                                        height: '100%',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center'
+                                      }}>
+                                        <img 
+                                          src={chart.data} 
+                                          alt={chart.title || 'Visualization'}
+                                          style={{ 
+                                            maxWidth: '100%', 
+                                            maxHeight: '100%',
+                                            width: 'auto',
+                                            height: 'auto',
+                                            objectFit: 'contain',
+                                            borderRadius: '4px' 
+                                          }}
+                                        />
+                                      </div>
+                                    )}
+                                    
+                                    {chart.type === 'bar' && chart.data && chart.x_column && chart.y_column && (
+                                      <div style={{ 
+                                        width: '100%', 
+                                        height: '350px',
+                                        minWidth: '300px'
+                                      }}>
+                                        <Plot
+                                          data={[{
+                                            x: chart.data.map((row: any) => row[chart.x_column]),
+                                            y: chart.data.map((row: any) => row[chart.y_column]),
+                                            type: 'bar',
+                                            marker: {
+                                              color: 'rgba(55, 128, 191, 0.7)',
+                                              line: {
+                                                color: 'rgba(55, 128, 191, 1.0)',
+                                                width: 1
+                                              }
+                                            }
+                                          }]}
+                                          layout={{
+                                            title: chart.title || 'Data Visualization',
+                                            autosize: true,
+                                            width: undefined,
+                                            height: undefined,
+                                            margin: { t: 50, r: 30, b: 50, l: 60 },
+                                            paper_bgcolor: 'rgba(255,255,255,0.9)',
+                                            plot_bgcolor: 'rgba(255,255,255,0.9)',
+                                            font: {
+                                              size: 12,
+                                              family: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif'
+                                            },
+                                            xaxis: {
+                                              title: chart.x_column
+                                            },
+                                            yaxis: {
+                                              title: chart.y_column
+                                            }
+                                          }}
+                                          config={{
+                                            displayModeBar: true,
+                                            displaylogo: false,
+                                            responsive: true,
+                                            toImageButtonOptions: {
+                                              format: 'png',
+                                              filename: 'chart',
+                                              height: 500,
+                                              width: 700,
+                                              scale: 1
+                                            },
+                                            modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
+                                          }}
+                                          style={{
+                                            width: '100%', 
+                                            height: '100%'
+                                          }}
+                                          useResizeHandler={true}
+                                        />
+                                      </div>
                                     )}
                                     
                                     {chart.type === 'plotly' && chart.data && (
-                                      <div style={{ height: '250px' }}>
-                                        <Plot
-                                          data={chart.data.data || []}
-                                          layout={{
-                                            ...(chart.data.layout || {}),
-                                            autosize: true,
-                                            margin: { t: 30, r: 15, b: 30, l: 30 },
-                                            paper_bgcolor: 'rgba(0,0,0,0)',
-                                            plot_bgcolor: 'rgba(0,0,0,0)'
-                                          }}
-                                          config={{
-                                            displayModeBar: false,
-                                            responsive: true
-                                          }}
-                                          style={{width: '100%', height: '100%'}}
-                                        />
+                                      <div style={{ 
+                                        width: '100%', 
+                                        height: '350px',
+                                        minWidth: '300px'
+                                      }}>
+                                        {(() => {
+                                          // Check if plotly data has actual data points
+                                          const plotlyData = chart.data.data || [];
+                                          const hasActualData = plotlyData.some((trace: any) => 
+                                            trace.x && Array.isArray(trace.x) && trace.x.length > 0 ||
+                                            trace.y && Array.isArray(trace.y) && trace.y.length > 0
+                                          );
+                                          
+                                          console.log('🎨 Plotly chart data check:', {
+                                            plotlyData: plotlyData,
+                                            hasActualData: hasActualData,
+                                            firstTrace: plotlyData[0]
+                                          });
+                                          
+                                          if (!hasActualData) {
+                                            return (
+                                              <div style={{
+                                                width: '100%',
+                                                height: '100%',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                background: '#fef3c7',
+                                                border: '2px dashed #f59e0b',
+                                                borderRadius: '8px',
+                                                flexDirection: 'column',
+                                                gap: '12px'
+                                              }}>
+                                                <div style={{ fontSize: '24px' }}>📊</div>
+                                                <div style={{ textAlign: 'center', color: '#92400e' }}>
+                                                  <div style={{ fontWeight: '600', marginBottom: '4px' }}>
+                                                    Chart Data Processing Error
+                                                  </div>
+                                                  <div style={{ fontSize: '12px' }}>
+                                                    The backend generated a chart but the data extraction failed.
+                                                    <br/>
+                                                    This is likely due to unsafe eval() usage in the Python code.
+                                                    <br/>
+                                                    The backend will be fixed to use safe JSON parsing instead.
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            );
+                                          }
+                                          
+                                          return (
+                                            <Plot
+                                              data={chart.data.data || []}
+                                              layout={{
+                                                ...(chart.data.layout || {}),
+                                                autosize: true,
+                                                width: undefined,
+                                                height: undefined,
+                                                margin: { t: 50, r: 30, b: 50, l: 60 },
+                                                paper_bgcolor: 'rgba(255,255,255,0.9)',
+                                                plot_bgcolor: 'rgba(255,255,255,0.9)',
+                                                font: {
+                                                  size: 12,
+                                                  family: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif'
+                                                },
+                                                showlegend: true,
+                                                legend: {
+                                                  orientation: 'v',
+                                                  x: 1.02,
+                                                  y: 1
+                                                }
+                                              }}
+                                              config={{
+                                                displayModeBar: true,
+                                                displaylogo: false,
+                                                responsive: true,
+                                                toImageButtonOptions: {
+                                                  format: 'png',
+                                                  filename: 'chart',
+                                                  height: 500,
+                                                  width: 700,
+                                                  scale: 1
+                                                },
+                                                modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
+                                              }}
+                                              style={{
+                                                width: '100%', 
+                                                height: '100%'
+                                              }}
+                                              useResizeHandler={true}
+                                              onInitialized={(figure: any, graphDiv: any) => {
+                                                // Force resize after initialization
+                                                setTimeout(() => {
+                                                  if (window.Plotly && graphDiv) {
+                                                    window.Plotly.Plots.resize(graphDiv);
+                                                  }
+                                                }, 100);
+                                              }}
+                                            />
+                                          );
+                                        })()}
+                                      </div>
+                                    )}
+                                    
+                                    {/* Catch-all debug section for unhandled chart types */}
+                                    {chart.type !== 'matplotlib' && chart.type !== 'bar' && chart.type !== 'plotly' && (
+                                      <div style={{
+                                        background: '#fef3c7',
+                                        border: '1px solid #f59e0b',
+                                        borderRadius: '8px',
+                                        padding: '16px',
+                                        margin: '8px 0'
+                                      }}>
+                                        <h6 style={{ margin: '0 0 8px 0', color: '#92400e' }}>
+                                          🐛 DEBUG: Unhandled Chart Type
+                                        </h6>
+                                        <pre style={{ 
+                                          fontSize: '10px',
+                                          margin: 0,
+                                          whiteSpace: 'pre-wrap',
+                                          maxHeight: '200px',
+                                          overflow: 'auto'
+                                        }}>
+                                          {JSON.stringify(chart, null, 2)}
+                                        </pre>
+                                      </div>
+                                    )}
+                                    
+                                    {/* Debug section for charts with missing data */}
+                                    {(chart.type === 'bar' && (!chart.data || !chart.x_column || !chart.y_column)) && (
+                                      <div style={{
+                                        background: '#fecaca',
+                                        border: '1px solid #ef4444',
+                                        borderRadius: '8px',
+                                        padding: '16px',
+                                        margin: '8px 0'
+                                      }}>
+                                        <h6 style={{ margin: '0 0 8px 0', color: '#991b1b' }}>
+                                          ❌ DEBUG: Bar Chart Missing Required Data
+                                        </h6>
+                                        <p style={{ fontSize: '11px', margin: '4px 0' }}>
+                                          Has data: {!!chart.data ? 'Yes' : 'No'}<br/>
+                                          Has x_column: {!!chart.x_column ? `Yes (${chart.x_column})` : 'No'}<br/>
+                                          Has y_column: {!!chart.y_column ? `Yes (${chart.y_column})` : 'No'}
+                                        </p>
+                                      </div>
+                                    )}
+                                    
+                                    {/* Debug section for plotly charts with missing data */}
+                                    {(chart.type === 'plotly' && !chart.data) && (
+                                      <div style={{
+                                        background: '#fecaca',
+                                        border: '1px solid #ef4444',
+                                        borderRadius: '8px',
+                                        padding: '16px',
+                                        margin: '8px 0'
+                                      }}>
+                                        <h6 style={{ margin: '0 0 8px 0', color: '#991b1b' }}>
+                                          ❌ DEBUG: Plotly Chart Missing Data
+                                        </h6>
+                                        <pre style={{ 
+                                          fontSize: '10px',
+                                          margin: 0,
+                                          whiteSpace: 'pre-wrap',
+                                          maxHeight: '200px',
+                                          overflow: 'auto'
+                                        }}>
+                                          {JSON.stringify(chart, null, 2)}
+                                        </pre>
                                       </div>
                                     )}
                                   </div>
@@ -1982,32 +2526,17 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
 
                         {/* Right side: Data Table - Only show if there are actual results */}
                         {stepResult.results && stepResult.results.length > 0 && (
-                          <div style={{
-                            background: 'rgba(255, 255, 255, 0.7)',
-                            borderRadius: '8px',
-                            padding: '16px',
-                            border: '1px solid rgba(16, 185, 129, 0.1)'
-                          }}>
-                            <div>
-                              <h5 style={{
-                                margin: '0 0 12px 0',
-                                fontSize: '14px',
-                                fontWeight: '600',
-                                color: '#1F2937'
-                              }}>📋 Data ({stepResult.results.length} rows)</h5>
-                              <div style={{
-                                borderRadius: '4px',
-                                overflow: 'hidden',
-                                border: '1px solid rgba(229, 231, 235, 0.8)',
-                                maxHeight: '250px'
-                              }}>
-                                <EnhancedTable 
-                                  data={stepResult.results}
-                                  title=""
-                                  description=""
-                                  maxHeight="250px"
-                                />
-                              </div>
+                          <div className="data-container">
+                            <h5 className="section-header">
+                              📋 Data ({stepResult.results.length} rows)
+                            </h5>
+                            <div className="data-table-wrapper">
+                              <EnhancedTable 
+                                data={stepResult.results}
+                                title=""
+                                description=""
+                                maxHeight="320px"
+                              />
                             </div>
                           </div>
                         )}
@@ -2452,21 +2981,31 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
         <div className="chat-history-section">
           <div className="chat-history-header">
             <h3>Recent Conversations</h3>
-            <button 
-              className={`new-chat-btn ${isLoading ? 'loading' : ''}`}
-              onClick={handleNewConversation}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <>
-                  <FiLoader size={12} className="spin" /> Creating...
-                </>
-              ) : (
-                <>
-                  <FiPlus size={12} /> New
-                </>
-              )}
-            </button>
+            <div className="chat-history-buttons">
+              <button 
+                className={`clear-chat-btn ${!activeConversation ? 'disabled' : ''}`}
+                onClick={handleClearChat}
+                disabled={!activeConversation}
+                title="Clear current chat"
+              >
+                <FiArchive size={12} /> Clear
+              </button>
+              <button 
+                className={`new-chat-btn ${isLoading ? 'loading' : ''}`}
+                onClick={handleNewConversation}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <>
+                    <FiLoader size={12} className="spin" /> Creating...
+                  </>
+                ) : (
+                  <>
+                    <FiPlus size={12} /> New
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
           <div className="chat-search">
@@ -2491,7 +3030,17 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                   onClick={() => handleConversationSelect(conversation)}
                 >
                   <div className="conversation-title">
-                    {conversation.is_favorite && <FiStar size={12} />}
+                    {(() => {
+                      const activity = formatRecentActivity(conversation.last_activity_timestamp || Date.now() - 86400000);
+                      return activity.text && (
+                        <span 
+                          className="activity-indicator" 
+                          style={{ color: activity.color }}
+                        >
+                          <FiZap size={10} />
+                        </span>
+                      );
+                    })()}
                     {conversation.title}
                   </div>
                   <div className="conversation-meta">
@@ -2531,8 +3080,8 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                 <FiSettings size={14} /> Settings
               </button>
             )}
-            <button className="action-btn">
-              <FiStar size={14} /> Favorite
+            <button className="action-btn" onClick={() => setShowQuickActions(!showQuickActions)}>
+              <FiZap size={14} /> Quick Actions
             </button>
             <button className="action-btn">
               <FiDownload size={14} /> Export
@@ -2545,6 +3094,41 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
             </button>
           </div>
         </div>
+
+        {/* Quick Actions Panel */}
+        {showQuickActions && (
+          <div className="quick-actions-panel">
+            <div className="quick-actions-header">
+              <h3>Quick Marketing Actions</h3>
+              <button 
+                className="close-btn" 
+                onClick={() => setShowQuickActions(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="quick-actions-grid">
+              {quickActions.map((action, index) => (
+                <button
+                  key={index}
+                  className="quick-action-item"
+                  onClick={() => {
+                    setCurrentMessage(action);
+                    setShowQuickActions(false);
+                  }}
+                >
+                  <div className="action-icon">
+                    <FiZap size={16} />
+                  </div>
+                  <div className="action-content">
+                    <div className="action-title">Marketing Query {index + 1}</div>
+                    <div className="action-description">{action}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Messages */}
         <div className="messages-container">
@@ -2677,11 +3261,7 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
             );
           })}
           
-          {activePlan && showProgress && 
-           activePlan.tasks && activePlan.tasks.length > 0 && 
-           activePlan.tasks.some((task: any) => 
-             task.task_type && ['schema_discovery', 'query_generation', 'execution', 'sql_generation'].includes(task.task_type)
-           ) && renderPlanExecution(activePlan)}
+          {/* Note: Execution plan is now shown inline with messages, not as a separate component */}
           
           {isLoading && (
             <div className="loading-indicator">

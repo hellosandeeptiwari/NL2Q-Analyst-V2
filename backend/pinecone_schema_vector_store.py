@@ -507,14 +507,20 @@ Data Analytics Focus: {self._get_analytics_focus(table_name)}"""
             # Batch generate embeddings for all chunks
             if all_chunks:
                 if progress_callback:
-                    progress_callback("table_start", current_table=f"Generating embeddings for batch {batch_num}")
+                    if asyncio.iscoroutinefunction(progress_callback):
+                        await progress_callback("table_start", current_table=f"Generating embeddings for batch {batch_num}")
+                    else:
+                        progress_callback("table_start", current_table=f"Generating embeddings for batch {batch_num}")
                 
                 embed_start = time.time()
                 await self._batch_generate_embeddings(all_chunks)
                 embed_time = time.time() - embed_start
                 
                 if progress_callback:
-                    progress_callback("table_start", current_table=f"Uploading vectors for batch {batch_num}")
+                    if asyncio.iscoroutinefunction(progress_callback):
+                        await progress_callback("table_start", current_table=f"Uploading vectors for batch {batch_num}")
+                    else:
+                        progress_callback("table_start", current_table=f"Uploading vectors for batch {batch_num}")
                 
                 # Batch upsert all chunks at once
                 upsert_start = time.time()

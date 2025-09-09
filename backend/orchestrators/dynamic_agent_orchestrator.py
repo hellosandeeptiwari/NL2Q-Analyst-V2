@@ -395,9 +395,15 @@ class DynamicAgentOrchestrator:
         
         print(f"🧠 Letting o3-mini analyze and plan dynamically for query: '{user_query}'")
         
+        # Try to get basic schema context if available (but don't fail if not)
+        schema_context = ""
+        if context and 'available_tables' in context:
+            tables = context['available_tables'][:5]  # Limit to first 5 tables
+            schema_context = f"\n\nAVAILABLE DATABASE CONTEXT:\nKnown tables: {', '.join(tables)}\n(Note: Full schema discovery will provide complete column details)\n"
+        
         planning_prompt = f"""You are an intelligent query orchestrator for pharmaceutical data analysis. Analyze the user's query and determine the most efficient execution plan.
 
-USER QUERY: "{user_query}"
+USER QUERY: "{user_query}"{schema_context}
 
 AVAILABLE CAPABILITIES:
 - schema_discovery: Find relevant database tables and columns (REQUIRED for all database queries)
@@ -413,6 +419,8 @@ CRITICAL RULES:
 1. ALWAYS include schema_discovery as the FIRST step for any database query
 2. Schema discovery is mandatory - it finds tables and columns needed for SQL generation
 3. Without schema discovery, SQL generation will fail
+4. For visualization requests, ALWAYS include python_generation AND visualization_builder
+5. For chart/graph/plot requests, use Plotly (not matplotlib) for better web display
 
 INSTRUCTIONS:
 Analyze the query and determine:
@@ -432,7 +440,7 @@ OUTPUT: Return only a JSON array of tasks in this format:
   {{"task_id": "2_taskname", "task_type": "capability_name"}}
 ]
 
-REMEMBER: Schema discovery is MANDATORY for all database operations."""
+REMEMBER: Schema discovery is MANDATORY for all database operations. For visualization, include BOTH python_generation AND visualization_builder."""
         
         try:
             from openai import OpenAI
@@ -2157,10 +2165,20 @@ Requirements:
 - Return only the Python code, no explanations
 - Use provided data structure exactly as given
 - Include proper error handling
+- NEVER use eval() - use json.loads() or ast.literal_eval() for safe parsing
+- If data contains JSON strings, use json.loads() to parse them safely
+
+CRITICAL: Web Display Requirements:
+- Assign your main chart to a variable named `fig` (this is required for web display)
+- If you produce multiple charts, place them in a list called `figures` and still include a main `fig`
+- If using Plotly, construct a `plotly.graph_objects.Figure` (go.Figure) and assign it to `fig`
+- DO NOT call fig.show() or plt.show() - charts will be displayed in the web interface automatically
+- The `fig` variable will be captured and rendered in the web interface
 
 Important:
-- Assign your main chart to a variable named `fig` (this is required). If you produce multiple charts, place them in a list called `figures` and still include a main `fig`.
-- If using Plotly, construct a `plotly.graph_objects.Figure` (go.Figure) and assign it to `fig`.
+- For parsing JSON-like strings in data, use: import json; parsed = json.loads(json_string)
+- SECURITY: Never use eval() function - it's unsafe. Use json.loads() or ast.literal_eval() instead.
+- DO NOT use fig.show(), plt.show(), or any display commands - the orchestrator will handle web display
 """
 
             error_context = ""
@@ -2345,18 +2363,31 @@ Generate Python code that:
                 # Helper: detect plotly figures
                 def _is_plotly_fig(obj):
                     try:
-                        import plotly.graph_objs as go
-                        if isinstance(obj, go.Figure):
+                        # Try multiple ways to detect plotly figures
+                        import plotly.graph_objects as go
+                        import plotly.graph_objs
+                        
+                        # Check if it's a plotly figure
+                        if isinstance(obj, (go.Figure, plotly.graph_objs.Figure)):
                             return True
-                    except Exception:
+                            
+                        # Check for plotly express figures (which are also go.Figure)
+                        if hasattr(obj, '__class__') and 'plotly' in str(obj.__class__).lower():
+                            return True
+                            
+                    except Exception as e:
+                        print(f"🔍 Plotly detection import error: {e}")
                         pass
+                    
                     # Fallback: duck-type check
-                    if hasattr(obj, 'to_dict'):
+                    if hasattr(obj, 'to_dict') and hasattr(obj, 'to_json'):
                         try:
                             d = obj.to_dict()
                             if isinstance(d, dict) and ('data' in d or 'layout' in d):
+                                print(f"✅ Detected plotly figure via duck-typing: {type(obj)}")
                                 return True
-                        except Exception:
+                        except Exception as e:
+                            print(f"🔍 Duck-type check failed: {e}")
                             return False
                     return False
 
@@ -2384,6 +2415,8 @@ Generate Python code that:
                                     continue
                                 processed_objects.add(obj_id)
                                 
+                                print(f"✅ Processing plotly figure: {type(obj)} from variable '{name}'")
+                                
                                 # Convert plotly figure to dict and clean numpy arrays
                                 chart_dict = obj.to_dict()
                                 # Clean numpy arrays and other non-serializable objects
@@ -2395,7 +2428,9 @@ Generate Python code that:
                                     'title': f'Python Generated {name}'
                                 })
                                 chart_types.append('plotly')
-                            except Exception:
+                                print(f"✅ Successfully added plotly chart from variable '{name}'")
+                            except Exception as e:
+                                print(f"❌ Error processing plotly figure '{name}': {e}")
                                 pass
                         elif _is_matplotlib_fig(obj):
                             try:
@@ -2430,6 +2465,7 @@ Generate Python code that:
                     pass
 
                 # 3) Scan all variables for plotly figures as a final pass
+                print(f"🔍 Scanning {len(combined_ns)} variables for plotly figures...")
                 for var_name, var_value in combined_ns.items():
                     if var_value is None:
                         continue
@@ -2439,8 +2475,11 @@ Generate Python code that:
                                 # Check if we've already processed this object
                                 obj_id = id(var_value)
                                 if obj_id in processed_objects:
+                                    print(f"⚠️ Skipping already processed plotly figure: {var_name}")
                                     continue
                                 processed_objects.add(obj_id)
+                                
+                                print(f"✅ Found plotly figure in variable scan: {var_name} ({type(var_value)})")
                                 
                                 # Convert plotly figure to dict and clean numpy arrays
                                 chart_dict = var_value.to_dict()
@@ -2453,9 +2492,12 @@ Generate Python code that:
                                     "title": f"Python Generated {var_name}"
                                 })
                                 chart_types.append("plotly")
-                            except Exception:
+                                print(f"✅ Successfully added plotly chart from scan: {var_name}")
+                            except Exception as e:
+                                print(f"❌ Error processing scanned plotly figure '{var_name}': {e}")
                                 pass
-                    except Exception:
+                    except Exception as e:
+                        print(f"🔍 Error checking variable '{var_name}': {e}")
                         pass
                 
                 # Generate summary
@@ -2708,8 +2750,7 @@ else:
                       x=df.columns[0],
                       title='Data Distribution')
 
-# Show the plot
-fig.show()
+# Note: fig is available for web display - do not call fig.show() as it opens in separate window
 """
             return python_code.strip()
         except Exception as e:
@@ -2750,8 +2791,7 @@ else:
     # Histogram for single column
     fig = px.histogram(df, x=df.columns[0], title='Data Distribution')
 
-# Display the chart
-fig.show()
+# Note: fig is available for web display - do not call fig.show() as it opens in separate window
 """
         return python_code.strip()
 
@@ -3225,9 +3265,12 @@ Return only the SQL query, properly formatted for Snowflake."""
     def _convert_non_serializable_data(self, obj):
         """Convert non-JSON-serializable objects to serializable ones"""
         import numpy as np
+        import datetime
         
         if isinstance(obj, set):
             return list(obj)
+        elif isinstance(obj, (datetime.date, datetime.datetime)):
+            return obj.isoformat()
         elif isinstance(obj, np.ndarray):
             return obj.tolist()
         elif hasattr(obj, 'tolist') and callable(getattr(obj, 'tolist')):  # Any numpy-like array

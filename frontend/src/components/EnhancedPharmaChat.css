@@ -104,11 +104,14 @@
   margin: 0;
 }
 
-.new-chat-btn {
-  background: #3b82f6;
-  color: white;
+.chat-history-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.new-chat-btn, .clear-chat-btn {
   border: none;
-  padding: 8px 16px;
+  padding: 8px 12px;
   border-radius: 6px;
   font-size: 12px;
   font-weight: 500;
@@ -119,15 +122,39 @@
   gap: 4px;
 }
 
+.new-chat-btn {
+  background: #3b82f6;
+  color: white;
+}
+
+.clear-chat-btn {
+  background: #f3f4f6;
+  color: #6b7280;
+  border: 1px solid #d1d5db;
+}
+
 .new-chat-btn:hover:not(:disabled) {
   background: #2563eb;
   transform: translateY(-1px);
 }
 
-.new-chat-btn:disabled {
-  background: #9ca3af;
+.clear-chat-btn:hover:not(:disabled) {
+  background: #ef4444;
+  color: white;
+  border-color: #dc2626;
+  transform: translateY(-1px);
+}
+
+.new-chat-btn:disabled, .clear-chat-btn:disabled {
   cursor: not-allowed;
   transform: none;
+  opacity: 0.5;
+}
+
+.clear-chat-btn.disabled {
+  background: #f9fafb;
+  color: #d1d5db;
+  border-color: #e5e7eb;
 }
 
 .new-chat-btn.loading {
@@ -196,6 +223,22 @@
   line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.activity-indicator {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 6px;
+  opacity: 0.8;
+}
+
+.activity-indicator svg {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 .conversation-meta {
@@ -500,8 +543,11 @@
   border-radius: 8px; /* Reduced from 12px */
   padding: 12px; /* Reduced from 16px */
   margin: 8px 0; /* Reduced from 12px */
-  max-height: 400px; /* Add max height for large charts */
-  overflow: hidden;
+  min-height: 300px; /* Minimum height for charts */
+  max-height: 500px; /* Increased max height for better visibility */
+  overflow: auto; /* Allow scrolling if needed */
+  display: flex;
+  flex-direction: column;
 }
 
 .viz-header {
@@ -1820,4 +1866,225 @@
   background: #f8fafc;
   border-radius: 6px;
   border-left: 3px solid #3b82f6;
+}
+
+/* Chart and Data Grid Layout */
+.results-grid-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+  min-height: 450px;
+  width: 100%;
+}
+
+.chart-container {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 8px;
+  padding: 16px;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  display: flex;
+  flex-direction: column;
+  min-height: 400px;
+  min-width: 0; /* Important: allows flex item to shrink */
+  width: 100%;
+}
+
+.chart-wrapper {
+  flex: 1;
+  min-height: 350px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+/* Plotly specific styling */
+.chart-wrapper .js-plotly-plot {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.chart-wrapper .plotly {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.data-container {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 8px;
+  padding: 16px;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  display: flex;
+  flex-direction: column;
+  min-height: 400px;
+  min-width: 0; /* Important: allows flex item to shrink */
+  width: 100%;
+}
+
+.data-table-wrapper {
+  flex: 1;
+  overflow: visible;
+  border-radius: 4px;
+  border: 1px solid rgba(229, 231, 235, 0.8);
+  /* Remove max-height to prevent double scroll */
+}
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+  .results-grid-container {
+    grid-template-columns: 1fr !important;
+    gap: 12px;
+  }
+  
+  .chart-container,
+  .data-container {
+    min-height: 300px;
+  }
+  
+  .chart-wrapper {
+    min-height: 250px;
+  }
+}
+
+@media (max-width: 768px) {
+  .results-grid-container {
+    grid-template-columns: 1fr !important;
+    gap: 8px;
+  }
+  
+  .chart-container,
+  .data-container {
+    min-height: 250px;
+    padding: 12px;
+  }
+}
+
+/* Section headers */
+.section-header {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1F2937;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(229, 231, 235, 0.5);
+}
+
+/* Single item layout - when only chart or only table */
+.results-grid-container.single-item {
+  display: block !important;
+  grid-template-columns: none !important;
+}
+
+.results-grid-container.single-item .chart-container,
+.results-grid-container.single-item .data-container {
+  width: 100%;
+  max-width: none;
+  margin: 0 auto;
+}
+
+/* Ensure proper grid behavior */
+.results-grid-container {
+  box-sizing: border-box;
+}
+
+.results-grid-container > * {
+  box-sizing: border-box;
+  min-width: 0; /* Prevent grid blowout */
+}
+
+/* Quick Actions Panel */
+.quick-actions-panel {
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 16px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.quick-actions-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.quick-actions-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.close-btn:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.quick-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.quick-action-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.quick-action-item:hover {
+  background: #e0f2fe;
+  border-color: #0ea5e9;
+  transform: translateY(-1px);
+}
+
+.action-icon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+}
+
+.action-content {
+  flex: 1;
+}
+
+.action-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #1f2937;
+  margin-bottom: 4px;
+}
+
+.action-description {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.4;
 }

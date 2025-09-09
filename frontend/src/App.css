@@ -5,8 +5,25 @@
   box-sizing: border-box;
 }
 
-.app {
+.App {
   height: 100vh;
+  width: 100vw;
   overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* Ensure proper layout for grid containers */
+.App * {
+  box-sizing: border-box;
+}
+
+/* Override any potential conflicts with grid layouts */
+.App .results-grid-container {
+  display: grid !important;
+}
+
+.App .chart-container,
+.App .data-container {
+  min-width: 0 !important;
+  width: 100% !important;
 }
