@@ -10,32 +10,35 @@ from dataclasses import dataclass
 from enum import Enum
 import os
 
-# Import progress broadcasting function
-def broadcast_progress_sync(data):
-    """Synchronous broadcast progress updates - will be overridden by main.py if available"""
-    print(f"📡 Progress: {data}")
-
-# Override with actual broadcast function if available
+# Import LLM Schema Intelligence
 try:
-    import sys
-    if 'backend.main' in sys.modules:
-        from backend.main import broadcast_progress
-        broadcast_progress_sync = broadcast_progress
-    elif 'main' in sys.modules:
-        from main import broadcast_progress  
-        broadcast_progress_sync = broadcast_progress
-except (ImportError, ValueError):
-    pass  # Use fallback function above
+    from backend.agents.schema_embedder import SchemaEmbedder
+    LLM_INTELLIGENCE_AVAILABLE = True
+except ImportError:
+    LLM_INTELLIGENCE_AVAILABLE = False
+    print("⚠️ LLM Schema Intelligence not available - using basic schema discovery")
+
+# Global reference to progress callback - will be set by main.py
+_progress_callback = None
+
+def set_progress_callback(callback):
+    """Set the progress callback function - called by main.py"""
+    global _progress_callback
+    _progress_callback = callback
+    print("✅ Progress callback registered with DynamicAgentOrchestrator")
 
 async def async_broadcast_progress(data):
     """Async wrapper for progress broadcasting"""
     try:
-        if asyncio.iscoroutinefunction(broadcast_progress_sync):
-            await broadcast_progress_sync(data)
+        if _progress_callback:
+            if asyncio.iscoroutinefunction(_progress_callback):
+                await _progress_callback(data)
+            else:
+                # Run sync function in background
+                import threading
+                threading.Thread(target=_progress_callback, args=(data,), daemon=True).start()
         else:
-            # Run sync function in background
-            import threading
-            threading.Thread(target=broadcast_progress_sync, args=(data,), daemon=True).start()
+            print(f"📡 Progress (no callback): {data}")
     except Exception as e:
         print(f"⚠️ Progress broadcast failed: {e}")
 
@@ -117,6 +120,22 @@ class DynamicAgentOrchestrator:
         self._index_initialized = False
         self.db_connector = None
         self.pinecone_store = None
+        
+        # Initialize LLM Schema Intelligence if available
+        self.schema_intelligence = None
+        if LLM_INTELLIGENCE_AVAILABLE:
+            try:
+                self.schema_embedder = SchemaEmbedder()
+                # Load cached schema intelligence from reingestion
+                if self.schema_embedder.load_cache():
+                    print("🧠 LLM Schema Intelligence initialized with cached data")
+                else:
+                    print("🧠 LLM Schema Intelligence initialized (no cached data)")
+            except Exception as e:
+                print(f"⚠️ Failed to initialize LLM Schema Intelligence: {e}")
+                self.schema_embedder = None
+        else:
+            self.schema_embedder = None
         
         # Token usage tracking for optimization
         self.token_usage_history = []
@@ -200,7 +219,7 @@ class DynamicAgentOrchestrator:
             # Get available tables count
             available_tables = []
             try:
-                result = self.db_connector.run("SHOW TABLES IN SCHEMA ENHANCED_NBA", dry_run=False)
+                result = self.db_connector.run("SHOW TABLES", dry_run=False)
                 available_tables = result.rows if result.rows else []
             except Exception as e:
                 print(f"⚠️ Could not fetch table list: {e}")
@@ -397,18 +416,75 @@ class DynamicAgentOrchestrator:
         
         # Try to get basic schema context if available (but don't fail if not)
         schema_context = ""
+        follow_up_context = ""
+        
         if context and 'available_tables' in context:
             tables = context['available_tables'][:5]  # Limit to first 5 tables
             schema_context = f"\n\nAVAILABLE DATABASE CONTEXT:\nKnown tables: {', '.join(tables)}\n(Note: Full schema discovery will provide complete column details)\n"
         
+        # Add conversation context for follow-up detection
+        print(f"🔍 DEBUG - plan_execution called with context: {context is not None}")
+        if context:
+            print(f"🔍 DEBUG - Context keys: {list(context.keys())}")
+            is_follow_up = context.get('is_follow_up', False)
+            recent_queries = context.get('recent_queries', [])
+            follow_up_info = context.get('follow_up_context', {})
+            
+            print(f"🔍 DEBUG - Follow-up context:")
+            print(f"  - is_follow_up: {is_follow_up}")
+            print(f"  - recent_queries count: {len(recent_queries)}")
+            print(f"  - follow_up_info: {follow_up_info}")
+            
+            if is_follow_up and recent_queries:
+                last_query = recent_queries[-1] if recent_queries else {}
+                print(f"🎯 FOLLOW-UP DETECTED - Adding context to LLM prompt")
+                
+                # Build follow-up context with actual data if available
+                data_context = ""
+                if follow_up_info.get('has_actual_data', False):
+                    data_sample = follow_up_info.get('last_query_data', [])
+                    data_columns = follow_up_info.get('data_columns', [])
+                    data_count = follow_up_info.get('data_row_count', 0)
+                    
+                    if data_sample:
+                        data_context = f"""
+PREVIOUS QUERY RESULTS (ACTUAL DATA):
+- Total rows: {data_count}
+- Columns: {', '.join(data_columns) if data_columns else 'N/A'}
+- Sample data (first few rows):
+{str(data_sample[:3])[:500]}...
+
+IMPORTANT: Use this actual data for insights, analysis, or visualization rather than re-running queries."""
+                
+                follow_up_context = f"""
+CONVERSATION CONTEXT - FOLLOW-UP DETECTED:
+- This appears to be a follow-up query to previous questions
+- Last query: "{last_query.get('nl', 'N/A')}"
+- Previous SQL: {last_query.get('sql', 'N/A')[:100]}...
+- Follow-up indicators: {follow_up_info}
+{data_context}
+
+FOLLOW-UP PLANNING LOGIC:
+- If user asks for insights/analysis from "above data", use the provided actual data for analysis
+- If user asks for chart/visualization of "this/that/above data", they likely want to visualize the provided results
+- For insight requests with actual data available, skip schema_discovery and query execution - use the data directly
+- For visualization requests with actual data, use python_generation → visualization_builder with the provided data
+- For data clarification follow-ups, focus on query refinement rather than visualization
+"""
+            else:
+                print(f"🔍 NOT A FOLLOW-UP - Proceeding with normal planning")
+        else:
+            print(f"🔍 DEBUG - No context provided to plan_execution")
+        
         planning_prompt = f"""You are an intelligent **Query Orchestrator** for pharmaceutical data analysis. You plan the sequence of tasks needed to fulfill the user's request and output them as a structured JSON plan.
 
-USER QUERY: "{user_query}"{schema_context}
+USER QUERY: "{user_query}"{schema_context}{follow_up_context}
 
 === ROLE & GOAL ===
 You are a highly reliable planning agent ("brilliant new analyst") that:
 - Plans multi-step data workflows using available capabilities.
 - Requires explicit, structured instruction and always favors accuracy and clarity.
+- Uses conversation context to make intelligent decisions about follow-up queries.
 
 === TOOLS & CAPABILITIES ===
 Available capabilities:
@@ -421,21 +497,41 @@ Available capabilities:
 • python_generation: Generate Python/pandas code for analysis.  
 • visualization_builder: Execute Python code to build Plotly visuals.
 
-=== RULES & KNOWN PATTERNS ===
+=== INTELLIGENT PLANNING RULES ===
 1. **schema_discovery** is MANDATORY and ALWAYS first for any database operation.  
 2. If schema_context only includes table names (no columns), still perform schema_discovery for full metadata.  
-3. Data-only requests → `schema_discovery → query_generation → execution`.  
-4. Visual/chart/trend requests → all of the above + `python_generation → visualization_builder` (Plotly only).  
-5. If the query includes domain/business terms requiring mapping → include **semantic_understanding** early.  
-6. If the query is ambiguous or could mean several things → insert **user_interaction** after schema_discovery and before SQL generation.  
-7. If any step (e.g., schema or execution) fails — handle via **user_interaction** to adjust or correct before retrying.  
-8. Always output structured JSON — NO natural language commentary outside the JSON.
 
-=== WORKFLOW BREAKDOWN EXAMPLE ===
-Example patterns:
-- Simple data retrieval → schema_discovery → query_generation → execution  
-- Visualization → schema_discovery → query_generation → execution → python_generation → visualization_builder  
-- Ambiguous query → schema_discovery → user_interaction → query_generation → execution
+**DATA vs VISUALIZATION DETECTION:**
+3. ONLY add visualization steps if the user EXPLICITLY requests charts, graphs, plots, or visual analysis:
+   - Explicit visualization requests: "show me a chart", "create a graph", "visualize", "plot this data"
+   - Data-only requests: "show me data", "get records", "find patients", "list results" → NO visualization
+   - Analysis requests: "analyze", "compare", "trends" → Use context clues, usually NO visualization unless explicit
+
+**FOLLOW-UP INTELLIGENCE (CRITICAL):**
+4. **BEFORE planning, detect if this is a follow-up query:**
+   - Words like "above", "this", "that", "previous", "earlier" indicate follow-up
+   - If follow-up detected AND conversation context available → SKIP schema_discovery
+   - Follow-up patterns:
+     * "insights from above chart" → Generate insights only (NO schema_discovery)
+     * "show chart of this data" → visualization_builder only (reuse previous SQL)
+     * "explain that result" → interpretation only
+5. For follow-up queries about "this/that/above data" requesting visualization:
+   - If previous query context available, you may need to re-run similar SQL first
+   - Then add python_generation → visualization_builder for the chart request
+6. For follow-up data clarification (no visualization request):
+   - Focus on refined query_generation without visualization steps
+
+**WORKFLOW PATTERNS:**
+7. Simple data retrieval → schema_discovery → query_generation → execution
+8. EXPLICIT visualization → schema_discovery → query_generation → execution → python_generation → visualization_builder
+9. Ambiguous query → schema_discovery → user_interaction → query_generation → execution
+10. **FOLLOW-UP insight generation** → python_generation ONLY (NO schema_discovery)
+11. **FOLLOW-UP visualization** → python_generation → visualization_builder ONLY (reuse context)
+12. **FOLLOW-UP data clarification** → query_generation → execution ONLY (refine previous query)=== CRITICAL CONSTRAINTS ===
+- NO hardcoded visualization steps unless user explicitly asks for charts/graphs/plots
+- Use conversation context to understand follow-up intent
+- Always output structured JSON — NO natural language commentary outside the JSON
+- Let the LLM (you) decide based on query intent, not keywords
 
 === OUTPUT FORMAT ===
 Output ONLY a JSON array of task objects, each with `task_id` and `task_type`, in execution order. Example:
@@ -460,7 +556,7 @@ No explanations or extra text."""
             
             # Calculate dynamic token limit based on content complexity
             prompt_length = len(planning_prompt)
-            context_size = len(str(available_context)) if "available_context" in locals() and available_context else 0
+            context_size = len(str(context)) if context else 0
             
             # Determine complexity factor based on query characteristics
             complexity_factor = 1.0
@@ -884,7 +980,7 @@ No explanations or extra text."""
         print(f"✅ Created dynamic plan with {len(tasks)} tasks (visualization: {needs_visualization})")
         return tasks
     
-    async def execute_plan(self, tasks: List[AgentTask], user_query: str, user_id: str = "default") -> Dict[str, Any]:
+    async def execute_plan(self, tasks: List[AgentTask], user_query: str, user_id: str = "default", conversation_context: Dict = None) -> Dict[str, Any]:
         """
         Execute the planned tasks in the correct order
         """
@@ -930,7 +1026,7 @@ No explanations or extra text."""
                 })
                 
                 try:
-                    task_result = await self._execute_single_task(task, results, user_query, user_id)
+                    task_result = await self._execute_single_task(task, results, user_query, user_id, conversation_context)
                     results[task.task_id] = task_result
                     completed_tasks.add(task.task_id)
                     print(f"✅ Completed {task.task_id}")
@@ -968,16 +1064,27 @@ No explanations or extra text."""
                         results[task.task_id] = {"error": str(e), "fallback_used": True}
                         completed_tasks.add(task.task_id)
         
+        # Broadcast execution completion
+        await async_broadcast_progress({
+            "stage": "execution_completed",
+            "totalSteps": total_tasks,
+            "completedSteps": len(completed_tasks),
+            "progress": 100,
+            "message": f"All {total_tasks} tasks completed successfully"
+        })
+        
+        print(f"🎉 All {total_tasks} tasks completed successfully!")
+        
         return results
     
-    async def _execute_single_task(self, task: AgentTask, previous_results: Dict, user_query: str, user_id: str = "default") -> Dict[str, Any]:
+    async def _execute_single_task(self, task: AgentTask, previous_results: Dict, user_query: str, user_id: str = "default", conversation_context: Dict = None) -> Dict[str, Any]:
         """Execute a single agent task"""
         
         # Get the appropriate agent based on task type
         agent_name = self._select_agent_for_task(task.task_type)
         
         # Prepare input data by resolving dependencies
-        resolved_input = self._resolve_task_inputs(task, previous_results, user_query, user_id)
+        resolved_input = self._resolve_task_inputs(task, previous_results, user_query, user_id, conversation_context)
         
         # Execute based on task type
         if task.task_type == TaskType.SCHEMA_DISCOVERY:
@@ -1013,7 +1120,7 @@ No explanations or extra text."""
         }
         return agent_mapping.get(task_type, "schema_discoverer")
     
-    def _resolve_task_inputs(self, task: AgentTask, previous_results: Dict, user_query: str, user_id: str = "default") -> Dict[str, Any]:
+    def _resolve_task_inputs(self, task: AgentTask, previous_results: Dict, user_query: str, user_id: str = "default", conversation_context: Dict = None) -> Dict[str, Any]:
         """Resolve task inputs from previous task results"""
         # Fix user_id mapping - RBAC expects "default_user" not "default"
         if user_id == "default":
@@ -1023,6 +1130,10 @@ No explanations or extra text."""
             "original_query": user_query,
             "user_id": user_id
         }
+        
+        # Add conversation context if available
+        if conversation_context:
+            resolved["conversation_context"] = conversation_context
         
         # Add all previous results to the resolved inputs
         for prev_task_id, prev_result in previous_results.items():
@@ -1049,35 +1160,75 @@ No explanations or extra text."""
     
     def _find_task_result_by_type(self, inputs: Dict, task_type: str) -> Dict[str, Any]:
         """Universal helper to find task results by type regardless of naming convention"""
+        # Debug logging
+        if task_type == "execution":
+            print(f"🔍 Looking for execution results in inputs...")
+            print(f"   Available keys: {list(inputs.keys())}")
+            
+            # Check results structure specifically
+            results = inputs.get('results', {})
+            if isinstance(results, dict):
+                print(f"   Results keys: {list(results.keys())}")
+                for key, value in results.items():
+                    if 'execution' in key.lower():
+                        print(f"   Found execution key: {key}")
+                        if isinstance(value, dict) and 'results' in value:
+                            print(f"   Has results data: {len(value['results']) if value['results'] else 0} rows")
+        
         # Try direct match first (for consistency)
         if task_type in inputs:
             return inputs[task_type]
         
+        # Check inputs.results structure (common pattern)
+        results = inputs.get('results', {})
+        if isinstance(results, dict):
+            # Look for exact key match in results
+            if task_type in results:
+                return results[task_type]
+            
+            # Look for numbered/prefixed patterns in results
+            for key, value in results.items():
+                if task_type in key.lower():
+                    if task_type == "execution":
+                        print(f"✅ Found execution result under key: {key}")
+                    return value
+        
         # Map task types to common patterns
         type_patterns = {
-            "schema_discovery": ["1_discover_schema", "discover_schema", "schema_discovery"],
+            "schema_discovery": ["1_schema_discovery", "discover_schema", "schema_discovery", "1_discover_schema"],
             "semantic_understanding": ["2_semantic_understanding", "semantic_understanding", "semantic_analysis"],
             "similarity_matching": ["3_similarity_matching", "similarity_matching", "vector_matching"],
             "user_verification": ["4_user_verification", "user_verification", "user_interaction"],
             "query_generation": ["5_query_generation", "query_generation", "sql_generation"],
-            "execution": ["6_query_execution", "query_execution", "execution"],
+            "execution": ["4_execution", "6_execution", "6_query_execution", "query_execution", "execution"],
+            "python_generation": ["python_generation", "7_python_generation"],
             "visualization": ["7_visualization", "visualization", "charts"]
         }
         
         # Look for numbered patterns first (dynamic o3-mini naming)
-        for key in inputs.keys():
-            if task_type in key:
-                return inputs[key]
-        
-        # Look for pattern matches
         patterns = type_patterns.get(task_type, [task_type])
-        for pattern in patterns:
-            if pattern in inputs:
-                return inputs[pattern]
-            # Check if any key contains the pattern
-            for key in inputs.keys():
-                if pattern in key.lower():
-                    return inputs[key]
+        
+        # Search in both main inputs and results
+        search_spaces = [inputs, results] if isinstance(results, dict) else [inputs]
+        
+        for search_space in search_spaces:
+            # Direct pattern matches
+            for pattern in patterns:
+                if pattern in search_space:
+                    if task_type == "execution":
+                        print(f"✅ Found execution via pattern {pattern}")
+                    return search_space[pattern]
+            
+            # Partial matches (key contains pattern)
+            for key in search_space.keys():
+                for pattern in patterns:
+                    if pattern.lower() in key.lower():
+                        if task_type == "execution":
+                            print(f"✅ Found execution via partial match: {key} contains {pattern}")
+                        return search_space[key]
+        
+        if task_type == "execution":
+            print(f"❌ No execution results found in any search space")
         
         return {}
     
@@ -1149,7 +1300,8 @@ No explanations or extra text."""
                     # Try to use the SchemaRetriever for richer column info
                     from backend.agents.schema_retriever import SchemaRetriever
                     retriever = SchemaRetriever()
-                    col_info = await retriever.get_columns_for_table(table_name, schema="ENHANCED_NBA")
+                    schema_name = os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES")
+                    col_info = await retriever.get_columns_for_table(table_name, schema=schema_name)
                     if col_info and isinstance(col_info, list):
                         for col in col_info:
                             columns.append({
@@ -1201,7 +1353,7 @@ No explanations or extra text."""
 
                 relevant_tables.append({
                     "name": table_name,
-                    "schema": "ENHANCED_NBA",
+                    "schema": os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES"),
                     "columns": columns,
                     "row_count": None,
                     "description": f"Table containing {table_name.replace('_', ' ').lower()} data"
@@ -1239,8 +1391,15 @@ No explanations or extra text."""
             print(f"✅ Pinecone schema discovery found {len(relevant_tables)} tables")
             if filtered_suggestions:
                 print(f"💡 Generated {len(filtered_suggestions)} table suggestions for user selection")
+            
+            # CRITICAL FIX: Return matched_tables instead of discovered_tables 
+            # so context building logic can properly populate matched_tables field
+            matched_table_names = [t["name"] for t in relevant_tables]
+            print(f"🔍 DEBUG: Setting matched_tables to: {matched_table_names}")
+            
             return {
-                "discovered_tables": [t["name"] for t in relevant_tables],
+                "discovered_tables": matched_table_names,  # Keep for backward compatibility 
+                "matched_tables": matched_table_names,     # NEW: This will be picked up by context building
                 "table_details": relevant_tables,
                 "table_suggestions": filtered_suggestions,
                 "pinecone_matches": detailed_pinecone_matches,  # Use detailed matches for SQL generation
@@ -1263,7 +1422,8 @@ No explanations or extra text."""
             db_adapter = get_adapter("snowflake")
             
             # Get limited set of tables for fallback
-            result = db_adapter.run("SHOW TABLES IN SCHEMA ENHANCED_NBA LIMIT 10", dry_run=False)
+            schema_name = os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES")
+            result = db_adapter.run(f"SHOW TABLES IN SCHEMA {schema_name} LIMIT 10", dry_run=False)
             if result.error:
                 return {"error": f"Schema discovery failed: {result.error}", "status": "failed"}
             
@@ -1287,7 +1447,7 @@ No explanations or extra text."""
                     
                     table_info = {
                         "name": table_name,
-                        "schema": "ENHANCED_NBA", 
+                        "schema": os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES"), 
                         "columns": columns,
                         "row_count": None,
                         "description": f"Table containing {table_name.replace('_', ' ').lower()} data"
@@ -1308,8 +1468,15 @@ No explanations or extra text."""
                     print(f"⚠️ Failed to get details for {table_name}: {table_error}")
             
             print(f"✅ Fallback schema discovery found {len(relevant_tables)} tables")
+            
+            # CRITICAL FIX: Return matched_tables instead of discovered_tables 
+            # so context building logic can properly populate matched_tables field
+            matched_table_names = [t["name"] for t in relevant_tables]
+            print(f"🔍 DEBUG: Fallback setting matched_tables to: {matched_table_names}")
+            
             return {
-                "discovered_tables": [t["name"] for t in relevant_tables],
+                "discovered_tables": matched_table_names,  # Keep for backward compatibility 
+                "matched_tables": matched_table_names,     # NEW: This will be picked up by context building
                 "table_details": relevant_tables,
                 "table_suggestions": table_suggestions,
                 "status": "completed"
@@ -1366,6 +1533,7 @@ No explanations or extra text."""
                 # Use the vector matcher to find best matches
                 matched_tables = discovered_tables[:3]  # Top 3 tables
                 similarity_scores = [0.95, 0.87, 0.82][:len(matched_tables)]
+                print(f"🔍 DEBUG: Similarity matching with entities - matched_tables: {matched_tables}")
                 
                 return {
                     "matched_tables": matched_tables,
@@ -1377,6 +1545,7 @@ No explanations or extra text."""
             elif discovered_tables:
                 # If no entities but we have tables, return top tables
                 matched_tables = discovered_tables[:3]
+                print(f"🔍 DEBUG: Similarity matching without entities - matched_tables: {matched_tables}")
                 return {
                     "matched_tables": matched_tables,
                     "similarity_scores": [0.8] * len(matched_tables),
@@ -1443,9 +1612,18 @@ No explanations or extra text."""
                 for i, table in enumerate(discovered_tables, 1):
                     print(f"   {i}. {table}")
                 
-                selected_tables = discovered_tables[:1]  # Select first table
+                # For payment queries, consider multiple tables
+                query = inputs.get("original_query", "")
+                print(f"🔍 DEBUG: Query for discovered tables: '{query}'")
+                if any(term in query.lower() for term in ['payment', 'rate', 'average', 'level', 'provider', 'metrics']):
+                    selected_tables = discovered_tables[:3]  # Select top 3 for complex queries
+                    print(f"🔍 DEBUG: Payment query detected - selecting top 3 discovered tables: {selected_tables}")
+                else:
+                    selected_tables = discovered_tables[:1]  # Select first table
+                    print(f"🔍 DEBUG: Simple query - selecting top 1 discovered table: {selected_tables}")
+                    
                 user_choice = "discovered_fallback"
-                print(f"\n✅ Using discovered table: {selected_tables[0]}")
+                print(f"\n✅ Using discovered tables: {selected_tables}")
                 
             # Fallback to similarity matched tables
             elif matched_tables:
@@ -1453,9 +1631,16 @@ No explanations or extra text."""
                 for i, table in enumerate(matched_tables, 1):
                     print(f"   {i}. {table}")
                 
-                selected_tables = matched_tables[:1]  # Select first table
+                # For payment/provider queries, use multiple tables to get complete data
+                query = inputs.get("original_query", "")
+                if any(term in query.lower() for term in ['payment', 'rate', 'average', 'level', 'provider', 'metrics']):
+                    selected_tables = matched_tables[:3]  # Use top 3 tables for complex queries
+                    print(f"\n✅ Using multiple tables for payment analysis: {selected_tables}")
+                else:
+                    selected_tables = matched_tables[:1]  # Select first table for simple queries
+                    print(f"\n✅ Using similarity-matched table: {selected_tables[0]}")
+                
                 user_choice = "similarity_fallback"
-                print(f"\n✅ Using similarity-matched table: {selected_tables[0]}")
                 
             else:
                 print(f"❌ No tables found to approve")
@@ -1491,17 +1676,27 @@ No explanations or extra text."""
             
             # Build table context from whatever is available
             confirmed_tables = self._determine_target_tables(available_context, query)
+            print(f"🔍 DEBUG: Confirmed tables from _determine_target_tables: {confirmed_tables}")
+            print(f"🔍 DEBUG: Available context keys: {list(available_context.keys())}")
+            if "matched_tables" in available_context:
+                print(f"🔍 DEBUG: available_context['matched_tables']: {available_context['matched_tables']}")
+            if "schemas" in available_context:
+                print(f"🔍 DEBUG: Schemas in context: {len(available_context['schemas'])} items")
+                if available_context['schemas']:
+                    print(f"🔍 DEBUG: First schema: {available_context['schemas'][0] if available_context['schemas'] else 'None'}")
             
             if not confirmed_tables:
                 print(f"🔍 No table context available - performing autonomous table discovery with Pinecone context")
                 autonomous_result = await self._autonomous_table_discovery_with_context(query)
                 confirmed_tables = autonomous_result.get("tables", [])
+                print(f"🔍 DEBUG: Autonomous discovery returned tables: {confirmed_tables}")
                 # CRITICAL FIX: Extract Pinecone matches from autonomous discovery
                 if autonomous_result.get("pinecone_matches"):
                     available_context["pinecone_matches"] = autonomous_result["pinecone_matches"]
                     print(f"🔍 Autonomous discovery found {len(autonomous_result['pinecone_matches'])} Pinecone matches")
             
             if not confirmed_tables:
+                print("❌ DEBUG: No confirmed tables found after all attempts!")
                 return {
                     "error": "Could not determine target tables for query",
                     "status": "failed",
@@ -1558,13 +1753,37 @@ No explanations or extra text."""
     
     def _determine_target_tables(self, context: Dict, query: str) -> List[str]:
         """Determine target tables from available context"""
+        print(f"🔍 DEBUG: _determine_target_tables called with query: '{query}'")
+        print(f"🔍 DEBUG: Context keys: {list(context.keys())}")
+        
         # Priority 1: User-approved tables
         if context.get("user_preferences", {}).get("tables"):
-            return context["user_preferences"]["tables"]
+            tables = context["user_preferences"]["tables"]
+            print(f"🔍 DEBUG: Using user-approved tables: {tables}")
+            return tables
         
         # Priority 2: Matched tables from similarity
         if context.get("matched_tables"):
-            return context["matched_tables"][:1]  # Top match
+            matched_tables = context["matched_tables"]
+            print(f"🔍 DEBUG: Found matched_tables: {matched_tables}")
+            print(f"🔍 DEBUG: Type of matched_tables: {type(matched_tables)}")
+            print(f"🔍 DEBUG: Length of matched_tables: {len(matched_tables) if isinstance(matched_tables, (list, tuple)) else 'not a list'}")
+            print(f"🔍 DEBUG: Query keywords check: {[term for term in ['payment', 'rate', 'average', 'level', 'provider'] if term in query.lower()]}")
+            
+            # Check if it's the expected format
+            if isinstance(matched_tables, list) and len(matched_tables) > 0:
+                print(f"🔍 DEBUG: First matched table: {matched_tables[0]}")
+                print(f"🔍 DEBUG: All matched tables: {matched_tables}")
+            
+            # For payment/provider queries, include multiple relevant tables
+            if any(term in query.lower() for term in ['payment', 'rate', 'average', 'level', 'provider']):
+                result = matched_tables[:3]  # Top 3 matches for complex queries
+                print(f"🔍 DEBUG: Payment query detected - returning top 3: {result}")
+                return result
+            else:
+                result = matched_tables[:1]  # Top match for simple queries
+                print(f"🔍 DEBUG: Simple query - returning top 1: {result}")
+                return result
         
         # Priority 3: Schema suggestions
         schemas = context.get("schemas", [])
@@ -1656,7 +1875,7 @@ No explanations or extra text."""
         """Discover relevant tables from database using query analysis"""
         try:
             # Get all available tables
-            show_tables_sql = 'SHOW TABLES IN "COMMERCIAL_AI"."ENHANCED_NBA"'
+            show_tables_sql = 'SHOW TABLES'
             result = self.db_connector.run(show_tables_sql, dry_run=False)
             
             if not result or not result.rows:
@@ -1705,8 +1924,8 @@ No explanations or extra text."""
     async def _generate_sql_with_context(self, query: str, tables: List[str], context: Dict) -> Dict[str, Any]:
         """Generate SQL using available tables and context"""
         try:
-            # Use the existing database-aware SQL generation that was working before
-            result = await self._generate_database_aware_sql(
+            # Use the existing database-aware SQL generation with enhanced retry logic
+            result = await self._generate_sql_with_retry(
                 query=query,
                 available_tables=tables,
                 error_context="",
@@ -1755,7 +1974,7 @@ No explanations or extra text."""
             # Execute with retry logic
             user_id = self._get_user_id_from_context(inputs)
             
-            max_attempts = 2
+            max_attempts = 3
             for attempt in range(1, max_attempts + 1):
                 print(f"🔄 Execution attempt {attempt}/{max_attempts}")
                 
@@ -1810,13 +2029,26 @@ No explanations or extra text."""
                             "execution_attempt": attempt,
                             "status": "completed"
                         }
+                        
                     else:
-                        error_msg = getattr(result, 'error_message', 'Unknown execution error')
-                        print(f"⚠️ Attempt {attempt} failed: {error_msg}")
+                        print(f"❌ SQL execution failed: {getattr(result, 'error', 'Unknown error')}")
+                        error_msg = str(getattr(result, 'error', 'Unknown SQL execution error'))
                         
                         if attempt < max_attempts:
-                            # Try with error recovery
-                            continue
+                            # Try LLM-based SQL error correction
+                            print(f"🔧 Attempting SQL error correction with LLM...")
+                            try:
+                                corrected_sql = self._correct_sql_with_llm(sql_query, error_msg, inputs)
+                                if corrected_sql and corrected_sql != sql_query:
+                                    print(f"🎯 LLM provided corrected SQL: {corrected_sql[:100]}...")
+                                    sql_query = corrected_sql  # Use corrected SQL for next attempt
+                                    continue
+                                else:
+                                    print(f"⚠️ LLM could not provide correction, using fallback strategy")
+                                    continue
+                            except Exception as correction_error:
+                                print(f"⚠️ SQL correction failed: {correction_error}")
+                                continue
                         else:
                             return {
                                 "error": f"Query execution failed after {max_attempts} attempts: {error_msg}",
@@ -1834,7 +2066,7 @@ No explanations or extra text."""
                             "sql_query": sql_query,
                             "status": "failed"
                         }
-            
+                        
         except Exception as e:
             print(f"❌ Query execution setup failed: {e}")
             return {"error": str(e), "status": "failed"}
@@ -1865,6 +2097,166 @@ No explanations or extra text."""
         
         print(f"❌ No SQL query found in previous tasks")
         return ""
+
+    def _correct_sql_with_llm(self, sql_query: str, error_message: str, inputs: Dict) -> str:
+        """Use LLM to correct SQL syntax errors"""
+        try:
+            print(f"🔧 Attempting SQL correction with LLM for error: {error_message}")
+            
+            # Get the original query context
+            original_query = inputs.get("query", "")
+            
+            # Detect database type dynamically
+            db_type = os.getenv("DB_ENGINE", "snowflake").lower()
+            if "snowflake" in db_type:
+                db_engine = "snowflake"
+                db_name = os.getenv("SNOWFLAKE_DATABASE", "HEALTHCARE_PRICING_ANALYTICS_SAMPLE")
+                schema_name = os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES")
+                table_format = f'"{db_name}"."{schema_name}"."TABLE_NAME"'
+            elif "postgres" in db_type:
+                db_engine = "postgresql" 
+                schema_name = os.getenv("POSTGRES_SCHEMA", "public")
+                table_format = f'"{schema_name}"."table_name"'
+                db_name = os.getenv("POSTGRES_DATABASE", "analytics")
+            elif "azure" in db_type or "sql" in db_type:
+                db_engine = "azure-sql"
+                schema_name = os.getenv("AZURE_SCHEMA", "dbo")
+                table_format = f'[{schema_name}].[table_name]'
+                db_name = os.getenv("AZURE_DATABASE", "analytics")
+            else:
+                # Default to snowflake
+                db_engine = "snowflake"
+                db_name = os.getenv("SNOWFLAKE_DATABASE", "HEALTHCARE_PRICING_ANALYTICS_SAMPLE")
+                schema_name = os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES")
+                table_format = f'"{db_name}"."{schema_name}"."TABLE_NAME"'
+            
+            # Extract schema information from previous steps for context
+            schema_info = ""
+            print(f"🔍 DEBUG - Available input keys: {list(inputs.keys())}")
+            
+            # Try multiple possible schema locations
+            schema_data = None
+            if "2_schema_analysis" in inputs:
+                schema_data = inputs["2_schema_analysis"]
+                print(f"🔍 DEBUG - Found 2_schema_analysis")
+            elif "results" in inputs and "2_schema_analysis" in inputs["results"]:
+                schema_data = inputs["results"]["2_schema_analysis"]
+                print(f"🔍 DEBUG - Found schema in results.2_schema_analysis")
+            elif "2_semantic_understanding" in inputs:
+                schema_data = inputs["2_semantic_understanding"]
+                print(f"🔍 DEBUG - Found 2_semantic_understanding")
+            elif "results" in inputs and "2_semantic_understanding" in inputs["results"]:
+                schema_data = inputs["results"]["2_semantic_understanding"]
+                print(f"🔍 DEBUG - Found schema in results.2_semantic_understanding")
+            
+            if schema_data and "schema_intelligence" in schema_data:
+                intelligence = schema_data["schema_intelligence"]
+                print(f"🔍 DEBUG - Found schema intelligence with keys: {list(intelligence.keys())}")
+                
+                # Add table schemas
+                if "tables" in intelligence:
+                    schema_info += "\n**Available Tables and Columns:**\n"
+                    for table_name, table_info in intelligence["tables"].items():
+                        schema_info += f"\n{table_name}:\n"
+                        if "columns" in table_info:
+                            for col in table_info["columns"]:
+                                col_name = col.get("name", "")
+                                col_type = col.get("data_type", "")
+                                description = col.get("description", "")
+                                # Highlight data types prominently for join compatibility
+                                type_warning = ""
+                                if col_type.upper() in ["NUMBER", "DECIMAL", "INTEGER", "BIGINT", "FLOAT"]:
+                                    type_warning = " 🔢 [NUMERIC - only join with other numeric fields]"
+                                elif col_type.upper() in ["VARCHAR", "TEXT", "STRING", "CHAR"]:
+                                    type_warning = " 📝 [TEXT - only join with other text fields]"
+                                
+                                schema_info += f"  - {col_name} 🏷️ {col_type.upper()}{type_warning}"
+                                if description:
+                                    schema_info += f" - {description}"
+                                schema_info += "\n"
+                    print(f"🔍 DEBUG - Generated schema info: {len(schema_info)} chars")
+                else:
+                    print(f"🔍 DEBUG - No 'tables' key found in intelligence")
+            else:
+                print(f"🔍 DEBUG - No schema intelligence found")
+                # Fallback: Look for any available context about tables/columns
+                for key, value in inputs.items():
+                    if isinstance(value, dict) and any(table_key in str(value).lower() for table_key in ['metrics', 'provider', 'overall_pct']):
+                        schema_info += f"\n**Context from {key}:**\n{str(value)[:300]}...\n"
+            
+            # Create enhanced correction prompt with schema context
+            correction_prompt = f"""Fix this SQL query error.
+
+**User Query:** {original_query}
+
+**Broken SQL:**
+```sql
+{sql_query}
+```
+
+**Error:** {error_message}
+
+**Database:** {db_engine.title()}, tables use {table_format} format
+{schema_info}
+
+Return only the corrected SQL query."""
+
+            print(f"🔍 DEBUG - Final schema info length: {len(schema_info)} chars")
+            if schema_info:
+                print(f"🔍 DEBUG - Schema info preview: {schema_info[:200]}...")
+            else:
+                print(f"🔍 DEBUG - NO SCHEMA INFO AVAILABLE - LLM correction may be limited")
+
+            # Call LLM for correction using synchronous OpenAI API (fix async issue)
+            try:
+                from openai import OpenAI
+                client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+                
+                print(f"🔧 Sending correction prompt to LLM...")
+                print(f"🔍 Error context: {error_message}")
+                print(f"🔍 SQL to fix: {sql_query[:200]}...")
+                
+                # DEBUG: Log the full prompt being sent
+                print(f"🔍 DEBUG - Full correction prompt ({len(correction_prompt)} chars):")
+                print("=" * 80)
+                print(correction_prompt)
+                print("=" * 80)
+                
+                response = client.chat.completions.create(
+                    model="gpt-5",
+                    messages=[
+                        {"role": "system", "content": f"You are an expert SQL developer for {db_engine.title()} databases. You MUST strictly adhere to {db_engine.title()} syntax rules and limitations. Fix the SQL error by generating compliant {db_engine.title()} SQL that will execute without errors. Return only the corrected SQL."},
+                        {"role": "user", "content": correction_prompt}
+                    ],
+                    max_completion_tokens=1000,
+                    temperature=0.1
+                )
+                
+                corrected_sql = response.choices[0].message.content.strip()
+                
+                # DEBUG: Log the LLM response
+                print(f"🔍 DEBUG - Raw LLM response ({len(corrected_sql)} chars):")
+                print("-" * 80)
+                print(corrected_sql)
+                print("-" * 80)
+                
+                # Clean up the response (remove markdown if present)
+                if '```sql' in corrected_sql:
+                    corrected_sql = corrected_sql.split('```sql')[1].split('```')[0].strip()
+                elif '```' in corrected_sql:
+                    corrected_sql = corrected_sql.split('```')[1].split('```')[0].strip()
+                
+                print(f"✅ LLM provided corrected SQL ({len(corrected_sql)} chars)")
+                print(f"🔍 Corrected SQL preview: {corrected_sql[:200]}...")
+                return corrected_sql
+                
+            except Exception as openai_error:
+                print(f"❌ OpenAI SQL correction failed: {openai_error}")
+                return sql_query  # Return original if correction fails
+            
+        except Exception as e:
+            print(f"❌ SQL correction failed: {e}")
+            return sql_query  # Return original if correction fails
 
     async def _trigger_query_regeneration(self, inputs: Dict, error_message: str):
         """Trigger intelligent query regeneration with error feedback"""
@@ -2218,13 +2610,13 @@ Generate Python code that:
 """
 
             response = await client.chat.completions.create(
-                model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+                model=os.getenv("OPENAI_MODEL", "gpt-5"),
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=0.1,
-                max_tokens=2000
+                max_completion_tokens=2000
             )
             
             python_code = response.choices[0].message.content.strip()
@@ -2569,18 +2961,114 @@ Generate Python code that:
         """Generate Python visualization code without executing it"""
         try:
             user_query = inputs.get('original_query', '')
+            print(f"🐍 Python generation for query: {user_query}")
             
-            # Find execution results from previous tasks
+            # ENHANCED: Check multiple sources for execution data
+            data = []
+            data_source = "unknown"
+            
+            # 1. First, try to find execution results from previous tasks in this conversation
             exec_result = self._find_task_result_by_type(inputs, "execution")
-            data = exec_result.get("results", [])
+            if exec_result and exec_result.get("results"):
+                data = exec_result.get("results", [])
+                data_source = "current_execution"
+                print(f"✅ Found data from current execution: {len(data)} rows")
+            
+            # 2. If no execution data, check conversation context for previous results
+            if not data:
+                print("🔍 No current execution data, checking conversation context...")
+                conversation_context = inputs.get('conversation_context', {})
+                
+                # Check if we have recent query results in conversation context
+                recent_queries = conversation_context.get('recent_queries', [])
+                if recent_queries:
+                    print(f"📊 Found {len(recent_queries)} recent queries, checking for data...")
+                    
+                    # DEBUGGING: Show detailed structure of each recent query
+                    for i, query in enumerate(recent_queries):
+                        print(f"🔍 Query {i+1} structure:")
+                        print(f"   Query keys: {list(query.keys())}")
+                        print(f"   Query NL: {query.get('nl', 'N/A')[:50]}...")
+                        print(f"   Results type: {type(query.get('results'))}")
+                        print(f"   Results length: {len(query.get('results', []))}")
+                        print(f"   Results sample: {query.get('results', [])[:2]}")
+                        print(f"   Row count: {query.get('row_count', 'N/A')}")
+                    
+                    # Look for the most recent query with actual results
+                    for query in reversed(recent_queries):
+                        query_results = (query.get('results') or 
+                                       query.get('data') or 
+                                       query.get('rows', []))
+                        if query_results and isinstance(query_results, list) and query_results:
+                            data = query_results
+                            data_source = "recent_query_history"
+                            print(f"✅ Found data from recent query: {len(data)} rows")
+                            print(f"   Query: {query.get('nl', 'Unknown')[:50]}...")
+                            print(f"   Data sample: {data[:2]}")
+                            break
+                    
+                    if not data:
+                        print("❌ No data found in any recent query results field")
+                
+                # 3. Check follow-up context
+                if not data:
+                    follow_up_context = conversation_context.get('follow_up_context', {})
+                    if follow_up_context.get('has_actual_data'):
+                        actual_data = follow_up_context.get('last_query_data', [])
+                        if actual_data:
+                            data = actual_data
+                            data_source = "follow_up_context"
+                            print(f"✅ Found data from follow-up context: {len(data)} rows")
+            
+            # 4. If still no data, check ALL task results for any execution results
+            if not data:
+                print("🔍 Checking all task results for execution data...")
+                all_results = inputs.get('results', {})
+                if isinstance(all_results, dict):
+                    for task_id, task_result in all_results.items():
+                        if ('execution' in task_id.lower() and 
+                            isinstance(task_result, dict) and 
+                            task_result.get('results')):
+                            data = task_result.get('results', [])
+                            data_source = f"task_result_{task_id}"
+                            print(f"✅ Found data from task {task_id}: {len(data)} rows")
+                            break
+            
+            # 5. Last resort: Check inputs directly for any data
+            if not data:
+                print("🔍 Checking inputs directly for data...")
+                direct_data = inputs.get('data') or inputs.get('results') or inputs.get('rows', [])
+                if direct_data:
+                    data = direct_data
+                    data_source = "direct_inputs"
+                    print(f"✅ Found data in direct inputs: {len(data)} rows")
+            
+            # Final fallback to sample data
+            if not data:
+                print("⚠️ No actual data found in any source, falling back to sample data")
+                data = [
+                    {"category": "Sample A", "value": 10},
+                    {"category": "Sample B", "value": 20},
+                    {"category": "Sample C", "value": 15},
+                    {"category": "Sample D", "value": 25},
+                    {"category": "Sample E", "value": 18}
+                ]
+                data_source = "sample_fallback"
+                print(f"🎯 Using sample data for demonstration ({len(data)} rows)")
+            
+            print(f"📊 Final data source: {data_source}")
+            print(f"📊 Final data count: {len(data)} rows")
+            if data and isinstance(data[0], dict):
+                print(f"📊 Data columns: {list(data[0].keys())}")
             
             if not data:
                 return {
-                    "error": "No data available for Python code generation",
+                    "error": "No data available for Python code generation. Please run a data query first.",
                     "status": "failed"
                 }
 
             print(f"🐍 Generating Python code for {len(data)} rows of data")
+            
             
             # Try OpenAI-based generation first
             try:
@@ -2803,7 +3291,108 @@ else:
 
     async def _generate_database_aware_sql(self, query: str, available_tables: List[str], 
                                          error_context: str = "", pinecone_matches: List[Dict] = None) -> Dict[str, Any]:
-        """Generate SQL with database-specific awareness using schema from Pinecone"""
+        """Generate SQL with database-specific awareness using schema from Pinecone with retry logic"""
+        # Redirect to the new retry-enabled method
+        return await self._generate_sql_with_retry(query, available_tables, error_context, pinecone_matches)
+    async def _generate_sql_with_retry(self, query: str, available_tables: List[str], 
+                                     error_context: str = "", pinecone_matches: List[Dict] = None) -> Dict[str, Any]:
+        """Generate SQL with enhanced retry logic and stack trace collection"""
+        max_retries = 3
+        retry_count = 0
+        accumulated_errors = []
+        
+        while retry_count <= max_retries:
+            try:
+                print(f"🔄 SQL Generation Attempt {retry_count + 1}/{max_retries + 1}")
+                
+                # Add accumulated error context for subsequent attempts
+                enhanced_error_context = error_context
+                if retry_count > 0 and accumulated_errors:
+                    print(f"🔧 Retrying with {len(accumulated_errors)} previous error(s)")
+                    error_summary = "\n".join([
+                        f"Attempt {i+1} Error: {err['error']}"
+                        for i, err in enumerate(accumulated_errors)
+                    ])
+                    enhanced_error_context += f"\n\nPREVIOUS RETRY ERRORS:\n{error_summary}\nPlease fix these issues and generate working SQL."
+                
+                # Call the original SQL generation method
+                result = await self._generate_database_aware_sql_core(
+                    query, available_tables, enhanced_error_context, pinecone_matches
+                )
+                
+                if result.get("status") == "success" and result.get("sql_query"):
+                    # 🔧 CRITICAL FIX: Test the generated SQL against the database
+                    sql_query = result.get("sql_query")
+                    print(f"🧪 Testing generated SQL against database (attempt {retry_count + 1})")
+                    
+                    try:
+                        # Test SQL execution to catch syntax/compilation errors
+                        test_result = await self._execute_sql_query(sql_query, "test_user")
+                        
+                        if test_result.get("error"):
+                            # SQL execution failed - add to retry context
+                            sql_error = test_result.get("error")
+                            print(f"❌ SQL execution failed: {sql_error}")
+                            raise Exception(f"SQL execution error: {sql_error}")
+                        else:
+                            # SQL executed successfully
+                            print(f"✅ SQL execution succeeded with {len(test_result.get('data', []))} rows")
+                            if retry_count > 0:
+                                print(f"✅ SQL generation and execution succeeded after {retry_count + 1} attempts")
+                            result["retry_count"] = retry_count
+                            result["total_attempts"] = retry_count + 1
+                            result["test_execution_result"] = test_result
+                            return result
+                            
+                    except Exception as sql_ex:
+                        # SQL execution failed - treat as retry-able error
+                        print(f"❌ SQL execution test failed: {str(sql_ex)}")
+                        raise Exception(f"SQL execution failed: {str(sql_ex)}")
+                else:
+                    # Treat as error for retry logic
+                    error_msg = result.get("error", "Unknown SQL generation failure")
+                    raise Exception(error_msg)
+                    
+            except Exception as e:
+                import traceback
+                
+                # Capture detailed error information
+                error_info = {
+                    "attempt": retry_count + 1,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "stack_trace": traceback.format_exc(),
+                    "query": query,
+                    "tables": available_tables
+                }
+                accumulated_errors.append(error_info)
+                
+                print(f"❌ Attempt {retry_count + 1} failed: {str(e)}")
+                if retry_count < max_retries:
+                    print(f"🔄 Retrying... ({retry_count + 2}/{max_retries + 1})")
+                    print(f"📋 Error details: {error_info['error_type']}: {str(e)[:200]}")
+                
+                retry_count += 1
+        
+        # All retries exhausted
+        print(f"❌ SQL generation failed after {max_retries + 1} attempts")
+        
+        # Return comprehensive error information
+        return {
+            "error": f"SQL generation failed after {max_retries + 1} attempts",
+            "status": "failed",
+            "retry_count": max_retries,
+            "total_attempts": max_retries + 1,
+            "error_history": accumulated_errors,
+            "last_error": accumulated_errors[-1] if accumulated_errors else None,
+            "query": query,
+            "tables": available_tables
+        }
+
+
+    async def _generate_database_aware_sql_core(self, query: str, available_tables: List[str], 
+                                               error_context: str = "", pinecone_matches: List[Dict] = None) -> Dict[str, Any]:
+        """Core SQL generation logic with database schema awareness"""
         try:
             import openai
             import os
@@ -2816,254 +3405,102 @@ else:
             
             client = AsyncOpenAI(api_key=api_key)
             
-            # AI Vector-Based Schema Discovery with Enhanced Retry
-            table_schemas = []
-            schema_success_count = 0
+            # Get database info
+            db_name = os.getenv("SNOWFLAKE_DATABASE", "HEALTHCARE_PRICING_ANALYTICS_SAMPLE")
+            schema_name = os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES")
             
-            print(f"🎯 Starting AI vector-based schema discovery for {len(available_tables)} tables")
+            # Enhanced schema context with Pinecone vector discovery
+            schema_context = f"Available tables: {', '.join(available_tables)}"
+            enhanced_schema_info = ""
             
-            if not pinecone_matches:
-                print("❌ CRITICAL: No Pinecone vector matches provided. Cannot proceed with AI-based schema discovery.")
-                raise Exception("AI vector-based schema discovery requires Pinecone embeddings matches")
+            if pinecone_matches:
+                print(f"🔍 Using {len(pinecone_matches)} Pinecone matches for enhanced schema discovery")
+                # Extract detailed schema information from Pinecone matches
+                enhanced_schema_info = self._extract_schema_from_pinecone_matches(pinecone_matches)
+                if enhanced_schema_info:
+                    schema_context = f"{schema_context}\n\nDETAILED SCHEMA INFORMATION:\n{enhanced_schema_info}"
+                    print("🎯 Enhanced schema context with Pinecone column details")
             
-            print(f"🔍 Processing {len(pinecone_matches)} Pinecone vector matches")
+            # Get LLM intelligence for enhanced SQL generation
+            intelligent_context = await self._get_llm_intelligence_context(available_tables)
+            print(f"🧠 Local intelligence context: {intelligent_context}")
             
-            for table_name in available_tables:
-                schema_retrieved = False
-                retry_count = 0
-                max_retries = 3
+            # Always try to extract from Pinecone matches to get enhanced schema intelligence
+            if pinecone_matches:
+                print("🔗 Extracting intelligence from Pinecone matches")
+                print(f"🔍 Available tables: {available_tables}")
+                print(f"🔍 Pinecone matches count: {len(pinecone_matches)}")
+                pinecone_intelligence = self._extract_intelligence_from_pinecone(pinecone_matches, available_tables)
+                print(f"🔍 Extracted Pinecone intelligence tables: {list(pinecone_intelligence.get('table_insights', {}).keys())}")
                 
-                print(f"📊 AI vector discovery for table: {table_name}")
+                # Merge Pinecone intelligence with local intelligence
+                if pinecone_intelligence.get("table_insights"):
+                    if not intelligent_context:
+                        intelligent_context = pinecone_intelligence
+                    else:
+                        # Merge the intelligence
+                        if "table_insights" not in intelligent_context:
+                            intelligent_context["table_insights"] = {}
+                        intelligent_context["table_insights"].update(pinecone_intelligence["table_insights"])
+                    print(f"🔍 Final intelligence tables: {list(intelligent_context.get('table_insights', {}).keys())}")
+            
+            if intelligent_context and intelligent_context.get("table_insights"):
+                # Enhanced system prompt with LLM intelligence
+                system_prompt = self._create_intelligent_sql_system_prompt(
+                    db_name, schema_name, schema_context, available_tables, 
+                    intelligent_context, len(available_tables), query
+                )
                 
-                while retry_count < max_retries and not schema_retrieved:
-                    try:
-                        # Enhanced AI Vector-Based Schema Extraction
-                        for match_idx, match in enumerate(pinecone_matches):
-                            metadata = match.get('metadata', {})
-                            table_match_score = 0
-                            
-                            # Multiple AI matching strategies
-                            table_name_variations = [
-                                table_name.lower(),
-                                table_name.upper(),
-                                table_name.replace('_', '').lower(),
-                                table_name.replace('_', ' ').lower()
-                            ]
-                            
-                            # Check table name in metadata
-                            metadata_table = metadata.get('table_name', '').lower()
-                            for variation in table_name_variations:
-                                if variation in metadata_table or metadata_table in variation:
-                                    table_match_score += 1
-                                    break
-                            
-                            # Check content relevance
-                            content_fields = ['content', 'text', 'description']
-                            for field in content_fields:
-                                if field in metadata:
-                                    content = str(metadata[field]).lower()
-                                    for variation in table_name_variations:
-                                        if variation in content:
-                                            table_match_score += 0.5
-                                            break
-                            
-                            # If this match is relevant to our table
-                            if table_match_score > 0:
-                                print(f"✅ AI vector match found for {table_name} (score: {table_match_score}, match: {match_idx})")
-                                print(f"🔍 DEBUG: Match metadata keys: {list(metadata.keys())}")
-                                
-                                columns = []
-                                
-                                # Initialize chunks first
-                                chunks = metadata.get('chunks', {})
-                                print(f"🔍 DEBUG: Found {len(chunks)} chunks: {list(chunks.keys())}")
-                                
-                                # CRITICAL FIX: Check for columns directly in metadata first
-                                if 'columns' in metadata:
-                                    direct_columns = metadata['columns']
-                                    print(f"🎯 FOUND columns directly in metadata: {direct_columns}")
-                                    if isinstance(direct_columns, list):
-                                        columns.extend(direct_columns)
-                                    elif isinstance(direct_columns, str):
-                                        columns.extend([col.strip() for col in direct_columns.split(',')])
-                                
-                                # Enhanced AI-based column extraction from chunks (if no direct columns)
-                                if not columns:
-                                    print(f"🔍 DEBUG: No direct columns found, checking chunks...")
-                                    
-                                    # Method 1: Direct columns from chunk metadata
-                                    for chunk_type, chunk_data in chunks.items():
-                                        print(f"🔍 DEBUG: Processing chunk {chunk_type}: {type(chunk_data)}")
-                                        if isinstance(chunk_data, dict):
-                                            print(f"🔍 DEBUG: Chunk {chunk_type} keys: {list(chunk_data.keys())}")
-                                            
-                                            # Look for columns in multiple possible locations
-                                            possible_metadata_paths = [
-                                                chunk_data.get('metadata', {}),  # Direct metadata
-                                                chunk_data,  # Direct chunk data
-                                            ]
-                                            
-                                            for metadata_source in possible_metadata_paths:
-                                                if isinstance(metadata_source, dict):
-                                                    print(f"🔍 DEBUG: Checking metadata source keys: {list(metadata_source.keys())}")
-                                                    
-                                                    if 'columns' in metadata_source:
-                                                        chunk_columns = metadata_source['columns']
-                                                        print(f"✅ Found columns in {chunk_type}: {chunk_columns}")
-                                                        if isinstance(chunk_columns, list):
-                                                            columns.extend(chunk_columns)
-                                                        elif isinstance(chunk_columns, str):
-                                                            columns.extend([col.strip() for col in chunk_columns.split(',')])
-                                                        break
-                                        
-                                        # Also check for column information in content field
-                                        if chunk_type == 'column_group' and not columns:
-                                            content = chunk_data.get('metadata', {}).get('content', '') or chunk_data.get('content', '')
-                                            if content:
-                                                print(f"🔍 DEBUG: Parsing column_group content: {content[:200]}...")
-                                                # Extract columns from content like "Column1 (TYPE), Column2 (TYPE)"
-                                                import re
-                                                column_matches = re.findall(r'([A-Za-z_][A-Za-z0-9_]*)\s*\([^)]+\)', content)
-                                                if column_matches:
-                                                    columns.extend(column_matches)
-                                                    print(f"✅ Extracted {len(column_matches)} columns from content: {column_matches}")
-                                    else:
-                                        print(f"🔍 DEBUG: Chunk {chunk_type} is not a dict: {type(chunk_data)}")
-                                
-                                print(f"🔍 DEBUG: Columns after Method 1: {columns}")
-                                
-                                # Method 2: AI content parsing for column patterns
-                                if not columns:
-                                    print(f"🔍 DEBUG: Method 1 failed, trying content parsing...")
-                                    for chunk_type, chunk_data in chunks.items():
-                                        if isinstance(chunk_data, dict) and 'metadata' in chunk_data:
-                                            chunk_metadata = chunk_data['metadata']
-                                            if 'content' in chunk_metadata:
-                                                content = chunk_metadata['content']
-                                                print(f"🔍 DEBUG: Parsing content from {chunk_type} ({len(content)} chars)")
-                                                print(f"🔍 DEBUG: Content preview: {content[:200]}...")
-                                                
-                                                # AI-driven pattern recognition for columns
-                                                import re
-                                                
-                                                # Enhanced regex patterns for AI-discovered schemas
-                                                ai_patterns = [
-                                                    r'"([A-Za-z_][A-Za-z0-9_]*)"',  # "Column_Name"
-                                                    r'`([A-Za-z_][A-Za-z0-9_]*)`',  # `Column_Name`
-                                                    r'([A-Za-z_][A-Za-z0-9_]*)\s*(?:VARCHAR|INT|FLOAT|TIMESTAMP|BOOLEAN)',  # Column_Name TYPE
-                                                    r'([A-Za-z_][A-Za-z0-9_]*)\s*:',  # Column_Name:
-                                                    r'\|\s*([A-Za-z_][A-Za-z0-9_]*)\s*\|',  # | Column_Name |
-                                                ]
-                                                
-                                                for pattern in ai_patterns:
-                                                    matches = re.findall(pattern, content, re.IGNORECASE | re.MULTILINE)
-                                                    if matches:
-                                                        print(f"🔍 DEBUG: Pattern '{pattern}' found {len(matches)} matches: {matches[:5]}")
-                                                        # Filter out common SQL keywords
-                                                        sql_keywords = {'SELECT', 'FROM', 'WHERE', 'JOIN', 'TABLE', 'COLUMN', 'TYPE', 'NULL', 'NOT'}
-                                                        valid_columns = [col for col in matches if col.upper() not in sql_keywords and len(col) > 1]
-                                                        if valid_columns:
-                                                            columns.extend(valid_columns)
-                                                            print(f"🤖 AI pattern '{pattern}' extracted {len(valid_columns)} columns: {valid_columns}")
-                                                            break
-                                                
-                                                if columns:
-                                                    break
-                                
-                                print(f"🔍 DEBUG: Columns after Method 2: {columns}")
-                                
-                                # Method 3: AI semantic column discovery from embeddings
-                                if not columns and 'content' in metadata:
-                                    content = metadata['content']
-                                    # Use AI to identify column-like structures
-                                    lines = content.split('\n')
-                                    for line in lines:
-                                        # Look for structured data patterns
-                                        if ':' in line and len(line.split(':')) == 2:
-                                            potential_col = line.split(':')[0].strip()
-                                            if re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', potential_col):
-                                                columns.append(potential_col)
-                                
-                                if columns:
-                                    # AI-based column deduplication and validation
-                                    unique_columns = []
-                                    seen = set()
-                                    for col in columns:
-                                        clean_col = col.strip().strip('"\'`')
-                                        if clean_col and clean_col not in seen and len(clean_col) > 0:
-                                            unique_columns.append(clean_col)
-                                            seen.add(clean_col)
-                                    
-                                    if unique_columns:
-                                        schema_text = f"Table: {table_name}\nColumns: {', '.join(unique_columns)}"
-                                        table_schemas.append(schema_text)
-                                        schema_retrieved = True
-                                        schema_success_count += 1
-                                        
-                                        print(f"🤖 AI vector schema discovery SUCCESS for {table_name}")
-                                        print(f"📋 Discovered {len(unique_columns)} columns: {unique_columns[:10]}{'...' if len(unique_columns) > 10 else ''}")
-                                        break
-                        
-                        if not schema_retrieved:
-                            retry_count += 1
-                            if retry_count < max_retries:
-                                print(f"� AI vector retry {retry_count + 1}/{max_retries} for {table_name}")
-                                # Expand search to lower-scored matches
-                                print("🔍 Expanding to lower-confidence AI matches...")
+                print("🧠 Using LLM intelligence for enhanced SQL generation")
+                print(f"🔍 DEBUG: Intelligent context structure:")
+                print(f"  - Table insights count: {len(intelligent_context.get('table_insights', {}))}")
+                for table_name, insights in intelligent_context.get('table_insights', {}).items():
+                    column_count = len(insights.get('column_insights', []))
+                    column_names = [col['column_name'] for col in insights.get('column_insights', [])]
+                    print(f"  - {table_name}: {column_count} columns")
+                    print(f"    Columns: {column_names}")
                     
-                    except Exception as e:
-                        print(f"⚠️ AI vector discovery error for {table_name} (attempt {retry_count + 1}): {e}")
-                        retry_count += 1
-                        if retry_count < max_retries:
-                            import time
-                            time.sleep(0.5)  # Brief delay for AI retry
-                
-                if not schema_retrieved:
-                    print(f"❌ AI vector schema discovery failed for {table_name} after {max_retries} attempts")
-                    # Add placeholder for failed AI discovery
-                    table_schemas.append(f"Table: {table_name}\nColumns: [AI vector discovery failed - insufficient embedding match]")
-            
-            print(f"🤖 AI Vector Schema Discovery Summary: {schema_success_count}/{len(available_tables)} tables successful")
-            
-            if schema_success_count == 0:
-                raise Exception("❌ CRITICAL: AI vector-based schema discovery failed completely. Check Pinecone embeddings and vector matches.")
-            
-            if schema_success_count < len(available_tables):
-                print(f"⚠️ WARNING: AI discovered only {schema_success_count}/{len(available_tables)} schemas. Consider improving embeddings.")
-            
-            # AI-Enhanced Schema Context
-            schema_context = "\n\n".join(table_schemas)
-            print(f"🤖 AI-discovered schema context:")
-            print(f"📋 Tables with AI-discovered schemas: {schema_success_count}")
-            print(f"📊 Total schema context length: {len(schema_context)} characters")
-            print(f"🎯 AI discovery success rate: {(schema_success_count/len(available_tables)*100):.1f}%")
-            
-            # AI-Powered SQL Generation with Vector-Discovered Schemas
-            system_prompt = f"""You are an AI-powered SQL generator using vector-discovered database schemas.
+                    # Check specifically for OVERALL_PCT_OF_AVG
+                    if 'OVERALL_PCT_OF_AVG' in column_names:
+                        print(f"    ✅ OVERALL_PCT_OF_AVG found in {table_name}!")
+                    else:
+                        print(f"    ❌ OVERALL_PCT_OF_AVG missing from {table_name}")
+                        avg_cols = [col for col in column_names if 'AVG' in col or 'PCT' in col]
+                        if avg_cols:
+                            print(f"    🔍 Similar columns found: {avg_cols}")
+                            
+                print(f"🔍 DEBUG: Available tables for SQL generation: {available_tables}")
+                print(f"🔍 DEBUG: Schema context keys: {list(schema_context.keys()) if isinstance(schema_context, dict) else 'Not a dict'}")
+            else:
+                # Fallback to basic system prompt
+                system_prompt = f"""You are an AI-powered SQL generator for Snowflake databases. You MUST strictly adhere to Snowflake syntax and limitations.
 
 Database Context:
-- Engine: Snowflake
-- Database: COMMERCIAL_AI  
-- Schema: ENHANCED_NBA
-- Full qualification: "COMMERCIAL_AI"."ENHANCED_NBA"."table_name"
+- Engine: Snowflake (STRICT COMPLIANCE REQUIRED)
+- Database: {db_name}  
+- Schema: {schema_name}
+- Full qualification: "{db_name}"."{schema_name}"."table_name"
 
-AI-DISCOVERED SCHEMAS (Vector Embedding Success Rate: {(schema_success_count/len(available_tables)*100):.1f}%):
-{schema_context}
+Available Tables: {', '.join(available_tables)}
 
-AI SCHEMA RULES:
-1. Use ONLY the column names discovered by AI vector embeddings above
-2. Column names are extracted from AI embeddings and are case-sensitive
-3. Always use double quotes: "COMMERCIAL_AI"."ENHANCED_NBA"."Table_Name"."Column_Name"
-4. Trust the AI-discovered schema - these columns exist in the database
-5. Use LIMIT 100 for safety
+CRITICAL Snowflake SQL Rules (MUST FOLLOW):
+1. Always use proper Snowflake quoting: "{db_name}"."{schema_name}"."Table_Name"
+2. NEVER mix window functions with GROUP BY in the same query level
+3. Use subqueries or CTEs when calculating aggregates and window functions together
+4. Respect Snowflake's GROUP BY requirements and expression validation
+5. Use appropriate column names based on table context
+6. Use LIMIT 100 for safety
+7. Generate ONLY syntactically correct Snowflake SQL that will execute without errors
+8. When in doubt, use simpler approaches that comply with Snowflake constraints
 
 User Query: {query}
 
-Generate executable Snowflake SQL using the AI-discovered schema above."""
+Generate executable Snowflake SQL that strictly follows all Snowflake syntax rules."""
+                print("📋 Using basic SQL generation (no LLM intelligence available)")
 
             error_context_text = ""
             if error_context:
-                error_context_text = f"\n\nPrevious Error Context: {error_context}\nPlease fix the identified issues."
+                error_context_text = f"\\n\\nPrevious Error Context: {error_context}\\nPlease fix the identified issues."
 
             user_prompt = f"""Generate a Snowflake SQL query for: {query}
 
@@ -3073,13 +3510,13 @@ Use these tables: {', '.join(available_tables)}
 Return only the SQL query, properly formatted for Snowflake."""
 
             response = await client.chat.completions.create(
-                model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+                model=os.getenv("OPENAI_MODEL", "gpt-5"),
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=0.1,
-                max_tokens=1500  # Increased for complex SQL queries
+                max_completion_tokens=1500
             )
             
             sql_query = response.choices[0].message.content.strip()
@@ -3099,48 +3536,212 @@ Return only the SQL query, properly formatted for Snowflake."""
             return {
                 "sql_query": sql_query,
                 "explanation": f"Database-aware SQL for Snowflake generated from: {query}",
-                "generation_method": "database_aware",
+                "generation_method": "database_aware_with_intelligence" if intelligent_context else "database_aware_basic",
                 "status": "success"
             }
             
         except Exception as e:
-            print(f"❌ Database-aware SQL generation failed: {e}")
-            return {"error": str(e), "status": "failed"}
+            import traceback
+            error_details = {
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "stack_trace": traceback.format_exc()
+            }
+            print(f"❌ Core SQL generation failed: {e}")
+            return {"status": "failed", **error_details}
+
+    async def _get_llm_intelligence_context(self, table_names: List[str]) -> Dict[str, Any]:
+        """Get LLM intelligence context for the specified tables"""
+        if not self.schema_embedder:
+            return {}
+        
+        try:
+            # Get intelligent context from cached LLM analysis
+            intelligence = self.schema_embedder.get_query_intelligence(table_names)
+            
+            if intelligence and intelligence.get("table_insights"):
+                print(f"🧠 Retrieved LLM intelligence for {len(intelligence['table_insights'])} tables")
+                return intelligence
+            else:
+                print("⚠️ No LLM intelligence available for these tables")
+                return {}
+                
+        except Exception as e:
+            print(f"⚠️ Failed to get LLM intelligence: {e}")
+            return {}
+    
+    def _create_intelligent_sql_system_prompt(self, db_name: str, schema_name: str, 
+                                            schema_context: str, table_names: List[str],
+                                            intelligent_context: Dict[str, Any], 
+                                            schema_success_count: int, query: str) -> str:
+        """Create enhanced system prompt with LLM intelligence"""
+        
+        prompt_parts = [
+            f"You are an AI-powered SQL generator with deep schema intelligence.",
+            "",
+            f"Database Context:",
+            f"- Engine: Snowflake",
+            f"- Database: {db_name}",
+            f"- Schema: {schema_name}",
+            f"- Full qualification: \"{db_name}\".\"{schema_name}\".\"table_name\"",
+            "",
+            f"LLM SCHEMA INTELLIGENCE:",
+        ]
+        
+        # Add table intelligence
+        table_insights = intelligent_context.get("table_insights", {})
+        for table_name, insights in table_insights.items():
+            prompt_parts.extend([
+                f"",
+                f"📊 TABLE: {table_name}",
+                f"Business Purpose: {insights.get('business_purpose', 'Unknown')}",
+                f"Domain: {insights.get('domain', 'Unknown')}",
+                ""
+            ])
+            
+            # Add column intelligence
+            column_insights = insights.get('column_insights', [])
+            if column_insights:
+                prompt_parts.append("COLUMN INTELLIGENCE:")
+                for col in column_insights:
+                    col_name = col['column_name']
+                    semantic_role = col['semantic_role']
+                    business_meaning = col['business_meaning']
+                    operations = ', '.join(col['data_operations'])
+                    
+                    col_desc = f"- {col_name}: {semantic_role} - {business_meaning}"
+                    col_desc += f" [Operations: {operations}]"
+                    
+                    if col.get('aggregation_priority', 5) <= 2:
+                        col_desc += " ⭐ PRIMARY AMOUNT FIELD"
+                    
+                    prompt_parts.append(col_desc)
+            
+            # Add query guidance
+            query_guidance = insights.get('query_guidance', {})
+            if query_guidance.get('primary_amount_fields'):
+                amount_fields = ', '.join(query_guidance['primary_amount_fields'])
+                prompt_parts.append(f"💰 PRIMARY AMOUNT FIELDS: {amount_fields}")
+            
+            if query_guidance.get('key_identifiers'):
+                id_fields = ', '.join(query_guidance['key_identifiers'])
+                prompt_parts.append(f"🔑 KEY IDENTIFIERS: {id_fields}")
+            
+            if query_guidance.get('forbidden_operations'):
+                forbidden = ', '.join(query_guidance['forbidden_operations'])
+                prompt_parts.append(f"🚫 FORBIDDEN OPERATIONS: {forbidden}")
+        
+        # Add relationship intelligence
+        cross_table_guidance = intelligent_context.get("cross_table_guidance", {})
+        relationships = cross_table_guidance.get("relationships", [])
+        
+        if relationships:
+            prompt_parts.extend([
+                "",
+                "🔗 RELATIONSHIP INTELLIGENCE:"
+            ])
+            
+            for rel in relationships:
+                if rel['from_table'] in table_names or rel['to_table'] in table_names:
+                    rel_desc = f"- {rel['from_table']} ↔ {rel['to_table']} via {rel['join_column']}"
+                    rel_desc += f" ({rel['business_context']})"
+                    prompt_parts.append(rel_desc)
+        
+        # Add query patterns
+        query_patterns = intelligent_context.get("query_patterns", {})
+        if query_patterns:
+            prompt_parts.extend([
+                "",
+                "📋 QUERY PATTERN GUIDANCE:"
+            ])
+            
+            for pattern_name, pattern_info in query_patterns.items():
+                if isinstance(pattern_info, dict):
+                    prompt_parts.append(f"- {pattern_name.upper()}:")
+                    if pattern_info.get('primary_tables'):
+                        prompt_parts.append(f"  Primary tables: {pattern_info['primary_tables']}")
+                    if pattern_info.get('primary_amount_column'):
+                        prompt_parts.append(f"  Primary amount column: {pattern_info['primary_amount_column']}")
+                    if pattern_info.get('required_joins'):
+                        prompt_parts.append(f"  Required joins: {pattern_info['required_joins']}")
+        
+        # Add AI-discovered schemas (fallback)
+        prompt_parts.extend([
+            "",
+            f"AI-DISCOVERED SCHEMAS (Vector Success Rate: {(schema_success_count/len(table_names)*100):.1f}%):",
+            schema_context,
+            "",
+            "⚠️ DATA TYPE COMPATIBILITY WARNING:",
+            "NEVER join columns with incompatible data types:",
+            "- 🔢 NUMERIC fields (NUMBER, DECIMAL, INTEGER, BIGINT): Only join with other numeric fields",
+            "- 📝 TEXT fields (VARCHAR, TEXT, STRING, CHAR): Only join with other text fields", 
+            "- Example WRONG: JOIN volume.NPI (NUMBER) = metrics.PROVIDER_NAME (VARCHAR)",
+            "- Example RIGHT: JOIN volume.NPI (NUMBER) = metrics.NPI (NUMBER)",
+            "",
+            "CRITICAL SNOWFLAKE SQL GENERATION RULES (MUST FOLLOW):",
+            "1. Use LLM intelligence to select semantically correct columns",
+            "2. Only use amount fields (⭐ marked) for mathematical operations (SUM, AVG)",
+            "3. Use identifier fields for grouping and joining",
+            "4. Follow relationship intelligence for proper JOINs",
+            "5. Never perform mathematical operations on text/description fields",
+            "6. Use business context to understand query intent",
+            "7. Always use proper Snowflake quoting: \"database\".\"schema\".\"table\".\"column\"",
+            "8. NEVER mix window functions with GROUP BY in the same query level",
+            "9. Use subqueries or CTEs when calculating aggregates and window functions together",
+            "10. Respect Snowflake's GROUP BY requirements and expression validation",
+            "11. Generate ONLY syntactically correct Snowflake SQL that will execute without errors",
+            "12. When in doubt, use simpler approaches that comply with Snowflake constraints",
+            "13. Use LIMIT 100 for safety",
+            "14. NEVER join numeric IDs (like NPI) with text fields (like PROVIDER_NAME) - data types must match",
+            "15. If no clear join path exists between tables, use separate queries or focus on single table",
+            "16. Only join tables when you have explicit relationship intelligence or matching data types",
+            "",
+            f"User Query: {query}",
+            "",
+            "Generate precise SQL that leverages the LLM schema intelligence above and STRICTLY follows all Snowflake syntax rules."
+        ])
+        
+        return "\n".join(prompt_parts)
 
     def _apply_snowflake_quoting(self, sql_query: str, table_names: List[str]) -> str:
         """Apply proper Snowflake quoting to table and column references"""
         try:
             import re
+            import os
+            
+            # Get database and schema from environment
+            db_name = os.getenv("SNOWFLAKE_DATABASE", "HEALTHCARE_PRICING_ANALYTICS_SAMPLE")
+            schema_name = os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES")
             
             # Ensure full database.schema.table qualification and proper quoting
             for table_name in table_names:
                 # Remove any existing qualification to avoid double-prefixing
-                clean_table_name = table_name.replace('COMMERCIAL_AI.ENHANCED_NBA.', '')
-                clean_table_name = clean_table_name.replace('ENHANCED_NBA.', '').replace('"', '')
+                clean_table_name = table_name.replace(f'{db_name}.{schema_name}.', '')
+                clean_table_name = clean_table_name.replace(f'{schema_name}.', '').replace('"', '')
                 
                 # Pattern 1: Replace unqualified table references in FROM clauses
                 unqualified_pattern = rf'\bFROM\s+{re.escape(clean_table_name)}\b'
-                sql_query = re.sub(unqualified_pattern, f'FROM "COMMERCIAL_AI"."ENHANCED_NBA"."{clean_table_name}"', sql_query, flags=re.IGNORECASE)
+                sql_query = re.sub(unqualified_pattern, f'FROM "{db_name}"."{schema_name}"."{clean_table_name}"', sql_query, flags=re.IGNORECASE)
                 
                 # Pattern 2: Replace JOIN references  
                 join_pattern = rf'\bJOIN\s+{re.escape(clean_table_name)}\b'
-                sql_query = re.sub(join_pattern, f'JOIN "COMMERCIAL_AI"."ENHANCED_NBA"."{clean_table_name}"', sql_query, flags=re.IGNORECASE)
+                sql_query = re.sub(join_pattern, f'JOIN "{db_name}"."{schema_name}"."{clean_table_name}"', sql_query, flags=re.IGNORECASE)
                 
                 # Pattern 3: Fix any existing malformed references
                 malformed_patterns = [
-                    rf'\bENHANCED_NBA\.{re.escape(clean_table_name)}\b',
-                    rf'\bCOMMERCIAL_AI\.{re.escape(clean_table_name)}\b'
+                    rf'\b{re.escape(schema_name)}\.{re.escape(clean_table_name)}\b',
+                    rf'\b{re.escape(db_name)}\.{re.escape(clean_table_name)}\b'
                 ]
                 for pattern in malformed_patterns:
-                    sql_query = re.sub(pattern, f'"COMMERCIAL_AI"."ENHANCED_NBA"."{clean_table_name}"', sql_query, flags=re.IGNORECASE)
+                    sql_query = re.sub(pattern, f'"{db_name}"."{schema_name}"."{clean_table_name}"', sql_query, flags=re.IGNORECASE)
                 
                 # Pattern 4: Fix cases where schema/database got treated as table
                 schema_as_table_patterns = [
-                    rf'\bFROM\s+"?ENHANCED_NBA"?\s*$',
-                    rf'\bFROM\s+"?COMMERCIAL_AI"?\s*$'
+                    rf'\bFROM\s+"?{re.escape(schema_name)}"?\s*$',
+                    rf'\bFROM\s+"?{re.escape(db_name)}"?\s*$'
                 ]
                 for pattern in schema_as_table_patterns:
-                    sql_query = re.sub(pattern, f'FROM "COMMERCIAL_AI"."ENHANCED_NBA"."{clean_table_name}"', sql_query, flags=re.IGNORECASE)
+                    sql_query = re.sub(pattern, f'FROM "{db_name}"."{schema_name}"."{clean_table_name}"', sql_query, flags=re.IGNORECASE)
             
             return sql_query
             
@@ -3151,8 +3752,14 @@ Return only the SQL query, properly formatted for Snowflake."""
     async def _fallback_sql_generation(self, table_name: str, query: str = "") -> Dict[str, Any]:
         """Generate a query-aware fallback SQL with proper database quoting"""
         try:
+            import os
+            
+            # Get database and schema from environment
+            db_name = os.getenv("SNOWFLAKE_DATABASE", "HEALTHCARE_PRICING_ANALYTICS_SAMPLE")
+            schema_name = os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES")
+            
             # Clean the table name - remove any existing schema qualification
-            clean_table_name = table_name.replace('ENHANCED_NBA.', '').replace('"', '')
+            clean_table_name = table_name.replace(f'{schema_name}.', '').replace('"', '')
             
             # Parse the query for specific requirements
             query_lower = query.lower() if query else ""
@@ -3178,7 +3785,8 @@ Return only the SQL query, properly formatted for Snowflake."""
                 from backend.agents.schema_retriever import SchemaRetriever
                 retriever = SchemaRetriever()
                 if hasattr(retriever, 'get_columns_for_table'):
-                    cols = await retriever.get_columns_for_table(clean_table_name, schema="ENHANCED_NBA")
+                    schema_name = os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES")
+                    cols = await retriever.get_columns_for_table(clean_table_name, schema=schema_name)
                     if cols:
                         columns = [c.get('name') or c.get('column_name') for c in cols]
             except Exception:
@@ -3207,10 +3815,14 @@ Return only the SQL query, properly formatted for Snowflake."""
                 else:
                     col_list = ', '.join([f'"{col}"' for col in columns[:8]])
                     
-                sql_query = f'SELECT {col_list} FROM "ENHANCED_NBA"."{clean_table_name}"{where_clause} LIMIT {limit}'
+                db_name = os.getenv("SNOWFLAKE_DATABASE", "HEALTHCARE_PRICING_ANALYTICS_SAMPLE")
+                schema_name = os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES")
+                sql_query = f'SELECT {col_list} FROM "{db_name}"."{schema_name}"."{clean_table_name}"{where_clause} LIMIT {limit}'
             else:
                 # Fallback to SELECT * with proper quoting
-                sql_query = f'SELECT * FROM "ENHANCED_NBA"."{clean_table_name}"{where_clause} LIMIT {limit}'
+                db_name = os.getenv("SNOWFLAKE_DATABASE", "HEALTHCARE_PRICING_ANALYTICS_SAMPLE")
+                schema_name = os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES")
+                sql_query = f'SELECT * FROM "{db_name}"."{schema_name}"."{clean_table_name}"{where_clause} LIMIT {limit}'
             
             print(f"🔧 Generated query-aware fallback SQL: {sql_query}")
             
@@ -3224,9 +3836,12 @@ Return only the SQL query, properly formatted for Snowflake."""
         except Exception as e:
             print(f"❌ Fallback SQL generation failed: {e}")
             # Emergency fallback - ensure we always return something valid
-            clean_name = table_name.replace('ENHANCED_NBA.', '').replace('"', '')
+            schema_prefix = os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES")
+            clean_name = table_name.replace(f'{schema_prefix}.', '').replace('"', '')
+            db_name = os.getenv("SNOWFLAKE_DATABASE", "HEALTHCARE_PRICING_ANALYTICS_SAMPLE")
+            schema_name = os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES")
             return {
-                "sql_query": f'SELECT * FROM "ENHANCED_NBA"."{clean_name}" LIMIT 10',
+                "sql_query": f'SELECT * FROM "{db_name}"."{schema_name}"."{clean_name}" LIMIT 10',
                 "explanation": f"Emergency fallback for {clean_name}",
                 "generation_method": "emergency",
                 "status": "success"
@@ -3240,14 +3855,64 @@ Return only the SQL query, properly formatted for Snowflake."""
         print(f"🚀 Dynamic Agent Orchestrator processing query: '{user_query}'")
         
         try:
-            # Step 1: Plan execution using reasoning model
-            tasks = await self.plan_execution(user_query)
+            # Step 1: Build conversation context with previous data
+            conversation_context = await self._build_conversation_context(user_query, user_id, session_id)
             
-            # Step 2: Execute the plan
-            results = await self.execute_plan(tasks, user_query, user_id)
+            # Step 2: Let LLM decide the workflow based on context and previous data
+            workflow_decision = await self._llm_decide_workflow(user_query, conversation_context)
             
-            # Step 3: Format response for API compatibility
+            # Step 3: Execute based on LLM decision
+            if workflow_decision['workflow_type'] == 'casual':
+                results = await self._handle_casual_response(user_query, workflow_decision)
+            elif workflow_decision['workflow_type'] == 'use_previous_data':
+                results = await self._handle_data_reuse(user_query, conversation_context, workflow_decision)
+            elif workflow_decision['workflow_type'] == 'enhance_previous':
+                results = await self._handle_data_enhancement(user_query, conversation_context, workflow_decision)
+            else:  # 'new_planning'
+                tasks = await self.plan_execution(user_query, conversation_context)
+                results = await self.execute_plan(tasks, user_query, user_id, conversation_context)
+            
+            # Step 4: Format response for API compatibility
             plan_id = f"plan_{hash(user_query)}_{session_id}"
+            
+            # Step 5: Save query history with actual results for future follow-up detection
+            try:
+                # Extract SQL and results from execution
+                sql_query = ""
+                query_results = []
+                columns = []
+                
+                if results and isinstance(results, dict):
+                    # Find SQL query
+                    if 'sql_query' in results:
+                        sql_query = results['sql_query']
+                    elif 'query_generation' in results and isinstance(results['query_generation'], dict):
+                        sql_query = results['query_generation'].get('sql_query', '')
+                    
+                    # Find execution results 
+                    if 'execution' in results and isinstance(results['execution'], dict):
+                        execution_data = results['execution']
+                        query_results = execution_data.get('results', [])
+                        columns = execution_data.get('columns', [])
+                    elif 'results' in results and isinstance(results['results'], list):
+                        query_results = results['results']
+                
+                # Save enhanced history with data
+                if sql_query:
+                    from backend.history.query_history import save_query_history
+                    save_query_history(
+                        nl=user_query,
+                        sql=sql_query, 
+                        job_id=plan_id,
+                        user=user_id,
+                        results=query_results,
+                        columns=columns
+                    )
+                    print(f"💾 Saved query to history with {len(query_results)} rows for user {user_id}")
+            except Exception as e:
+                print(f"⚠️ Could not save query history: {e}")
+                import traceback
+                traceback.print_exc()
             
             return {
                 "plan_id": plan_id,
@@ -3272,8 +3937,11 @@ Return only the SQL query, properly formatted for Snowflake."""
         """Convert non-JSON-serializable objects to serializable ones"""
         import numpy as np
         import datetime
+        from decimal import Decimal
         
-        if isinstance(obj, set):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        elif isinstance(obj, set):
             return list(obj)
         elif isinstance(obj, (datetime.date, datetime.datetime)):
             return obj.isoformat()
@@ -3296,3 +3964,834 @@ Return only the SQL query, properly formatted for Snowflake."""
             return [self._convert_non_serializable_data(item) for item in obj]
         else:
             return obj
+
+    async def _get_recent_queries(self, user_id: str, session_id: str, limit: int = 5) -> List[Dict]:
+        """
+        Get recent queries for follow-up detection using the existing query history system
+        """
+        try:
+            from backend.history.query_history import get_recent_queries
+            recent_queries = get_recent_queries(limit=limit)
+            
+            # Filter by user if tracking users  
+            user_queries = [q for q in recent_queries if q.get('user', 'anonymous') == user_id]
+            return user_queries
+        except Exception as e:
+            print(f"⚠️ Could not get recent queries: {e}")
+            return []
+
+    async def _check_and_handle_followup(self, user_query: str, user_id: str, session_id: str, conversation_context: dict) -> dict:
+        """
+        Check if this is a follow-up query and handle it efficiently without full planning
+        """
+        # Get recent queries for context
+        recent_queries = await self._get_recent_queries(user_id, session_id, limit=1)
+        if not recent_queries:
+            return None
+            
+        # The follow-up detection is already done by LLM in _detect_follow_up_query
+        # This method is kept for potential future follow-up handling logic
+        return None
+
+    async def _handle_visualization_followup(self, user_query: str, last_query: dict, user_id: str, session_id: str) -> dict:
+        """
+        Handle visualization follow-up requests efficiently
+        """
+        try:
+            print(f"🎨 Processing visualization follow-up: {user_query}")
+            
+            # Check if we have recent SQL and data from the previous query
+            last_sql = last_query.get('sql', '')
+            last_data = last_query.get('data', [])
+            
+            if not last_sql or not last_data:
+                print(f"🔍 No usable SQL/data from previous query - running full planning")
+                return None
+                
+            print(f"📊 Reusing previous SQL: {last_sql[:100]}...")
+            print(f"📊 Previous data rows: {len(last_data)}")
+            
+            # Create a streamlined plan for visualization
+            plan_id = f"vis_followup_{hash(user_query)}_{session_id}"
+            
+            # Execute the previous SQL again to get fresh data
+            print(f"🔄 Re-executing previous SQL for visualization")
+            sql_result = await self._execute_sql_query(last_sql, user_id)
+            
+            if sql_result.get('status') != 'completed':
+                print(f"❌ SQL re-execution failed - running full planning")
+                return None
+                
+            # Generate visualization code
+            print(f"🎨 Generating visualization code")
+            viz_result = await self._generate_visualization_only(user_query, sql_result['data'])
+            
+            # Create response in expected format
+            response = {
+                "plan_id": plan_id,
+                "user_query": user_query,
+                "status": "completed",
+                "results": {
+                    "1_data_reuse": {
+                        "status": "completed",
+                        "sql": last_sql,
+                        "data": sql_result['data'],
+                        "message": "Reused data from previous query"
+                    },
+                    "2_visualization": viz_result
+                },
+                "reasoning_steps": [
+                    "Detected visualization follow-up request",
+                    "Reused SQL and data from previous query",
+                    "Generated visualization code for the data"
+                ],
+                "tasks": [
+                    {"id": "1_data_reuse", "type": "data_reuse", "status": "completed"},
+                    {"id": "2_visualization", "type": "visualization_builder", "status": "completed"}
+                ]
+            }
+            
+            print(f"✅ Visualization follow-up completed efficiently")
+            return response
+            
+        except Exception as e:
+            print(f"❌ Visualization follow-up failed: {str(e)}")
+            return None
+
+    async def _generate_visualization_only(self, user_query: str, data: list) -> dict:
+        """
+        Generate only the visualization code without running SQL
+        """
+        try:
+            # Use the existing visualization builder logic but skip SQL execution
+            inputs = {
+                "query": user_query,
+                "data": data,
+                "sql": "# Data already available from previous query"
+            }
+            
+            # Call the visualization builder directly
+            viz_result = await self._execute_visualization_builder(inputs)
+            return viz_result
+            
+        except Exception as e:
+            return {
+                "status": "failed",
+                "error": f"Visualization generation failed: {str(e)}"
+            }
+
+    async def _execute_sql_query(self, sql: str, user_id: str) -> dict:
+        """
+        Execute SQL query and return results
+        """
+        try:
+            from backend.tools.sql_runner import SQLRunner
+            sql_runner = SQLRunner()
+            result = await sql_runner.execute_query(sql, user_id=user_id)
+            
+            if result and hasattr(result, 'success') and result.success:
+                data = result.data if hasattr(result, 'data') and result.data is not None else []
+                return {
+                    "status": "completed",
+                    "data": data,
+                    "sql": sql
+                }
+            else:
+                return {
+                    "status": "failed", 
+                    "error": "SQL execution failed"
+                }
+                
+        except Exception as e:
+            return {
+                "status": "failed",
+                "error": f"SQL execution error: {str(e)}"
+            }
+
+    async def _build_conversation_context(self, user_query: str, user_id: str, session_id: str) -> Dict[str, Any]:
+        """
+        Build conversation context for intelligent follow-up detection
+        """
+        print(f"🔍 DEBUG - Building conversation context for query: '{user_query}'")
+        print(f"🔍 DEBUG - User ID: {user_id}, Session ID: {session_id}")
+        
+        try:
+            from backend.history.query_history import get_recent_queries
+            
+            # Get recent queries for this user/session
+            recent_queries = get_recent_queries(limit=5)
+            print(f"🔍 DEBUG - Total recent queries: {len(recent_queries)}")
+            
+            # DEBUGGING: Show what's actually in the recent queries
+            if recent_queries:
+                print("🔍 DEBUG - Raw query history data:")
+                for i, query in enumerate(recent_queries):
+                    print(f"   Query {i+1}: keys={list(query.keys())}")
+                    print(f"   Query {i+1}: nl='{query.get('nl', 'N/A')[:50]}...'" if query.get('nl') else f"   Query {i+1}: no nl field")
+                    print(f"   Query {i+1}: results type={type(query.get('results'))}, length={len(query.get('results', []))}")
+                    if query.get('results'):
+                        print(f"   Query {i+1}: results sample={query['results'][:1]}")
+                    print(f"   Query {i+1}: row_count={query.get('row_count', 'N/A')}")
+                    print(f"   Query {i+1}: timestamp={query.get('timestamp', 'N/A')}")
+                    print()
+            else:
+                print("🔍 DEBUG - No recent queries found in history")
+            
+            # Filter by user if tracking users
+            user_queries = [q for q in recent_queries if q.get('user', 'anonymous') == user_id]
+            print(f"🔍 DEBUG - User-specific queries: {len(user_queries)}")
+            
+            # If no user-specific queries found, use recent queries for follow-up detection
+            # This handles cases where user_id doesn't match exactly
+            queries_for_followup = user_queries if user_queries else recent_queries[-3:]
+            print(f"🔍 DEBUG - Using {len(queries_for_followup)} queries for follow-up detection")
+            
+            # Detect follow-up patterns
+            is_follow_up = self._detect_follow_up_query(user_query, queries_for_followup)
+            print(f"🔍 DEBUG - Follow-up detection result: {is_follow_up}")
+            
+            # Build schema context
+            schema_context = {}
+            try:
+                # Try to get available tables for context
+                from backend.db.schema import get_schema_cache
+                schema_data = get_schema_cache()
+                tables = list(schema_data.keys()) if isinstance(schema_data, dict) else []
+                schema_context['available_tables'] = tables[:10]  # Limit to first 10
+            except Exception as e:
+                print(f"⚠️ Could not get schema context: {e}")
+                schema_context['available_tables'] = []
+            
+            result = {
+                'user_id': user_id,
+                'session_id': session_id,
+                'recent_queries': queries_for_followup,  # Use the queries that were actually checked
+                'is_follow_up': is_follow_up,
+                'follow_up_context': self._extract_follow_up_context(user_query, queries_for_followup),
+                'available_tables': schema_context.get('available_tables', [])
+            }
+            
+            print(f"🔍 DEBUG - Final context result: {result}")
+            return result
+            
+        except Exception as e:
+            print(f"⚠️ Error building conversation context: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'user_id': user_id,
+                'session_id': session_id,
+                'is_follow_up': False,
+                'available_tables': []
+            }
+
+    async def _llm_decide_workflow(self, current_query: str, conversation_context: Dict) -> Dict[str, Any]:
+        """
+        Let LLM intelligently decide the workflow based on current query and previous context/data
+        """
+        print(f"🧠 LLM deciding workflow for: '{current_query}'")
+        
+        # Build rich context for LLM decision
+        recent_queries = conversation_context.get('recent_queries', [])
+        available_tables = conversation_context.get('available_tables', [])
+        
+        # Extract previous data if available
+        previous_data_context = ""
+        if recent_queries:
+            last_query = recent_queries[-1]
+            previous_data_context = f"""
+PREVIOUS QUERY CONTEXT:
+- Last Query: "{last_query.get('nl', 'N/A')}"
+- Last SQL: {last_query.get('sql', 'N/A')[:200]}...
+- Query Result Available: {'Yes' if last_query.get('results') else 'No'}
+- Data Columns: {last_query.get('columns', 'N/A')}
+- Row Count: {last_query.get('row_count', 'N/A')}
+- Sample Data: {str(last_query.get('sample_data', 'N/A'))[:300]}...
+"""
+        
+        decision_prompt = f"""You are an intelligent workflow orchestrator. Analyze the current query and previous context to decide the best workflow.
+
+CURRENT QUERY: "{current_query}"
+
+{previous_data_context}
+
+AVAILABLE DATABASE TABLES: {', '.join(available_tables[:10]) if available_tables else 'None cached'}
+
+WORKFLOW OPTIONS:
+1. **casual** - Simple conversational response (greetings, thanks, help requests)
+2. **use_previous_data** - Use existing data for analysis/visualization without new queries
+3. **enhance_previous** - Modify/filter previous query while keeping same data structure
+4. **new_planning** - Fresh database query with full planning workflow
+
+DECISION CRITERIA:
+- **casual**: Non-data queries like "hello", "thank you", "what can you do", general chat
+- **use_previous_data**: "change chart type", "show as pie chart", "analyze this data", "explain results"
+- **enhance_previous**: "add filter", "show more details", "group by something else", "different time range"
+- **new_planning**: New data requests, different tables, complex new analysis
+
+RESPOND with ONLY this JSON format:
+{{
+    "workflow_type": "casual|use_previous_data|enhance_previous|new_planning",
+    "reasoning": "Brief explanation why this workflow was chosen",
+    "confidence": 0.9,
+    "data_needed": true/false,
+    "estimated_complexity": "low|medium|high"
+}}"""
+
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+            
+            response = client.chat.completions.create(
+                model=self.fast_model,  # Use fast model for quick decisions
+                messages=[{"role": "user", "content": decision_prompt}],
+                max_tokens=150,
+                temperature=0.1
+            )
+            
+            decision_text = response.choices[0].message.content.strip()
+            print(f"🎯 LLM Decision Response: {decision_text}")
+            
+            # Parse JSON response
+            import json
+            try:
+                decision = json.loads(decision_text)
+                print(f"✅ Workflow Decision: {decision['workflow_type']} (confidence: {decision.get('confidence', 'N/A')})")
+                print(f"📝 Reasoning: {decision.get('reasoning', 'N/A')}")
+                return decision
+            except json.JSONDecodeError:
+                print(f"⚠️ Failed to parse LLM decision JSON, defaulting to new_planning")
+                return {
+                    "workflow_type": "new_planning",
+                    "reasoning": "JSON parse failed, using default workflow",
+                    "confidence": 0.5,
+                    "data_needed": True,
+                    "estimated_complexity": "medium"
+                }
+                
+        except Exception as e:
+            print(f"⚠️ LLM workflow decision failed: {e}")
+            return {
+                "workflow_type": "new_planning",
+                "reasoning": "LLM call failed, using default workflow", 
+                "confidence": 0.5,
+                "data_needed": True,
+                "estimated_complexity": "medium"
+            }
+
+    async def _handle_casual_response(self, query: str, decision: Dict) -> Dict[str, Any]:
+        """Handle casual conversation queries"""
+        print(f"💬 Handling casual query: '{query}'")
+        
+        # Simple pattern matching for common casual queries
+        query_lower = query.lower().strip()
+        
+        if any(greeting in query_lower for greeting in ['hello', 'hi', 'hey', 'good morning', 'good afternoon']):
+            response = "Hello! I'm your AI data analyst. I can help you explore NBA data, create visualizations, and answer questions about the database. What would you like to analyze?"
+        elif any(thanks in query_lower for thanks in ['thank you', 'thanks', 'appreciate']):
+            response = "You're welcome! Feel free to ask if you need any more data analysis or visualizations."
+        elif any(help_word in query_lower for help_word in ['help', 'what can you do', 'capabilities']):
+            response = """I can help you with:
+• Exploring NBA player and team statistics
+• Creating charts and visualizations  
+• Running SQL queries on the database
+• Analyzing trends and patterns
+• Generating insights from data
+
+Just ask me something like "Show me top NBA scorers" or "Create a chart of team performance"!"""
+        elif any(bye in query_lower for bye in ['bye', 'goodbye', 'see you']):
+            response = "Goodbye! Feel free to return anytime you need data analysis assistance."
+        else:
+            response = "I'm here to help with data analysis and visualization. Could you ask me something about the NBA database or request a specific chart/analysis?"
+        
+        return {
+            "response": response,
+            "type": "casual_conversation",
+            "status": "completed"
+        }
+
+    async def _handle_data_reuse(self, query: str, context: Dict, decision: Dict) -> Dict[str, Any]:
+        """Handle queries that can reuse previous data for new analysis/visualization"""
+        print(f"🔄 Reusing previous data for: '{query}'")
+        
+        # Get previous data
+        recent_queries = context.get('recent_queries', [])
+        if not recent_queries:
+            return {"error": "No previous data available to reuse", "status": "failed"}
+        
+        last_query = recent_queries[-1]
+        previous_data = last_query.get('results', [])
+        
+        if not previous_data:
+            return {"error": "Previous query has no data results", "status": "failed"}
+        
+        # Use python generation with previous data
+        print(f"📊 Generating analysis/visualization with {len(previous_data)} rows of previous data")
+        
+        try:
+            # Create task-like structure for python generation
+            python_result = await self._generate_python_visualization_code(
+                query=query,
+                data=previous_data,
+                attempt=1,
+                previous_error=None
+            )
+            
+            if python_result.get('status') == 'success':
+                # Execute the visualization
+                python_code = python_result.get('python_code', '')
+                execution_result = await self._execute_python_code_safely(python_code, previous_data)
+                
+                return {
+                    "python_code": python_code,
+                    "data": previous_data,
+                    "execution_result": execution_result,
+                    "summary": f"Reused previous data ({len(previous_data)} rows) for new analysis",
+                    "workflow_type": "data_reuse",
+                    "status": "success"
+                }
+            else:
+                return {
+                    "error": f"Failed to generate analysis code: {python_result.get('error')}",
+                    "status": "failed"
+                }
+                
+        except Exception as e:
+            return {
+                "error": f"Data reuse workflow failed: {e}",
+                "status": "failed"
+            }
+
+    async def _handle_data_enhancement(self, query: str, context: Dict, decision: Dict) -> Dict[str, Any]:
+        """Handle queries that enhance/modify previous queries"""
+        print(f"🔧 Enhancing previous query: '{query}'")
+        
+        # Get previous query context
+        recent_queries = context.get('recent_queries', [])
+        if not recent_queries:
+            return {"error": "No previous query to enhance", "status": "failed"}
+        
+        last_query = recent_queries[-1]
+        previous_sql = last_query.get('sql', '')
+        
+        if not previous_sql or 'ERROR' in previous_sql:
+            return {"error": "Previous query was invalid, cannot enhance", "status": "failed"}
+        
+        # Use existing query generation with enhancement context
+        enhancement_prompt = f"""
+ENHANCEMENT REQUEST: "{query}"
+PREVIOUS SQL: {previous_sql}
+
+The user wants to modify the previous query. Common enhancement patterns:
+- "add filter" → Add WHERE conditions
+- "show more details" → Add more columns  
+- "group by X" → Modify GROUP BY clause
+- "different time range" → Modify date filters
+- "top N" → Add LIMIT clause
+
+Generate an enhanced SQL query based on the user's request."""
+        
+        try:
+            # Generate enhanced SQL
+            tasks = [
+                AgentTask(
+                    task_id="enhanced_query_generation",
+                    task_type=TaskType.QUERY_GENERATION,
+                    input_data={"enhancement_context": enhancement_prompt}
+                ),
+                AgentTask(
+                    task_id="enhanced_execution", 
+                    task_type=TaskType.EXECUTION,
+                    input_data={}
+                )
+            ]
+            
+            # Execute enhancement workflow
+            results = await self.execute_plan(tasks, query, context.get('user_id', 'default'), context)
+            
+            return {
+                "enhanced_sql": results.get('enhanced_query_generation', {}).get('sql_query', ''),
+                "results": results.get('enhanced_execution', {}).get('results', []),
+                "summary": "Enhanced previous query with new requirements",
+                "workflow_type": "data_enhancement", 
+                "status": "success"
+            }
+            
+        except Exception as e:
+            return {
+                "error": f"Data enhancement workflow failed: {e}",
+                "status": "failed"
+            }
+
+    async def _execute_python_code_safely(self, python_code: str, data: List[Dict]) -> Dict[str, Any]:
+        """Safely execute Python visualization code with data"""
+        try:
+            import pandas as pd
+            import plotly.express as px
+            import plotly.graph_objects as go
+            import io
+            import sys
+            
+            # Create DataFrame from data
+            df = pd.DataFrame(data)
+            
+            # Capture output
+            old_stdout = sys.stdout
+            sys.stdout = captured_output = io.StringIO()
+            
+            # Create a safe execution environment
+            safe_globals = {
+                'df': df,
+                'pd': pd,
+                'px': px,
+                'go': go,
+                'data': data,
+                '__builtins__': {
+                    'len': len,
+                    'str': str,
+                    'int': int,
+                    'float': float,
+                    'list': list,
+                    'dict': dict,
+                    'print': print,
+                    'range': range,
+                    'enumerate': enumerate
+                }
+            }
+            
+            # Execute the code
+            exec(python_code, safe_globals)
+            
+            # Restore stdout
+            sys.stdout = old_stdout
+            output = captured_output.getvalue()
+            
+            # Check if a figure was created
+            fig = safe_globals.get('fig')
+            
+            result = {
+                "status": "success",
+                "output": output,
+                "data_rows": len(data)
+            }
+            
+            if fig:
+                # Convert Plotly figure to JSON
+                result["chart_json"] = fig.to_json()
+                result["chart_html"] = fig.to_html()
+                
+            return result
+            
+        except Exception as e:
+            return {
+                "status": "error",
+                "error": str(e),
+                "output": ""
+            }
+
+    def _detect_follow_up_query(self, current_query: str, recent_queries: List[Dict]) -> bool:
+        """
+        Detect if current query is a follow-up to previous queries using LLM
+        """
+        print(f"🔍 DEBUG - _detect_follow_up_query called with: '{current_query}'")
+        print(f"🔍 DEBUG - Recent queries count: {len(recent_queries)}")
+        
+        if not recent_queries:
+            print(f"🔍 DEBUG - No recent queries, returning False")
+            return False
+            
+        # Build context for LLM decision
+        recent_context = ""
+        for i, query in enumerate(recent_queries[-2:]):
+            recent_context += f"Previous Query {i+1}: {query.get('nl', 'N/A')}\n"
+            
+        # Ask LLM to classify with very short response
+        classification_prompt = f"""
+{recent_context}
+Current Query: {current_query}
+
+Is the current query a follow-up to the previous queries? Respond with only ONE WORD:
+- "yes" if it refers to previous data/results (words like "above", "this", "that", "previous", "from the")
+- "no" if it's a new independent query
+
+Response:"""
+
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+            
+            response = client.chat.completions.create(
+                model=self.fast_model,
+                messages=[{"role": "user", "content": classification_prompt}],
+                max_tokens=5,
+                temperature=0.1
+            )
+            
+            classification = response.choices[0].message.content.strip().lower()
+            is_followup = classification == "yes"
+            
+            print(f"🎯 LLM Classification: '{classification}' -> is_followup: {is_followup}")
+            return is_followup
+            
+        except Exception as e:
+            print(f"⚠️ LLM classification failed: {e}")
+            # Fallback to False if LLM fails
+            return False
+        
+        # Check for pronoun references that might indicate follow-up
+        pronoun_patterns = ['this', 'that', 'these', 'those', 'it', 'them']
+        has_pronouns = any(f' {pronoun} ' in f' {current_lower} ' for pronoun in pronoun_patterns)
+        
+        return has_follow_up_pattern or (has_pronouns and len(recent_queries) > 0)
+    
+    def _extract_schema_from_pinecone_matches(self, pinecone_matches: List[Dict[str, Any]]) -> str:
+        """
+        Extract detailed schema information from Pinecone vector matches
+        """
+        schema_info = []
+        
+        try:
+            for match in pinecone_matches:
+                metadata = match.get('metadata', {})
+                table_name = metadata.get('table_name', 'Unknown')
+                chunk_content = metadata.get('content', '')
+                
+                if table_name and chunk_content:
+                    # Look for column definitions in the content
+                    if 'Column:' in chunk_content or 'Type:' in chunk_content:
+                        schema_info.append(f"📊 TABLE: {table_name}")
+                        schema_info.append(f"   {chunk_content.strip()}")
+                        schema_info.append("")
+            
+            return "\n".join(schema_info) if schema_info else ""
+            
+        except Exception as e:
+            print(f"⚠️ Error extracting schema from Pinecone matches: {e}")
+            return ""
+    
+    def _extract_intelligence_from_pinecone(self, pinecone_matches: List[Dict[str, Any]], available_tables: List[str]) -> Dict[str, Any]:
+        """
+        Extract LLM intelligence from Pinecone matches for SQL generation
+        """
+        intelligence = {
+            "table_insights": {},
+            "cross_table_guidance": {},
+            "query_patterns": {}
+        }
+        
+        try:
+            print(f"🔍 Processing {len(pinecone_matches)} Pinecone matches")
+            print(f"🔍 DEBUG: Raw Pinecone matches structure overview:")
+            for i, match in enumerate(pinecone_matches):
+                metadata = match.get('metadata', {})
+                table_name = metadata.get('table_name', 'Unknown')
+                chunks = metadata.get('chunks', {})
+                print(f"  Match {i+1}: table={table_name}, chunks={list(chunks.keys())}")
+                
+                # Check if OVERALL_PCT_OF_AVG appears anywhere in the raw match
+                match_str = str(match)
+                if 'OVERALL_PCT_OF_AVG' in match_str:
+                    print(f"    🎯 CRITICAL: OVERALL_PCT_OF_AVG found in raw match {i+1} for {table_name}!")
+                    # Find where exactly it appears
+                    for chunk_name, chunk_data in chunks.items():
+                        chunk_str = str(chunk_data)
+                        if 'OVERALL_PCT_OF_AVG' in chunk_str:
+                            print(f"    🎯 LOCATION: Found in chunk '{chunk_name}'")
+                            
+                    # EMERGENCY EXTRACTION: If OVERALL_PCT_OF_AVG is found anywhere in the match,
+                    # extract it using regex as a fallback
+                    import re
+                    column_pattern = r'\b([A-Z]+(?:_[A-Z]+)*)\b'
+                    potential_columns = re.findall(column_pattern, match_str)
+                    overall_pct_columns = [col for col in potential_columns if 'OVERALL' in col and 'PCT' in col and 'AVG' in col]
+                    
+                    if overall_pct_columns:
+                        print(f"    🎯 EMERGENCY REGEX EXTRACTION: Found columns: {overall_pct_columns}")
+                        # Store this for later use in extraction
+                        match['_emergency_columns'] = overall_pct_columns
+            
+            for i, match in enumerate(pinecone_matches):
+                metadata = match.get('metadata', {})
+                table_name = metadata.get('table_name', '')
+                chunks = metadata.get('chunks', {})
+                
+                print(f"🔍 Match {i+1}: table={table_name}, available={table_name in available_tables}")
+                
+                if table_name in available_tables:
+                    # Initialize table insights if not exists
+                    if table_name not in intelligence["table_insights"]:
+                        intelligence["table_insights"][table_name] = {
+                            "business_purpose": f"Table: {table_name}",
+                            "domain": "healthcare_pricing",
+                            "query_guidance": {},
+                            "column_insights": []
+                        }
+                    
+                    # Extract column information from ALL chunks (comprehensive extraction)
+                    all_columns = set()
+                    
+                    print(f"🔍 DEBUG: Available chunks for {table_name}: {list(chunks.keys())}")
+                    print(f"🔍 DEBUG: Full chunks structure for {table_name}:")
+                    for k, v in chunks.items():
+                        print(f"  - Chunk '{k}': type={type(v)}")
+                        if isinstance(v, dict):
+                            print(f"    Keys: {list(v.keys())}")
+                    
+                    # Process ALL chunks systematically - don't assume which ones have columns
+                    for chunk_name, chunk_data in chunks.items():
+                        print(f"\n🔍 DEBUG: ========== Processing chunk '{chunk_name}' for {table_name} ==========")
+                        
+                        if isinstance(chunk_data, dict):
+                            chunk_metadata = chunk_data.get('metadata', {})
+                            meta_str = chunk_metadata.get('metadata', '')
+                            
+                            print(f"🔍 DEBUG: Full chunk metadata string ({len(meta_str)} chars): {meta_str}")
+                            
+                            # Check for OVERALL_PCT_OF_AVG specifically
+                            if 'OVERALL_PCT_OF_AVG' in meta_str:
+                                print(f"🎯 CRITICAL: Found OVERALL_PCT_OF_AVG in chunk '{chunk_name}' metadata!")
+                            
+                            # Try to parse any JSON-like structure - be comprehensive
+                            if meta_str and '{' in meta_str:
+                                import json
+                                try:
+                                    meta_data = json.loads(meta_str)
+                                    print(f"🔍 DEBUG: Successfully parsed JSON. Keys: {list(meta_data.keys())}")
+                                    
+                                    # Look for columns in ANY possible location - don't make assumptions
+                                    columns_found = []
+                                    
+                                    # Direct columns key
+                                    if 'columns' in meta_data and isinstance(meta_data['columns'], list):
+                                        columns_found.extend(meta_data['columns'])
+                                        print(f"🔍 Found {len(meta_data['columns'])} columns in direct 'columns' key: {meta_data['columns']}")
+                                    
+                                    # Check all keys for potential column lists
+                                    for key, value in meta_data.items():
+                                        if isinstance(value, list) and key != 'columns':
+                                            # Check if this looks like a column list (strings with reasonable names)
+                                            if all(isinstance(item, str) and len(item) > 1 for item in value):
+                                                columns_found.extend(value)
+                                                print(f"🔍 Found {len(value)} potential columns in key '{key}': {value}")
+                                        elif isinstance(value, dict) and 'columns' in value:
+                                            nested_columns = value['columns']
+                                            if isinstance(nested_columns, list):
+                                                columns_found.extend(nested_columns)
+                                                print(f"🔍 Found {len(nested_columns)} nested columns in '{key}.columns': {nested_columns}")
+                                    
+                                    if columns_found:
+                                        all_columns.update(columns_found)
+                                        print(f"🔍 Total columns added from chunk '{chunk_name}': {len(set(columns_found))}")
+                                    
+                                except (json.JSONDecodeError, AttributeError) as e:
+                                    print(f"⚠️ Could not parse metadata JSON from chunk '{chunk_name}': {meta_str[:100]}...")
+                                    print(f"⚠️ Error: {e}")
+                                    
+                                    # COMPREHENSIVE REGEX FALLBACK - extract any uppercase words that look like column names
+                                    import re
+                                    # Pattern for typical database column names (uppercase with underscores)
+                                    column_pattern = r'\b([A-Z][A-Z0-9_]{2,})\b'
+                                    potential_columns = re.findall(column_pattern, meta_str)
+                                    
+                                    if potential_columns:
+                                        # Filter for likely column names (not common words like NULL, VARCHAR, etc.)
+                                        likely_columns = [col for col in potential_columns 
+                                                         if col not in ['NULL', 'VARCHAR', 'NUMBER', 'COLUMN', 'DEFAULT', 'NONE', 'PRIMARY', 'UNIQUE', 'CHECK']
+                                                         and len(col) > 2]
+                                        if likely_columns:
+                                            print(f"🔍 REGEX FALLBACK: Found {len(likely_columns)} potential columns: {likely_columns}")
+                                            all_columns.update(likely_columns)
+                        else:
+                            print(f"� DEBUG: Chunk '{chunk_name}' is not a dict: {type(chunk_data)}")
+                    
+                    print(f"\n🎯 FINAL RESULT for {table_name}: {len(all_columns)} unique columns found:")
+                    for col in sorted(all_columns):
+                        print(f"  - {col}")
+                    
+                    # Specific check for OVERALL_PCT_OF_AVG
+                    if 'OVERALL_PCT_OF_AVG' in all_columns:
+                        print(f"✅ SUCCESS: OVERALL_PCT_OF_AVG found in {table_name}!")
+                    else:
+                        print(f"❌ MISSING: OVERALL_PCT_OF_AVG not found in {table_name}")
+                        print(f"🔍 Available columns that contain 'PCT' or 'AVG': {[col for col in all_columns if 'PCT' in col or 'AVG' in col]}")
+                        print(f"🔍 Available columns that contain 'OVERALL': {[col for col in all_columns if 'OVERALL' in col]}")
+                        
+                        # Additional emergency check - look for it in the full match string
+                        match_str = str(match)
+                        if 'OVERALL_PCT_OF_AVG' in match_str:
+                            print(f"🚨 CRITICAL: OVERALL_PCT_OF_AVG exists in raw match but not extracted!")
+                            # Force add it if we can confirm it exists in the database
+                            print(f"🚨 FORCE ADDING: OVERALL_PCT_OF_AVG to column list")
+                            all_columns.add('OVERALL_PCT_OF_AVG')
+                    
+                    # Add each column as insight
+                    for col_name in sorted(all_columns):
+                        # Determine semantic role based on column name
+                        is_amount = any(keyword in col_name.upper() for keyword in ['AMOUNT', 'RATE', 'PAYMENT', 'REVENUE', 'COST', 'PRICE', 'PCT', 'PERCENTAGE', 'AVG'])
+                        is_id = any(keyword in col_name.upper() for keyword in ['ID', 'KEY', 'NPI'])
+                        is_count = any(keyword in col_name.upper() for keyword in ['COUNT', 'TOTAL', 'VOLUME'])
+                        
+                        column_insight = {
+                            "column_name": col_name,
+                            "semantic_role": "amount" if is_amount else "identifier" if is_id else "count" if is_count else "description",
+                            "business_meaning": f"Column {col_name} from table {table_name}",
+                            "data_operations": ["SUM", "AVG", "COUNT"] if is_amount or is_count else ["COUNT", "DISTINCT"],
+                            "aggregation_priority": 1 if is_amount else 2 if is_count else 5
+                        }
+                        
+                        intelligence["table_insights"][table_name]["column_insights"].append(column_insight)
+            
+            # Add query guidance based on extracted columns
+            for table_name, table_info in intelligence["table_insights"].items():
+                amount_columns = [col["column_name"] for col in table_info["column_insights"] if col["semantic_role"] == "amount"]
+                if amount_columns:
+                    table_info["query_guidance"]["primary_amount_fields"] = amount_columns
+                    table_info["query_guidance"]["forbidden_operations"] = [f"AVG on non-numeric fields"]
+            
+            print(f"🎯 Extracted intelligence from Pinecone: {len(intelligence['table_insights'])} tables")
+            return intelligence
+            
+        except Exception as e:
+            print(f"⚠️ Error extracting intelligence from Pinecone: {e}")
+            return {"table_insights": {}, "cross_table_guidance": {}, "query_patterns": {}}
+    
+    def _extract_follow_up_context(self, current_query: str, recent_queries: List[Dict]) -> Dict[str, Any]:
+        """
+        Extract relevant context from recent queries for follow-up processing
+        """
+        if not recent_queries:
+            return {}
+            
+        last_query = recent_queries[-1] if recent_queries else None
+        
+        context = {
+            'last_query_nl': last_query.get('nl', '') if last_query else '',
+            'last_query_sql': last_query.get('sql', '') if last_query else '',
+            'query_count': len(recent_queries),
+            'might_need_previous_data': any(word in current_query.lower() 
+                                          for word in ['chart', 'graph', 'visualize', 'plot', 'above', 'previous', 'insight', 'analysis'])
+        }
+        
+        # CRITICAL: Include actual data for insight generation
+        if last_query:
+            # Check for data under multiple possible keys with better priority
+            last_data = (last_query.get('results') or 
+                        last_query.get('data') or 
+                        last_query.get('rows') or 
+                        last_query.get('sample_data', []))
+            if last_data:
+                # Include first few rows for context (limit to prevent overwhelming LLM)
+                context['last_query_data'] = last_data[:10]  # First 10 rows
+                context['data_row_count'] = len(last_data)
+                context['has_actual_data'] = True
+                
+                # Extract column names for better context
+                if isinstance(last_data[0], dict):
+                    context['data_columns'] = list(last_data[0].keys())
+                    
+                print(f"✅ Found actual data for follow-up: {len(last_data)} rows with columns {context.get('data_columns', [])}")
+            else:
+                print(f"⚠️ No data found in last query: keys = {list(last_query.keys())}")
+                context['has_actual_data'] = False
+                    
+        return context

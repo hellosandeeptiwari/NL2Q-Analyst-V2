@@ -17,6 +17,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+def get_database_config():
+    """Get database and schema names from environment variables"""
+    return {
+        'database': os.getenv('SNOWFLAKE_DATABASE', 'HEALTHCARE_PRICING_ANALYTICS_SAMPLE'),
+        'schema': os.getenv('SNOWFLAKE_SCHEMA', 'SAMPLES')
+    }
+
 @dataclass
 class SchemaChunk:
     chunk_id: str
@@ -43,7 +50,7 @@ class PineconeSchemaVectorStore:
         self.openai_api_key = os.getenv("OPENAI_API_KEY")
         self.embedding_model = os.getenv("EMBED_MODEL", "text-embedding-3-large")
         
-        # Initialize Pinecone with v5 API
+        # Initialize Pinecone with proper SSL configuration
         self.pc = Pinecone(api_key=self.api_key)
         
         # Create index if it doesn't exist
@@ -191,11 +198,19 @@ class PineconeSchemaVectorStore:
         row_count = table_info.get('row_count')
         row_count_text = f"Row Count: {row_count:,} rows" if isinstance(row_count, int) else f"Row Count: {row_count}"
         
+        # Add relationship summary
+        primary_keys = table_info.get("primary_keys") or []
+        foreign_keys = table_info.get("foreign_keys") or []
+        relationship_summary = f"Primary Keys: {len(primary_keys)}, Foreign Keys: {len(foreign_keys)}"
+        join_capability = "Can JOIN with other tables" if (primary_keys or foreign_keys) else "Limited JOIN capability"
+        
         table_chunk_content = f"""Table: {table_name}
 Schema: {table_schema}
 Description: {table_description}
 Total Columns: {len(column_names)}
 {row_count_text}
+Relationships: {relationship_summary}
+JOIN Capability: {join_capability}
 Column Names: {', '.join(column_names)}
 Column Types: {', '.join(column_types)}
 Business Domain: {self._extract_business_domain(table_name)}
@@ -219,6 +234,11 @@ Table Size: {"Large table" if isinstance(row_count, int) and row_count > 1000000
                     "data_category": self._categorize_table(table_name, column_names),
                     "row_count": table_info.get('row_count'),
                     "table_size_category": "large" if isinstance(row_count, int) and row_count > 1000000 else "medium" if isinstance(row_count, int) and row_count > 10000 else "small" if isinstance(row_count, int) else "unknown",
+                    "primary_keys": primary_keys,
+                    "foreign_keys": foreign_keys,
+                    "pk_count": len(primary_keys) if primary_keys else 0,
+                    "fk_count": len(foreign_keys) if foreign_keys else 0,
+                    "has_relationships": bool(primary_keys or foreign_keys),
                     "part": i + 1 if len(overview_parts) > 1 else None
                 }
             ))
@@ -230,9 +250,18 @@ Table Size: {"Large table" if isinstance(row_count, int) and row_count > 1000000
                 if not group_columns:
                     continue
                     
-                # Include ALL column details - NO DATA LOSS
+                # Include ALL column details with PK/FK indicators - NO DATA LOSS
+                column_details = []
+                for col, info in group_columns.items():
+                    col_detail = f"{col} ({info.get('data_type', 'unknown')})"
+                    if info.get('is_primary_key'):
+                        col_detail += " 🔑 PRIMARY KEY"
+                    if info.get('foreign_key_ref'):
+                        col_detail += f" 🔗 FK→{info.get('foreign_key_ref')}"
+                    column_details.append(col_detail)
+                
                 group_content = f"""Table: {table_name} - {group_name} Columns
-{', '.join([f"{col} ({info.get('data_type', 'unknown')})" for col, info in group_columns.items()])}
+{', '.join(column_details)}
 Column Group: {group_name}
 Table Context: {table_description}
 Business Purpose: {self._infer_table_purpose(table_name, column_names)}"""
@@ -284,7 +313,79 @@ Data Analytics Focus: {self._get_analytics_focus(table_name)}"""
                     "part": i + 1 if len(business_parts) > 1 else None
                 }
             ))
+
+        # 4. NEW: Relationship and constraint chunk - PK/FK information for JOIN intelligence
+        primary_keys = table_info.get("primary_keys") or []
+        foreign_keys = table_info.get("foreign_keys") or []
+        relationships = table_info.get("relationships", {})
         
+        if primary_keys or foreign_keys or any(relationships.values()):
+            relationship_content = f"""Table Relationships and Constraints for {table_name}
+Primary Keys: {', '.join(primary_keys) if primary_keys else 'None defined'}
+Foreign Keys: {len(foreign_keys) if foreign_keys else 0} foreign key relationships
+Table Type: {'Fact Table' if foreign_keys else 'Dimension Table' if primary_keys else 'Standalone Table'}
+JOIN Capability: {'Can be joined with other tables' if primary_keys or foreign_keys else 'Limited JOIN options - no explicit relationships'}
+
+Foreign Key Details:"""
+            
+            if foreign_keys:
+                for fk in foreign_keys:
+                    fk_col = fk.get("column", "unknown")
+                    ref_table = fk.get("referenced_table", "unknown")
+                    ref_col = fk.get("referenced_column", "unknown")
+                    relationship_content += f"""
+- {fk_col} → {ref_table}.{ref_col} (Foreign Key JOIN: {table_name}.{fk_col} = {ref_table}.{ref_col})"""
+                
+            # Add column-level PK/FK information for JOIN guidance
+            pk_columns = []
+            fk_columns = []
+            for col_name, col_info in columns.items():
+                if col_info.get("is_primary_key"):
+                    pk_columns.append(f"{col_name} ({col_info.get('data_type', 'unknown')})")
+                if col_info.get("foreign_key_ref"):
+                    fk_columns.append(f"{col_name} → {col_info.get('foreign_key_ref')} ({col_info.get('data_type', 'unknown')})")
+            
+            if pk_columns:
+                relationship_content += f"""
+
+Primary Key Columns for JOINs:
+{', '.join(pk_columns)}"""
+                
+            if fk_columns:
+                relationship_content += f"""
+
+Foreign Key Columns for JOINs:
+{', '.join(fk_columns)}"""
+                
+            # Add data type compatibility warnings
+            relationship_content += f"""
+
+JOIN Data Type Compatibility:
+- Numeric ID columns (like NPI): Only join with other NUMERIC fields
+- Text columns (like PROVIDER_NAME): Only join with other VARCHAR/TEXT fields
+- NEVER mix numeric IDs with text names in JOINs"""
+            
+            # Split relationship content if too large
+            relationship_parts = self._split_content_by_tokens(relationship_content)
+            for i, part in enumerate(relationship_parts):
+                chunk_id = f"{table_name}_relationships" if len(relationship_parts) == 1 else f"{table_name}_relationships_{i+1}"
+                chunks.append(SchemaChunk(
+                    chunk_id=chunk_id,
+                    table_name=table_name,
+                    table_schema=table_schema,
+                    chunk_type="table_relationships",
+                    content=part,
+                    metadata={
+                        "primary_keys": primary_keys,
+                        "foreign_keys": foreign_keys,
+                        "pk_count": len(primary_keys) if primary_keys else 0,
+                        "fk_count": len(foreign_keys) if foreign_keys else 0,
+                        "has_relationships": bool(primary_keys or foreign_keys),
+                        "table_type": "fact" if foreign_keys else "dimension" if primary_keys else "standalone",
+                        "part": i + 1 if len(relationship_parts) > 1 else None
+                    }
+                ))
+
         return chunks
         
     def _extract_business_domain(self, table_name: str) -> str:
@@ -345,6 +446,12 @@ Data Analytics Focus: {self._get_analytics_focus(table_name)}"""
                 groups["Descriptions"][col_name] = col_info
             else:
                 groups["Categories"][col_name] = col_info
+        
+        # Debug logging to track column distribution
+        for group_name, group_columns in groups.items():
+            if group_columns:
+                col_names = list(group_columns.keys())
+                print(f"🔍 Column group '{group_name}': {len(col_names)} columns - {col_names}")
                 
         return groups
         
@@ -418,7 +525,7 @@ Data Analytics Focus: {self._get_analytics_focus(table_name)}"""
         start_time = time.time()
         
         print("🚀 Indexing database schema in Pinecone with optimized batch processing...")
-        result = db_adapter.run("SHOW TABLES IN SCHEMA ENHANCED_NBA", dry_run=False)
+        result = db_adapter.run("SHOW TABLES", dry_run=False)
         if result.error:
             raise Exception(f"Failed to get tables: {result.error}")
         all_tables = [row[1] if len(row) > 1 else str(row[0]) for row in result.rows]
@@ -647,13 +754,71 @@ Data Analytics Focus: {self._get_analytics_focus(table_name)}"""
             return set()  # Return empty set if error, will re-index all
 
     async def _get_table_info(self, db_adapter, table_name: str) -> Dict[str, Any]:
-        """Get table information with optimized queries"""
+        """Get table information with enhanced schema including PK/FK relationships"""
         try:
+            # Try to get enhanced schema information first
+            try:
+                from backend.db.enhanced_schema import get_enhanced_schema_cache
+                enhanced_schema = get_enhanced_schema_cache()
+                
+                if enhanced_schema and 'tables' in enhanced_schema:
+                    tables = enhanced_schema['tables']
+                    table_metadata = None
+                    
+                    # Find the table metadata in the list
+                    for table in tables:
+                        if table.get('name') == table_name:
+                            table_metadata = table
+                            break
+                    
+                    if table_metadata:
+                        # Convert enhanced table metadata to our format
+                        columns = {}
+                        for col in table_metadata.get('columns', []):
+                            col_name = col.get('name')
+                            if col_name:
+                                columns[col_name] = {
+                                    "data_type": col.get('data_type', 'unknown'),
+                                    "nullable": col.get('nullable', True),
+                                    "description": col.get('description'),
+                                    "is_primary_key": col.get('is_primary_key', False),
+                                    "foreign_key_ref": col.get('foreign_key_ref')
+                                }
+                        
+                        # Include relationship information in the table metadata
+                        primary_keys = table_metadata.get('primary_keys', [])
+                        foreign_keys = table_metadata.get('foreign_keys', [])
+                        
+                        table_info = {
+                            "name": table_name,
+                            "schema": table_metadata.get('schema_name', get_database_config()['schema']),
+                            "table_type": table_metadata.get('table_type', 'table'),
+                            "columns": columns,
+                            "row_count": table_metadata.get('row_count'),
+                            "description": table_metadata.get('description') or f"Table containing {table_name.replace('_', ' ').lower()} data",
+                            "primary_keys": primary_keys,
+                            "foreign_keys": foreign_keys,
+                            "relationships": {
+                                "has_primary_keys": bool(primary_keys),
+                                "has_foreign_keys": bool(foreign_keys),
+                                "pk_count": len(primary_keys) if primary_keys else 0,
+                                "fk_count": len(foreign_keys) if foreign_keys else 0
+                            }
+                        }
+                        
+                        print(f"✅ Enhanced schema info for {table_name}: PKs={table_info['relationships']['pk_count']}, FKs={table_info['relationships']['fk_count']}")
+                        return table_info
+                        
+            except Exception as enhanced_error:
+                print(f"⚠️ Enhanced schema failed for {table_name}: {enhanced_error}, falling back to basic info")
+            
+            # Fallback to basic table information if enhanced schema fails
             # Check if we should include row counts from environment settings
             skip_row_counts = self.SKIP_ROW_COUNTS
             
             # Always get column information with proper Snowflake quoting
-            qualified_table_name = f'"COMMERCIAL_AI"."ENHANCED_NBA"."{table_name}"'
+            # Use current schema context instead of hardcoded values
+            qualified_table_name = f'"{table_name}"'
             columns_task = asyncio.create_task(
                 asyncio.to_thread(db_adapter.run, f"DESCRIBE TABLE {qualified_table_name}", False)
             )
@@ -679,7 +844,9 @@ Data Analytics Focus: {self._get_analytics_focus(table_name)}"""
                     columns[col_name] = {
                         "data_type": col_type, 
                         "nullable": nullable, 
-                        "description": None
+                        "description": None,
+                        "is_primary_key": False,  # Unknown in basic mode
+                        "foreign_key_ref": None   # Unknown in basic mode
                     }
             
             # Get row count if enabled and query succeeded
@@ -692,18 +859,26 @@ Data Analytics Focus: {self._get_analytics_focus(table_name)}"""
             
             return {
                 "name": table_name,
-                "schema": "ENHANCED_NBA",
+                "schema": get_database_config()['schema'],
                 "table_type": "table",
                 "columns": columns,
                 "row_count": row_count,
-                "description": f"Table containing {table_name.replace('_', ' ').lower()} data"
+                "description": f"Table containing {table_name.replace('_', ' ').lower()} data",
+                "primary_keys": [],  # Unknown in basic mode
+                "foreign_keys": [],  # Unknown in basic mode
+                "relationships": {
+                    "has_primary_keys": False,  # Unknown in basic mode
+                    "has_foreign_keys": False,  # Unknown in basic mode
+                    "pk_count": 0,
+                    "fk_count": 0
+                }
             }
         except Exception as e:
             print(f"⚠️ Error getting table info for {table_name}: {e}")
             # Return minimal table info on error
             return {
                 "name": table_name,
-                "schema": "ENHANCED_NBA",
+                "schema": get_database_config()['schema'],
                 "table_type": "table",
                 "columns": {},
                 "row_count": None,

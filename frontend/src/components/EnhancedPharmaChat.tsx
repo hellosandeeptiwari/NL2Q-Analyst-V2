@@ -540,6 +540,14 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
               
             } else if (progressData.stage === 'task_error') {
               updateProgressStep(progressData.currentStep, 'error', progressData.progress);
+              
+            } else if (progressData.stage === 'execution_completed') {
+              // All tasks completed - hide progress after a delay
+              setCurrentProgressStep(null);
+              setTimeout(() => {
+                setShowProgress(false);
+                setProgressSteps([]);
+              }, 2000); // Hide after 2 seconds to show completion
             }
             
           } else if (message.type === 'indexing_progress') {
@@ -3313,7 +3321,7 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
           {isLoading && (
             <div className="loading-indicator">
               <div className="loading-content">
-                {/* Progress is now handled by the main ProgressIndicator via WebSocket */}
+                {/* Progress is now shown inline with messages above */}
                 <div className="loading-state">
                   <div className="loading-content">
                     <div className="loading-spinner"></div>

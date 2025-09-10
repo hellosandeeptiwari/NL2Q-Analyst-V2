@@ -1,7 +1,8 @@
 """
-Schema Embedder for enhanced semantic understanding
+Schema Embedder for enhanced semantic understanding with LLM Intelligence
 Converts database schema to embeddings and generates insights
 Optimized for fast batch processing and parallel execution
+Now integrates LLM-driven schema intelligence during indexing
 """
 import json
 import os
@@ -13,11 +14,13 @@ import pickle
 from datetime import datetime
 import threading
 import time
+import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from .llm_schema_intelligence import VectorSchemaStorage
 
 @dataclass
 class TableSchema:
-    """Enhanced table schema with metadata"""
+    """Enhanced table schema with metadata and LLM intelligence"""
     table_name: str
     columns: List[Dict[str, str]]  # [{"name": "col", "type": "VARCHAR", "description": "..."}]
     row_count: Optional[int] = None
@@ -25,6 +28,11 @@ class TableSchema:
     foreign_keys: List[Dict[str, str]] = None
     description: str = ""
     embedding: Optional[np.ndarray] = None
+    # New LLM intelligence fields
+    llm_analysis: Optional[Dict[str, Any]] = None
+    business_purpose: str = ""
+    domain_classification: str = ""
+    query_guidance: Optional[Dict[str, Any]] = None
 
 class SchemaEmbedder:
     def __init__(self, api_key: str = None, batch_size: int = 100, max_workers: int = 3):
@@ -41,6 +49,10 @@ class SchemaEmbedder:
         self.schemas: Dict[str, TableSchema] = {}
         self.cache_file = "backend/storage/schema_embeddings_enhanced.pkl"
         self.schema_cache_file = "backend/storage/schema_metadata.json"  # Raw schema cache
+        self.intelligence_cache_file = "backend/storage/schema_intelligence.json"  # LLM intelligence cache
+        
+        # Initialize LLM intelligence system
+        self.llm_intelligence = VectorSchemaStorage()
         
         # Performance tracking
         self.stats = {
@@ -48,7 +60,8 @@ class SchemaEmbedder:
             "cached_tables": 0,
             "embedded_tables": 0,
             "skipped_tables": 0,
-            "embedding_time": 0
+            "embedding_time": 0,
+            "llm_analysis_time": 0
         }
         
     def extract_schema_from_db(self, adapter, max_workers: int = 5, use_cache: bool = True, use_bulk: bool = True) -> Dict[str, Dict]:
@@ -420,6 +433,168 @@ class SchemaEmbedder:
         print(f"📊 Filtered: {len(filtered)} tables to embed, {self.stats['cached_tables']} cached, {self.stats['skipped_tables']} skipped")
         return filtered
     
+    def _create_enhanced_embeddings_with_llm(self, schemas: Dict[str, Dict], 
+                                           schema_intelligence: Dict[str, Any]) -> Dict[str, TableSchema]:
+        """Create enhanced embeddings using LLM intelligence insights"""
+        embedded_schemas = dict(self.schemas)  # Start with cached
+        
+        print("📊 Creating enhanced embeddings with LLM insights...")
+        
+        for table_name, schema_info in schemas.items():
+            try:
+                # Get LLM analysis for this table
+                table_analysis = schema_intelligence.get("table_analyses", {}).get(table_name, {})
+                
+                # Create enhanced embedding text with LLM insights
+                enhanced_text = self._create_enhanced_embedding_text(schema_info, table_analysis)
+                
+                # Generate embedding
+                from openai import OpenAI
+                client = OpenAI()
+                response = client.embeddings.create(
+                    input=enhanced_text,
+                    model=self.model
+                )
+                embedding = np.array(response.data[0].embedding)
+                
+                # Create enhanced TableSchema with LLM intelligence
+                table_schema = TableSchema(
+                    table_name=table_name,
+                    columns=schema_info['columns'],
+                    row_count=schema_info.get('row_count'),
+                    description=schema_info['description'],
+                    embedding=embedding,
+                    # Enhanced with LLM intelligence
+                    llm_analysis=table_analysis,
+                    business_purpose=table_analysis.get('business_purpose', ''),
+                    domain_classification=table_analysis.get('domain', ''),
+                    query_guidance=table_analysis.get('query_guidance', {})
+                )
+                
+                embedded_schemas[table_name] = table_schema
+                self.stats["embedded_tables"] += 1
+                
+                print(f"   ✅ Enhanced embedding: {table_name} ({table_analysis.get('domain', 'unknown')} domain)")
+                
+            except Exception as e:
+                print(f"⚠️ Failed enhanced embedding for {table_name}: {e}")
+                # Fallback to basic embedding
+                embedded_schemas[table_name] = self._create_basic_table_schema(table_name, schema_info)
+        
+        return embedded_schemas
+    
+    def _create_enhanced_embedding_text(self, schema_info: Dict, table_analysis: Dict) -> str:
+        """Create embedding text enriched with LLM intelligence"""
+        text_parts = []
+        
+        # Basic table info
+        text_parts.append(f"Table: {schema_info['table_name']}")
+        
+        # LLM-enhanced business context
+        if table_analysis.get('business_purpose'):
+            text_parts.append(f"Business Purpose: {table_analysis['business_purpose']}")
+        else:
+            text_parts.append(f"Description: {schema_info['description']}")
+        
+        # Domain classification from LLM
+        if table_analysis.get('domain'):
+            text_parts.append(f"Domain: {table_analysis['domain']}")
+        
+        # Enhanced column information with LLM insights
+        columns = schema_info['columns']
+        column_insights = table_analysis.get('column_insights', [])
+        
+        text_parts.append(f"Columns ({len(columns)}) with business context:")
+        
+        # Create lookup for column insights
+        insight_lookup = {insight['column_name']: insight for insight in column_insights}
+        
+        for col in columns[:30]:  # Limit for token management
+            col_text = f"- {col['name']} ({col['type']})"
+            
+            # Add LLM insights if available
+            if col['name'] in insight_lookup:
+                insight = insight_lookup[col['name']]
+                semantic_role = insight.get('semantic_role', '')
+                business_meaning = insight.get('business_meaning', '')
+                
+                if semantic_role:
+                    col_text += f" [Role: {semantic_role}]"
+                if business_meaning:
+                    col_text += f" - {business_meaning}"
+                
+                # Add operation guidance
+                operations = insight.get('data_operations', [])
+                if 'SUM' in operations or 'AVG' in operations:
+                    col_text += " [NUMERIC - can aggregate]"
+                elif 'GROUP_BY' in operations:
+                    col_text += " [CATEGORICAL - for grouping]"
+            
+            text_parts.append(col_text)
+        
+        if len(columns) > 30:
+            text_parts.append(f"... and {len(columns) - 30} more columns")
+        
+        # Add query guidance from LLM
+        query_guidance = table_analysis.get('query_guidance', {})
+        if query_guidance.get('primary_amount_fields'):
+            text_parts.append(f"Primary amount fields: {', '.join(query_guidance['primary_amount_fields'])}")
+        if query_guidance.get('key_identifiers'):
+            text_parts.append(f"Key identifiers: {', '.join(query_guidance['key_identifiers'])}")
+        if query_guidance.get('forbidden_operations'):
+            text_parts.append(f"Forbidden operations: {', '.join(query_guidance['forbidden_operations'])}")
+        
+        # Add relationship context
+        relationships = table_analysis.get('relationship_potential', [])
+        if relationships:
+            rel_text = "Relationships: "
+            rel_descriptions = []
+            for rel in relationships[:5]:  # Limit relationships
+                rel_descriptions.append(f"{rel['column']} -> {rel.get('likely_related_tables', ['unknown'])[0]}")
+            rel_text += ", ".join(rel_descriptions)
+            text_parts.append(rel_text)
+        
+        return '\n'.join(text_parts)
+    
+    def _create_basic_table_schema(self, table_name: str, schema_info: Dict) -> TableSchema:
+        """Fallback method to create basic table schema without LLM insights"""
+        return TableSchema(
+            table_name=table_name,
+            columns=schema_info['columns'],
+            row_count=schema_info.get('row_count'),
+            description=schema_info['description'],
+            embedding=None  # Will be created later
+        )
+    
+    def _save_intelligence_cache(self, schema_intelligence: Dict[str, Any]):
+        """Save LLM intelligence to cache for quick retrieval"""
+        try:
+            os.makedirs(os.path.dirname(self.intelligence_cache_file), exist_ok=True)
+            with open(self.intelligence_cache_file, 'w') as f:
+                json.dump(schema_intelligence, f, indent=2)
+            print(f"💾 Cached LLM intelligence for {len(schema_intelligence.get('table_analyses', {}))} tables")
+        except Exception as e:
+            print(f"⚠️ Failed to cache LLM intelligence: {e}")
+    
+    def load_intelligence_cache(self) -> Optional[Dict[str, Any]]:
+        """Load cached LLM intelligence"""
+        try:
+            if os.path.exists(self.intelligence_cache_file):
+                with open(self.intelligence_cache_file, 'r') as f:
+                    intelligence = json.load(f)
+                
+                # Check if cache is recent (less than 24 hours old)
+                cache_time = datetime.fromisoformat(intelligence.get('generated_timestamp', '2000-01-01'))
+                age_hours = (datetime.now() - cache_time).total_seconds() / 3600
+                
+                if age_hours < 24:  # Cache valid for 24 hours
+                    return intelligence
+                else:
+                    print(f"⚠️ Intelligence cache is {age_hours:.1f} hours old, will refresh...")
+        except Exception as e:
+            print(f"⚠️ Failed to load intelligence cache: {e}")
+        return None
+    
     def create_embeddings(self, schemas: Dict[str, Dict]) -> Dict[str, TableSchema]:
         """Create embeddings for all schemas with optimized batch processing"""
         if not self.api_key:
@@ -713,11 +888,94 @@ class SchemaEmbedder:
             print(f"⚠️ Failed to load cache: {e}")
         return False
     
+    def get_query_intelligence(self, table_names: List[str]) -> Dict[str, Any]:
+        """Get LLM intelligence for specific tables to enhance SQL generation"""
+        intelligence = {
+            "table_insights": {},
+            "cross_table_guidance": {},
+            "query_patterns": {}
+        }
+        
+        for table_name in table_names:
+            if table_name in self.schemas:
+                schema = self.schemas[table_name]
+                if schema.llm_analysis:
+                    intelligence["table_insights"][table_name] = {
+                        "business_purpose": schema.business_purpose,
+                        "domain": schema.domain_classification,
+                        "query_guidance": schema.query_guidance,
+                        "column_insights": schema.llm_analysis.get('column_insights', [])
+                    }
+        
+        # Load cross-table intelligence from cache
+        cached_intelligence = self.load_intelligence_cache()
+        if cached_intelligence:
+            intelligence["cross_table_guidance"] = cached_intelligence.get("cross_table_intelligence", {})
+            intelligence["query_patterns"] = cached_intelligence.get("cross_table_intelligence", {}).get("query_patterns", {})
+        
+        return intelligence
+    
+    def get_amount_columns_for_table(self, table_name: str) -> List[str]:
+        """Get columns that can be used for mathematical operations (SUM, AVG)"""
+        if table_name not in self.schemas:
+            return []
+        
+        schema = self.schemas[table_name]
+        if not schema.llm_analysis:
+            return []
+        
+        amount_columns = []
+        for col_insight in schema.llm_analysis.get('column_insights', []):
+            operations = col_insight.get('data_operations', [])
+            if 'SUM' in operations or 'AVG' in operations:
+                amount_columns.append(col_insight['column_name'])
+        
+        return amount_columns
+    
+    def get_forbidden_operations_for_table(self, table_name: str) -> List[str]:
+        """Get operations that should not be performed on this table"""
+        if table_name not in self.schemas:
+            return []
+        
+        schema = self.schemas[table_name]
+        if not schema.query_guidance:
+            return []
+        
+        return schema.query_guidance.get('forbidden_operations', [])
+    
+    def get_relationship_guidance(self, table_names: List[str]) -> List[Dict[str, Any]]:
+        """Get relationship guidance for joining tables"""
+        cached_intelligence = self.load_intelligence_cache()
+        if not cached_intelligence:
+            return []
+        
+        relationships = cached_intelligence.get("cross_table_intelligence", {}).get("relationships", [])
+        
+        # Filter relationships relevant to the requested tables
+        relevant_relationships = []
+        for rel in relationships:
+            if rel['from_table'] in table_names or rel['to_table'] in table_names:
+                relevant_relationships.append(rel)
+        
+        return relevant_relationships
+
     def get_status(self) -> Dict[str, Any]:
-        """Get embedder status"""
-        return {
+        """Get embedder status including LLM intelligence"""
+        basic_status = {
             "api_available": self.api_key is not None,
             "tables_embedded": len(self.schemas),
             "cache_available": os.path.exists(self.cache_file),
             "model": self.model
         }
+        
+        # Add LLM intelligence status
+        intelligence_available = os.path.exists(self.intelligence_cache_file)
+        tables_with_intelligence = sum(1 for schema in self.schemas.values() if schema.llm_analysis)
+        
+        basic_status.update({
+            "llm_intelligence_available": intelligence_available,
+            "tables_with_intelligence": tables_with_intelligence,
+            "intelligence_cache": self.intelligence_cache_file
+        })
+        
+        return basic_status

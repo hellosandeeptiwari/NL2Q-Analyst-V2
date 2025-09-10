@@ -56,9 +56,12 @@ async def broadcast_progress(data=None):
     """Broadcast progress to all connected WebSocket clients"""
     if active_connections:
         if data is not None:
-            # Execution progress from orchestrator - forward as-is
-            message = json.dumps(data)
-            print(f"📡 Broadcasting execution progress to {len(active_connections)} clients: {data.get('stepName', 'Unknown step')}")
+            # Execution progress from orchestrator - wrap in expected format
+            message = json.dumps({
+                "type": "execution_progress",
+                "data": data
+            })
+            print(f"📡 Broadcasting execution progress to {len(active_connections)} clients: {data.get('stage', 'Unknown stage')}")
         else:
             # Indexing progress (backward compatibility)
             message = json.dumps({
@@ -93,8 +96,8 @@ async def update_progress(stage: str, current_table: str = "", processed: int = 
             "isIndexing": True,
             "totalTables": total or 0,
             "processedTables": 0,
-            "currentTable": "",
-            "stage": "Starting indexing...",
+            "currentTable": "Initializing...",
+            "stage": "Starting schema indexing with enhanced relationship detection...",
             "startTime": datetime.now().isoformat(),
             "estimatedTimeRemaining": None,
             "errors": [],
@@ -103,11 +106,16 @@ async def update_progress(stage: str, current_table: str = "", processed: int = 
     elif stage == "table_start":
         indexing_progress.update({
             "currentTable": current_table,
-            "stage": f"Processing {current_table}..."
+            "stage": f"🔍 Analyzing table: {current_table} - Detecting semantic relationships..."
         })
     elif stage == "table_complete":
-        indexing_progress["processedTables"] = processed or indexing_progress["processedTables"] + 1
-        indexing_progress["completedTables"].append(current_table)
+        completed_count = processed if processed is not None else indexing_progress["processedTables"] + 1
+        indexing_progress.update({
+            "processedTables": completed_count,
+            "stage": f"✅ Completed: {current_table} ({completed_count}/{total or indexing_progress['totalTables']})"
+        })
+        if current_table and current_table not in indexing_progress["completedTables"]:
+            indexing_progress["completedTables"].append(current_table)
         
         # Calculate estimated time remaining
         if indexing_progress["startTime"] and indexing_progress["totalTables"] > 0:
@@ -128,16 +136,16 @@ async def update_progress(stage: str, current_table: str = "", processed: int = 
     elif stage == "complete":
         indexing_progress.update({
             "isIndexing": False,
-            "stage": "Indexing completed successfully!",
-            "currentTable": "",
+            "stage": f"🎉 Indexing completed! Processed {indexing_progress['processedTables']} tables with enhanced relationship detection.",
+            "currentTable": "All tables completed",
             "estimatedTimeRemaining": 0
         })
         print(f"🎉 Indexing completed! Final state: {indexing_progress}")
     elif stage == "failed":
         indexing_progress.update({
             "isIndexing": False,
-            "stage": f"Indexing failed: {error}",
-            "currentTable": ""
+            "stage": f"❌ Indexing failed: {error}",
+            "currentTable": "Error occurred"
         })
         print(f"❌ Indexing failed! Final state: {indexing_progress}")
     
@@ -212,7 +220,12 @@ async def websocket_endpoint(websocket: WebSocket):
             active_connections.remove(websocket)
 
 # --- Dynamic Agent Orchestrator Setup ---
+from backend.orchestrators.dynamic_agent_orchestrator import DynamicAgentOrchestrator, set_progress_callback
 orchestrator = DynamicAgentOrchestrator()
+
+# Register progress callback with orchestrator
+set_progress_callback(broadcast_progress)
+print("✅ Progress callback registered with orchestrator")
 
 @app.post("/api/agent/detect-intent")
 async def detect_intent(request: Request):
@@ -479,8 +492,11 @@ async def agent_query(request: Request):
 def _convert_non_serializable(obj):
     """Convert non-JSON-serializable objects to serializable ones"""
     import numpy as np
+    from decimal import Decimal
     
-    if isinstance(obj, set):
+    if isinstance(obj, Decimal):
+        return float(obj)
+    elif isinstance(obj, set):
         return list(obj)
     elif isinstance(obj, np.ndarray):
         return obj.tolist()
@@ -946,13 +962,16 @@ async def check_pinecone_indexing_status() -> Dict[str, Any]:
         
         # Get table count from Snowflake
         db_adapter = get_adapter("snowflake")
-        result = db_adapter.run("SHOW TABLES IN SCHEMA ENHANCED_NBA", dry_run=False)
+        result = db_adapter.run("SHOW TABLES", dry_run=False)
         total_tables = len(result.rows) if not result.error else 0
+        
+        # Calculate actual indexed tables based on whether we have vectors and are not currently indexing
+        indexed_tables = total_tables if total_vectors > 0 and not indexing_status.get("isIndexing", False) else 0
         
         return {
             "isIndexed": total_vectors > 0,
             "totalTables": total_tables,
-            "indexedTables": total_vectors // 3 if total_vectors > 0 else 0,  # Rough estimate
+            "indexedTables": indexed_tables,  # Use total_tables when fully indexed
             "lastIndexed": indexing_status.get("lastIndexed"),
             "isIndexing": indexing_status.get("isIndexing", False)
         }
@@ -980,7 +999,7 @@ async def perform_schema_indexing(force_reindex: bool = False):
         if not db_adapter:
             raise Exception("Failed to get database adapter")
             
-        result = db_adapter.run("SHOW TABLES IN SCHEMA ENHANCED_NBA", dry_run=False)
+        result = db_adapter.run("SHOW TABLES", dry_run=False)
         total_tables = len(result.rows) if not result.error else 0
         
         # Initialize progress tracking
@@ -1020,7 +1039,7 @@ async def perform_schema_indexing(force_reindex: bool = False):
             "isIndexed": True,
             "totalTables": total_tables,
             "indexedTables": total_tables,
-            "lastIndexed": time.time(),
+            "lastIndexed": datetime.now().isoformat(),  # Use ISO format for proper date display
             "isIndexing": False
         })
         
@@ -1159,7 +1178,7 @@ async def query(request: Request):
         result = adapter.run(generated.sql)
         location = storage.save_data(result.rows, job_id)
         log_audit(nl, generated.sql, result.execution_time, len(result.rows), result.error)
-        save_query_history(nl, generated.sql, job_id)
+        save_query_history(nl, generated.sql, job_id, results=result.rows)
         
         # Enhanced: Generate Plotly visualization
         plotly_spec = {}

@@ -343,6 +343,12 @@ class EnhancedSchemaBuilder:
         primary_keys = self._detect_primary_keys(table_name)
         foreign_keys = self._detect_foreign_keys(table_name)
         
+        # NEW: Semantic relationship detection when formal constraints don't exist
+        if not primary_keys and not foreign_keys:
+            semantic_relationships = self._detect_semantic_relationships(table_name, columns)
+            primary_keys = semantic_relationships.get('primary_keys')
+            foreign_keys = semantic_relationships.get('foreign_keys')
+        
         # Apply business rules and governance
         table_meta = TableMetadata(
             name=table_name,
@@ -619,6 +625,501 @@ class EnhancedSchemaBuilder:
         except Exception as e:
             print(f"Failed to detect foreign keys for {table_name}: {e}")
             return None
+
+    def _detect_semantic_relationships(self, table_name: str, columns: Dict[str, str]) -> Dict:
+        """Detect semantic relationships when formal PK/FK constraints don't exist"""
+        try:
+            print(f"🔍 Analyzing semantic relationships for {table_name}")
+            
+            # Get all tables and their columns for cross-table analysis
+            all_tables_info = self._get_all_tables_columns()
+            
+            semantic_primary_keys = []
+            semantic_foreign_keys = []
+            
+            # 1. Identify likely primary keys based on naming patterns
+            for col_name, col_type in columns.items():
+                if self._is_likely_primary_key(col_name, col_type, table_name):
+                    semantic_primary_keys.append(col_name)
+                    print(f"  🔑 Identified semantic PK: {table_name}.{col_name}")
+            
+            # 2. Find potential foreign key relationships
+            for col_name, col_type in columns.items():
+                potential_refs = self._find_potential_foreign_keys(
+                    col_name, col_type, table_name, all_tables_info
+                )
+                for ref in potential_refs:
+                    semantic_foreign_keys.append({
+                        "column": col_name,
+                        "referenced_table": ref["table"],
+                        "referenced_column": ref["column"],
+                        "confidence": ref["confidence"],
+                        "match_type": ref["match_type"]
+                    })
+                    print(f"  🔗 Semantic FK: {table_name}.{col_name} → {ref['table']}.{ref['column']} ({ref['confidence']:.2f})")
+            
+            return {
+                "primary_keys": semantic_primary_keys if semantic_primary_keys else None,
+                "foreign_keys": semantic_foreign_keys if semantic_foreign_keys else None
+            }
+            
+        except Exception as e:
+            print(f"Failed to detect semantic relationships for {table_name}: {e}")
+            return {"primary_keys": None, "foreign_keys": None}
+    
+    def _get_all_tables_columns(self) -> Dict[str, Dict[str, str]]:
+        """Get all tables and their columns for relationship analysis"""
+        try:
+            tables_info = {}
+            
+            # Get all tables
+            result = self.adapter.run("SHOW TABLES")
+            if result.error:
+                return {}
+                
+            for row in result.rows:
+                table_name = row[1] if len(row) > 1 else row[0]
+                
+                # Get columns for each table
+                col_result = self.adapter.run(f'DESCRIBE TABLE "{table_name}"')
+                if not col_result.error and col_result.rows:
+                    tables_info[table_name] = {}
+                    for col_row in col_result.rows:
+                        col_name = col_row[0]
+                        col_type = col_row[1]
+                        tables_info[table_name][col_name] = col_type
+            
+            return tables_info
+            
+        except Exception as e:
+            print(f"Failed to get all tables columns: {e}")
+            return {}
+    
+    def _is_likely_primary_key(self, col_name: str, col_type: str, table_name: str) -> bool:
+        """Determine if a column is likely a primary key based on naming patterns"""
+        col_name_lower = col_name.lower()
+        table_name_lower = table_name.lower()
+        
+        # Common primary key patterns
+        pk_patterns = [
+            'id',
+            f'{table_name_lower}_id',
+            f'{table_name_lower.rstrip("s")}_id',  # Remove trailing 's'
+            'uuid',
+            'guid',
+            'key'
+        ]
+        
+        # Healthcare-specific patterns
+        healthcare_id_patterns = [
+            'npi',  # National Provider Identifier
+            'provider_id',
+            'patient_id',
+            'member_id',
+            'account_id',
+            'group_id'
+        ]
+        
+        pk_patterns.extend(healthcare_id_patterns)
+        
+        # Check exact matches
+        if col_name_lower in pk_patterns:
+            return True
+            
+        # Check if column name ends with common PK suffixes
+        pk_suffixes = ['_id', '_key', '_uuid', '_guid']
+        if any(col_name_lower.endswith(suffix) for suffix in pk_suffixes):
+            return True
+            
+        return False
+    
+    def _find_potential_foreign_keys(self, col_name: str, col_type: str, 
+                                   source_table: str, all_tables: Dict[str, Dict[str, str]]) -> List[Dict]:
+        """Find potential foreign key relationships for a column"""
+        potential_refs = []
+        col_name_lower = col_name.lower()
+        
+        for target_table, target_columns in all_tables.items():
+            if target_table == source_table:
+                continue
+                
+            for target_col, target_type in target_columns.items():
+                confidence = self._calculate_relationship_confidence(
+                    col_name, col_type, target_col, target_type, source_table, target_table
+                )
+                
+                if confidence > 0.5:  # Only include high-confidence matches
+                    match_type = self._get_match_type(col_name, target_col, col_type, target_type)
+                    potential_refs.append({
+                        "table": target_table,
+                        "column": target_col,
+                        "confidence": confidence,
+                        "match_type": match_type
+                    })
+        
+        # Sort by confidence (highest first)
+        return sorted(potential_refs, key=lambda x: x["confidence"], reverse=True)
+    
+    def _calculate_relationship_confidence(self, col1: str, type1: str, col2: str, type2: str,
+                                         table1: str, table2: str) -> float:
+        """Calculate confidence score for potential relationship using multiple signals"""
+        col1_lower = col1.lower()
+        col2_lower = col2.lower()
+        
+        # 1. Data type compatibility (essential)
+        if not self._are_types_compatible(type1, type2):
+            return 0.0  # No relationship if types incompatible
+        
+        # 2. Pattern-based confidence (baseline)
+        pattern_confidence = 0.0
+        
+        # Exact column name match (very high confidence)
+        if col1_lower == col2_lower:
+            pattern_confidence = 0.9
+        # Similar naming patterns
+        elif self._are_names_similar(col1_lower, col2_lower):
+            pattern_confidence = 0.7
+        else:
+            # Healthcare domain-specific patterns
+            healthcare_confidence = self._get_healthcare_relationship_confidence(
+                col1_lower, col2_lower, table1, table2
+            )
+            # Table relationship patterns
+            table_confidence = self._get_table_relationship_confidence(table1, table2)
+            pattern_confidence = healthcare_confidence + table_confidence
+        
+        # 3. Data-driven analysis (stronger signal)
+        data_confidence = self._get_data_driven_confidence(table1, col1, table2, col2)
+        
+        # 4. Combine signals with weighted approach
+        if data_confidence > 0:
+            # Data analysis gets higher weight when available
+            final_confidence = (pattern_confidence * 0.4) + (data_confidence * 0.6)
+        else:
+            # Fallback to pattern matching only
+            final_confidence = pattern_confidence
+            print(f"📊 Using pattern-only for {table1}.{col1} ↔ {table2}.{col2}: {final_confidence:.2f}")
+        
+        return min(final_confidence, 1.0)  # Cap at 1.0
+    
+    def _get_data_driven_confidence(self, table1: str, col1: str, table2: str, col2: str) -> float:
+        """Analyze actual data to determine relationship confidence"""
+        try:
+            print(f"🔍 Analyzing data for {table1}.{col1} ↔ {table2}.{col2}")
+            
+            # Sample data from both columns
+            sample_size = 500  # Reasonable sample size
+            sample1 = self._get_column_sample(table1, col1, sample_size)
+            sample2 = self._get_column_sample(table2, col2, sample_size)
+            
+            if not sample1 or not sample2:
+                return 0.0
+            
+            # Calculate different types of similarity
+            overlap_score = self._calculate_value_overlap(sample1, sample2)
+            cardinality_score = self._calculate_cardinality_score(sample1, sample2)
+            format_score = self._calculate_format_similarity(sample1, sample2)
+            
+            # Weighted combination
+            data_confidence = (overlap_score * 0.5) + (cardinality_score * 0.3) + (format_score * 0.2)
+            
+            if data_confidence > 0.1:  # Only log significant findings
+                print(f"📈 Data analysis: overlap={overlap_score:.2f}, cardinality={cardinality_score:.2f}, format={format_score:.2f} → {data_confidence:.2f}")
+            
+            return data_confidence
+            
+        except Exception as e:
+            # Graceful fallback - don't break the system
+            print(f"⚠️  Data analysis failed for {table1}.{col1} ↔ {table2}.{col2}: {e}")
+            return 0.0
+
+    def _get_column_sample(self, table: str, column: str, sample_size: int = 1000) -> list:
+        """Safely sample data from a column for analysis"""
+        try:
+            # Use SAMPLE or LIMIT depending on database capabilities
+            sql = f"""
+            SELECT DISTINCT {column} 
+            FROM {table} 
+            WHERE {column} IS NOT NULL 
+            LIMIT {sample_size}
+            """
+            
+            result = self.adapter.run(sql)
+            if result.error:
+                return []
+            
+            # Extract values from result rows
+            values = [row[0] for row in result.rows if row[0] is not None]
+            return values
+            
+        except Exception as e:
+            print(f"⚠️  Error sampling {table}.{column}: {e}")
+            return []
+    
+    def _calculate_value_overlap(self, sample1: list, sample2: list) -> float:
+        """Calculate the overlap percentage between two value sets"""
+        try:
+            if not sample1 or not sample2:
+                return 0.0
+            
+            set1 = set(str(v).strip().lower() for v in sample1 if v is not None)
+            set2 = set(str(v).strip().lower() for v in sample2 if v is not None)
+            
+            if not set1 or not set2:
+                return 0.0
+            
+            intersection = len(set1 & set2)
+            union = len(set1 | set2)
+            
+            if union == 0:
+                return 0.0
+            
+            # Jaccard similarity coefficient
+            overlap_score = intersection / union
+            
+            # Add JOIN safety warning for low overlap
+            if intersection == 0:
+                print(f"⚠️  JOIN WARNING: No overlapping values found - JOIN may return empty results")
+            elif overlap_score < 0.1:
+                print(f"⚠️  JOIN CAUTION: Very low overlap ({overlap_score:.1%}) - JOIN may return sparse results")
+            
+            # High overlap suggests FK relationship
+            if overlap_score > 0.7:
+                return 0.9
+            elif overlap_score > 0.3:
+                return 0.6
+            elif overlap_score > 0.1:
+                return 0.3
+            else:
+                return 0.0
+                
+        except Exception as e:
+            print(f"⚠️  Error calculating value overlap: {e}")
+            return 0.0
+    
+    def _calculate_cardinality_score(self, sample1: list, sample2: list) -> float:
+        """Analyze cardinality patterns to detect PK/FK relationships"""
+        try:
+            if not sample1 or not sample2:
+                return 0.0
+            
+            unique1 = len(set(sample1))
+            unique2 = len(set(sample2))
+            total1 = len(sample1)
+            total2 = len(sample2)
+            
+            # Calculate uniqueness ratios
+            ratio1 = unique1 / total1 if total1 > 0 else 0
+            ratio2 = unique2 / total2 if total2 > 0 else 0
+            
+            # PK-like pattern: high uniqueness (>0.9)
+            # FK-like pattern: lower uniqueness (<0.8)
+            
+            # One column is PK-like, other is FK-like
+            if (ratio1 > 0.9 and ratio2 < 0.8) or (ratio2 > 0.9 and ratio1 < 0.8):
+                return 0.8
+            
+            # Both have similar cardinality patterns
+            elif abs(ratio1 - ratio2) < 0.2:
+                return 0.5
+            
+            return 0.0
+            
+        except Exception as e:
+            print(f"⚠️  Error calculating cardinality: {e}")
+            return 0.0
+    
+    def _calculate_format_similarity(self, sample1: list, sample2: list) -> float:
+        """Check if values have similar formats (length, patterns)"""
+        try:
+            if not sample1 or not sample2:
+                return 0.0
+            
+            # Convert to strings and get first few samples
+            str1 = [str(v) for v in sample1[:100] if v is not None]
+            str2 = [str(v) for v in sample2[:100] if v is not None]
+            
+            if not str1 or not str2:
+                return 0.0
+            
+            # Check average length similarity
+            avg_len1 = sum(len(s) for s in str1) / len(str1)
+            avg_len2 = sum(len(s) for s in str2) / len(str2)
+            
+            length_similarity = 1 - abs(avg_len1 - avg_len2) / max(avg_len1, avg_len2, 1)
+            
+            # Check if they're all numeric
+            numeric1 = all(s.replace('.', '').replace('-', '').isdigit() for s in str1[:10])
+            numeric2 = all(s.replace('.', '').replace('-', '').isdigit() for s in str2[:10])
+            
+            if numeric1 and numeric2:
+                return max(0.7, length_similarity)
+            
+            # Check pattern similarity for strings
+            if length_similarity > 0.8:
+                return 0.6
+            elif length_similarity > 0.5:
+                return 0.3
+            
+            return 0.0
+            
+        except Exception as e:
+            print(f"⚠️  Error calculating format similarity: {e}")
+            return 0.0
+    
+    def _are_types_compatible(self, type1: str, type2: str) -> bool:
+        """Check if two data types are compatible for joins"""
+        # Normalize types
+        type1_norm = self._normalize_data_type(type1)
+        type2_norm = self._normalize_data_type(type2)
+        
+        # Numeric types can join with numeric types
+        numeric_types = {'NUMBER', 'INTEGER', 'BIGINT', 'DECIMAL', 'FLOAT', 'DOUBLE'}
+        if type1_norm in numeric_types and type2_norm in numeric_types:
+            return True
+            
+        # Text types can join with text types
+        text_types = {'VARCHAR', 'STRING', 'TEXT', 'CHAR'}
+        if type1_norm in text_types and type2_norm in text_types:
+            return True
+            
+        # Exact type match
+        if type1_norm == type2_norm:
+            return True
+            
+        return False
+    
+    def _normalize_data_type(self, data_type: str) -> str:
+        """Normalize data type for comparison"""
+        if not data_type:
+            return "UNKNOWN"
+            
+        # Extract base type (remove size specifications)
+        base_type = data_type.upper().split('(')[0].strip()
+        
+        # Normalize variations
+        type_mappings = {
+            'INT': 'INTEGER',
+            'NUMERIC': 'NUMBER',
+            'DECIMAL': 'NUMBER',
+            'FLOAT': 'NUMBER',
+            'DOUBLE': 'NUMBER',
+            'CHARACTER': 'CHAR',
+            'CHARACTER VARYING': 'VARCHAR',
+            'STRING': 'VARCHAR'
+        }
+        
+        return type_mappings.get(base_type, base_type)
+    
+    def _are_names_similar(self, name1: str, name2: str) -> bool:
+        """Check if column names are similar"""
+        # Remove common prefixes/suffixes for comparison
+        cleaned_name1 = self._clean_column_name(name1)
+        cleaned_name2 = self._clean_column_name(name2)
+        
+        # Exact match after cleaning
+        if cleaned_name1 == cleaned_name2:
+            return True
+        
+        # For healthcare: NPI should only match other NPI columns, not NPI_TOTAL_PCT
+        if cleaned_name1 == 'npi' or cleaned_name2 == 'npi':
+            # Only allow exact 'npi' matches, not partial matches like 'npi_total_pct'
+            return cleaned_name1 == cleaned_name2
+        
+        # Check if one contains the other (but not for NPI to avoid false matches)
+        if len(cleaned_name1) > 3 and len(cleaned_name2) > 3:  # Avoid short false matches
+            if cleaned_name1 in cleaned_name2 or cleaned_name2 in cleaned_name1:
+                return True
+            
+        # Check common variations for longer names
+        if len(cleaned_name1) > 3:
+            variations = [
+                (cleaned_name1 + '_id', cleaned_name2),
+                (cleaned_name1, cleaned_name2 + '_id'),
+                (cleaned_name1 + '_key', cleaned_name2),
+                (cleaned_name1, cleaned_name2 + '_key')
+            ]
+            
+            for var1, var2 in variations:
+                if var1 == var2:
+                    return True
+                
+        return False
+    
+    def _clean_column_name(self, name: str) -> str:
+        """Clean column name for comparison"""
+        # Remove common suffixes
+        suffixes_to_remove = ['_id', '_key', '_uuid', '_guid', '_number', '_code']
+        cleaned = name.lower()
+        
+        for suffix in suffixes_to_remove:
+            if cleaned.endswith(suffix):
+                cleaned = cleaned[:-len(suffix)]
+                break
+                
+        return cleaned
+    
+    def _get_healthcare_relationship_confidence(self, col1: str, col2: str, table1: str, table2: str) -> float:
+        """Get healthcare domain-specific relationship confidence"""
+        confidence = 0.0
+        
+        # NPI (National Provider Identifier) relationships
+        if 'npi' in col1 and 'npi' in col2:
+            confidence += 0.8
+        
+        # Provider relationships
+        if ('provider' in col1 and 'provider' in col2) or \
+           ('provider' in col1 and 'provider' in table2.lower()) or \
+           ('provider' in table1.lower() and 'provider' in col2):
+            confidence += 0.6
+        
+        # Payer relationships
+        if 'payer' in col1 and 'payer' in col2:
+            confidence += 0.7
+        
+        # Service/Billing code relationships
+        if ('service' in col1 and 'service' in col2) or \
+           ('billing' in col1 and 'billing' in col2) or \
+           ('code' in col1 and 'code' in col2):
+            confidence += 0.5
+        
+        return min(confidence, 0.8)  # Cap healthcare bonus
+    
+    def _get_table_relationship_confidence(self, table1: str, table2: str) -> float:
+        """Get table-level relationship confidence"""
+        confidence = 0.0
+        
+        table1_lower = table1.lower()
+        table2_lower = table2.lower()
+        
+        # Fact-dimension patterns (healthcare)
+        fact_tables = ['metrics', 'volume', 'rates', 'claims', 'transactions']
+        dimension_tables = ['provider', 'payer', 'service', 'geography', 'time']
+        
+        is_fact1 = any(fact in table1_lower for fact in fact_tables)
+        is_dim2 = any(dim in table2_lower for dim in dimension_tables)
+        
+        if is_fact1 and is_dim2:
+            confidence += 0.3
+        
+        # Reference table patterns
+        if 'reference' in table2_lower or 'ref' in table2_lower:
+            confidence += 0.2
+        
+        return confidence
+    
+    def _get_match_type(self, col1: str, col2: str, type1: str, type2: str) -> str:
+        """Classify the type of relationship match"""
+        if col1.lower() == col2.lower():
+            return "exact_name_match"
+        elif self._are_names_similar(col1.lower(), col2.lower()):
+            return "similar_name_match"
+        elif 'npi' in col1.lower() and 'npi' in col2.lower():
+            return "healthcare_domain_match"
+        elif self._normalize_data_type(type1) == self._normalize_data_type(type2):
+            return "type_compatible_match"
+        else:
+            return "inferred_match"
     
     def _check_nullable(self, table_name: str, col_name: str) -> bool:
         """Check if column is nullable"""

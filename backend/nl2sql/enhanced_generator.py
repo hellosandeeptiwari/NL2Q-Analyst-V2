@@ -291,7 +291,11 @@ Generate the SQL query:"""
 
 # Legacy function for backward compatibility
 def generate_sql(natural_language: str, schema_snapshot: dict, constraints: GuardrailConfig) -> GeneratedSQL:
-    """Legacy function - will use enhanced schema if available"""
+    """Enhanced function with error-aware retry capability"""
+    
+    # Check if this is an enhanced schema with error context
+    if isinstance(schema_snapshot, dict) and ('error_context' in schema_snapshot or 'retry_attempt' in schema_snapshot):
+        return generate_sql_with_error_feedback(natural_language, schema_snapshot, constraints)
     
     # Check if this is an enhanced schema
     if isinstance(schema_snapshot, dict) and 'schema_version' in schema_snapshot:
@@ -336,4 +340,100 @@ SQL:"""
             rationale=f"Error: {str(e)}",
             added_limit=False,
             suggestions=[]
+        )
+
+def generate_sql_with_error_feedback(natural_language: str, enhanced_schema: dict, constraints: GuardrailConfig) -> GeneratedSQL:
+    """Generate SQL with error context feedback for iterative improvement"""
+    
+    try:
+        # Extract components
+        tables = enhanced_schema.get('tables', {})
+        error_context = enhanced_schema.get('error_context', '')
+        retry_attempt = enhanced_schema.get('retry_attempt', 1)
+        database_type = enhanced_schema.get('database_type', 'snowflake')
+        
+        # Build schema text
+        schema_text = "AVAILABLE TABLES AND COLUMNS:\n"
+        for table_name, columns in tables.items():
+            schema_text += f"Table: {table_name}\n"
+            schema_text += f"Columns: {', '.join(columns)}\n\n"
+        
+        # Enhanced error-aware system prompt
+        system_prompt = f"""You are an expert Snowflake SQL generator with error correction capabilities.
+
+DATABASE CONTEXT:
+- Engine: {database_type.upper()}
+- Current Retry: Attempt {retry_attempt}
+- Previous attempts had errors that need fixing
+
+CRITICAL SNOWFLAKE RULES:
+1. Use double quotes for mixed-case identifiers: "Table_Name", "Column_Name"
+2. CTE column aliases must be consistently quoted: WITH cte ("alias1", "alias2") AS (...)
+3. NEVER mix window functions with GROUP BY in same query level
+4. Use subqueries/CTEs when combining aggregates with window functions
+5. Always validate column references match available schema
+6. Use proper Snowflake syntax for all functions
+
+ERROR CORRECTION PRIORITY:
+- Fix compilation errors (invalid identifiers, syntax issues)
+- Ensure column aliases are properly quoted in CTEs
+- Validate all table and column names exist in schema
+- Use appropriate Snowflake functions and syntax
+
+{schema_text}
+
+Generate syntactically correct Snowflake SQL that will execute without errors."""
+
+        user_prompt = f"""Request: {natural_language}
+
+{error_context}
+
+Generate corrected SQL that fixes all identified issues:"""
+
+        response = openai.chat.completions.create(
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            max_completion_tokens=800,
+            temperature=0.1  # Lower temperature for more consistent fixes
+        )
+        
+        sql = response.choices[0].message.content.strip()
+        
+        # Clean up SQL formatting
+        if sql.startswith("```sql"):
+            sql = sql[6:]
+        elif sql.startswith("```"):
+            sql = sql[3:]
+        if sql.endswith("```"):
+            sql = sql[:-3]
+        sql = sql.strip()
+        
+        # Apply guardrails
+        safe_sql, added_limit = sanitize_sql(sql, constraints)
+        
+        # Generate suggestions
+        suggestions = generate_query_suggestions(natural_language, tables)
+        
+        # Build rationale
+        rationale = f"Generated with error feedback (attempt {retry_attempt}). Applied Snowflake-specific error corrections."
+        
+        return GeneratedSQL(
+            sql=safe_sql,
+            rationale=rationale,
+            added_limit=added_limit,
+            suggestions=suggestions,
+            confidence_score=0.9 - (retry_attempt * 0.1)  # Decrease confidence with retries
+        )
+        
+    except Exception as e:
+        print(f"Error in error-aware SQL generation: {e}")
+        return GeneratedSQL(
+            sql="SELECT 'Error in retry generation' as error",
+            rationale=f"Failed to generate SQL with error feedback: {str(e)}",
+            added_limit=False,
+            suggestions=[],
+            confidence_score=0.0
         )
