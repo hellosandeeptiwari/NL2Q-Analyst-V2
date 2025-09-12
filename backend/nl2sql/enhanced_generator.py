@@ -289,31 +289,115 @@ Generate the SQL query:"""
             confidence_score=0.0
         )
 
-# Legacy function for backward compatibility
-def generate_sql(natural_language: str, schema_snapshot: dict, constraints: GuardrailConfig) -> GeneratedSQL:
-    """Enhanced function with error-aware retry capability"""
+# Legacy function for backward compatibility with new deterministic option
+def generate_sql(natural_language: str, schema_snapshot: dict, constraints: GuardrailConfig, 
+                use_deterministic: bool = False) -> GeneratedSQL:
+    """Enhanced function with error-aware retry capability and optional deterministic mode"""
     
-    # Check if this is an enhanced schema with error context
+    # Option 1: Use enhanced deterministic column-first approach with micro-patches
+    if use_deterministic and isinstance(schema_snapshot, dict) and 'tables' in schema_snapshot:
+        try:
+            # Import the enhanced prompt functions
+            import sys
+            import os
+            sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+            from enhanced_prompt_with_micro_patches import create_production_prompt
+            
+            # Convert schema to catalog format
+            catalog_tables = [{'name': table} for table in schema_snapshot.keys()]
+            catalog_columns = []
+            
+            # Convert columns format
+            for table_name, columns in schema_snapshot.items():
+                if isinstance(columns, list):
+                    for col_name in columns:
+                        catalog_columns.append({
+                            'table_name': table_name,
+                            'column_name': col_name,
+                            'data_type': 'VARCHAR'  # Default type if not specified
+                        })
+            
+            catalog_keys = {
+                'primary': {},
+                'foreign': []
+            }
+            
+            # Generate enhanced prompt with micro-patches
+            enhanced_prompt = create_production_prompt(
+                user_query=natural_language,
+                db_tables=catalog_tables,
+                db_columns=catalog_columns,
+                db_keys=catalog_keys,
+                dialect="snowflake"
+            )
+            
+            # Call LLM with enhanced prompt
+            response = openai.chat.completions.create(
+                model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+                messages=[{"role": "user", "content": enhanced_prompt}],
+                max_completion_tokens=1000,
+                temperature=0.1
+            )
+            
+            response_text = response.choices[0].message.content.strip()
+            
+            # Parse response - expect JSON plan first, then SQL
+            if 'SQL:' in response_text:
+                sql_part = response_text.split('SQL:')[-1].strip()
+            else:
+                sql_part = response_text
+            
+            # Clean SQL
+            if sql_part.startswith("```sql"):
+                sql_part = sql_part[6:]
+            elif sql_part.startswith("```"):
+                sql_part = sql_part[3:]
+            if sql_part.endswith("```"):
+                sql_part = sql_part[:-3]
+            
+            sql_part = sql_part.strip()
+            
+            # Apply guardrails
+            safe_sql, added_limit = sanitize_sql(sql_part, constraints)
+            
+            return GeneratedSQL(
+                sql=safe_sql,
+                rationale="Generated with enhanced deterministic approach using column-first selection and micro-patches",
+                added_limit=added_limit,
+                suggestions=generate_query_suggestions(natural_language, schema_snapshot),
+                confidence_score=0.95  # High confidence with deterministic approach
+            )
+            
+        except ImportError:
+            print("⚠️ Enhanced deterministic prompt not available, falling back to basic deterministic mode")
+        except Exception as e:
+            print(f"⚠️ Enhanced deterministic generation failed: {e}, falling back to enhanced mode")
+    
+    # Option 2: Check if this is an enhanced schema with error context
     if isinstance(schema_snapshot, dict) and ('error_context' in schema_snapshot or 'retry_attempt' in schema_snapshot):
         return generate_sql_with_error_feedback(natural_language, schema_snapshot, constraints)
     
-    # Check if this is an enhanced schema
+    # Option 3: Check if this is an enhanced schema
     if isinstance(schema_snapshot, dict) and 'schema_version' in schema_snapshot:
         return generate_sql_with_enhanced_schema(natural_language, schema_snapshot, constraints)
     
-    # Fallback to simple schema format
+    # Option 4: Fallback to improved simple schema format with deterministic principles
     simple_prompt = f"""
-You are an expert SQL generator. Generate a safe SELECT query for the following request.
+Role: Expert SQL generator with deterministic approach.
 
-Schema: {schema_snapshot}
-Request: {natural_language}
+AUTHORITATIVE CATALOG:
+{format_catalog_for_prompt(schema_snapshot)}
 
-Constraints:
-- Only SELECT statements
-- Add LIMIT clause if unbounded
-- Use exact table/column names from schema
+RULES:
+1. Use ONLY columns/tables present in catalog above
+2. If needed concept can't be mapped, explain why
+3. Generate safe SELECT-only queries
+4. Add LIMIT clause for unbounded queries
+5. Use exact table/column names from catalog
 
-SQL:"""
+REQUEST: {natural_language}
+
+Generate SQL or explain if concepts cannot be mapped:"""
     
     try:
         response = openai.chat.completions.create(
@@ -324,12 +408,22 @@ SQL:"""
         )
         
         sql = response.choices[0].message.content.strip()
+        
+        # Check if response is an explanation rather than SQL
+        if "cannot be mapped" in sql.lower() or "not found" in sql.lower():
+            return GeneratedSQL(
+                sql="SELECT 'Concept mapping failed' as error",
+                rationale=sql,
+                added_limit=False,
+                suggestions=generate_query_suggestions(natural_language, schema_snapshot)
+            )
+        
         safe_sql, added_limit = sanitize_sql(sql, constraints)
         suggestions = generate_query_suggestions(natural_language, schema_snapshot)
         
         return GeneratedSQL(
             sql=safe_sql,
-            rationale="Generated with basic schema",
+            rationale="Generated with improved deterministic principles",
             added_limit=added_limit,
             suggestions=suggestions
         )
@@ -341,6 +435,21 @@ SQL:"""
             added_limit=False,
             suggestions=[]
         )
+
+def format_catalog_for_prompt(schema_snapshot: dict) -> str:
+    """Format schema in catalog-like structure for deterministic prompting"""
+    if not schema_snapshot:
+        return "No catalog provided"
+    
+    catalog_text = "AVAILABLE TABLES AND COLUMNS:\n"
+    for table_name, columns in schema_snapshot.items():
+        catalog_text += f"Table: {table_name}\n"
+        if isinstance(columns, list):
+            catalog_text += f"Columns: {', '.join(columns)}\n\n"
+        else:
+            catalog_text += f"Columns: {columns}\n\n"
+    
+    return catalog_text
 
 def generate_sql_with_error_feedback(natural_language: str, enhanced_schema: dict, constraints: GuardrailConfig) -> GeneratedSQL:
     """Generate SQL with error context feedback for iterative improvement"""

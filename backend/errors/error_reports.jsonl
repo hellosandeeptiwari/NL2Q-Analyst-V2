@@ -38,3 +38,9 @@
 {"error": "agent_query", "context": "Object of type set is not JSON serializable", "user": "anonymous", "timestamp": "2025-09-06T11:09:44.517489"}
 {"error": "agent_query", "context": "Object of type set is not JSON serializable", "user": "anonymous", "timestamp": "2025-09-06T11:15:23.389198"}
 {"error": "agent_query", "context": "Object of type set is not JSON serializable", "user": "anonymous", "timestamp": "2025-09-06T11:17:18.778463"}
+{"error": "agent_query", "context": "DynamicAgentOrchestrator.process_query() got an unexpected keyword argument 'upstream_intent'", "user": "anonymous", "timestamp": "2025-09-12T09:37:17.427225"}
+{"error": "agent_query", "context": "DynamicAgentOrchestrator.process_query() got an unexpected keyword argument 'upstream_intent'", "user": "anonymous", "timestamp": "2025-09-12T09:40:36.709137"}
+{"error": "agent_query", "context": "DynamicAgentOrchestrator.process_query() got an unexpected keyword argument 'upstream_intent'", "user": "anonymous", "timestamp": "2025-09-12T09:40:49.305814"}
+{"error": "agent_query", "context": "DynamicAgentOrchestrator.process_query() got an unexpected keyword argument 'upstream_intent'", "user": "anonymous", "timestamp": "2025-09-12T09:44:07.502443"}
+{"error": "agent_query", "context": "DynamicAgentOrchestrator.process_query() got an unexpected keyword argument 'upstream_intent'", "user": "anonymous", "timestamp": "2025-09-12T09:44:34.237190"}
+{"error": "agent_query", "context": "DynamicAgentOrchestrator.process_query() got an unexpected keyword argument 'upstream_intent'", "user": "anonymous", "timestamp": "2025-09-12T09:48:55.160523"}

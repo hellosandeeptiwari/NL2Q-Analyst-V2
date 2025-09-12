@@ -248,10 +248,12 @@ async def detect_intent(request: Request):
         
         # Use LLM for simple classification
         from openai import OpenAI
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         
         has_context = bool(context_data.get("hasCharts") or context_data.get("hasTable"))
         context_info = "Yes - charts and data available" if has_context else "No - no current analysis"
+        
+        # Initialize OpenAI client for use throughout the function
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         
         # Deep cognitive intent analysis using advanced reasoning
         prompt = f"""You are a cognitive linguist and intent analysis expert with deep understanding of human communication patterns, pragmatic inference, and theory of mind.
@@ -329,16 +331,35 @@ After deep cognitive analysis, provide exactly one word: planning, followup, or 
         if classification == "planning":
             return JSONResponse(content={"needsPlanning": True})
         elif classification == "followup":
-            # Generate context response for followup questions
-            print(f"🎯 Generating followup response for: {user_query}")
-            context_response = await _generate_context_response(user_query, context_data, client)
-            print(f"🎯 Context response: {context_response[:100]}...")
-            return JSONResponse(content={
-                "needsPlanning": False,
-                "isContextQuestion": True,
-                "response": context_response,
-                "contextType": "general"
-            })
+            # Check if this is a data analysis follow-up that should use enhanced processing
+            query_lower = user_query.lower()
+            data_analysis_keywords = [
+                'insight', 'analysis', 'chart', 'data', 'above', 'previous', 
+                'what you think', 'explain', 'interpret', 'trend', 'pattern',
+                'findings', 'results', 'table', 'visualization', 'from the'
+            ]
+            
+            is_data_analysis_followup = any(keyword in query_lower for keyword in data_analysis_keywords)
+            has_existing_context = bool(context_data.get('hasCharts') or context_data.get('hasTable'))
+            
+            # Be more aggressive about routing data analysis queries to enhanced orchestrator
+            # Even if context is not properly detected, route queries with strong data keywords
+            if is_data_analysis_followup:
+                print(f"🎯 Routing data analysis follow-up to enhanced orchestrator: {user_query}")
+                print(f"🎯 Keywords found: {[kw for kw in data_analysis_keywords if kw in query_lower]}")
+                print(f"🎯 Has context: {has_existing_context}")
+                return JSONResponse(content={"needsPlanning": True})
+            else:
+                # Generate context response for simple followup questions
+                print(f"🎯 Generating followup response for: {user_query}")
+                context_response = await _generate_context_response(user_query, context_data, client)
+                print(f"🎯 Context response: {context_response[:100]}...")
+                return JSONResponse(content={
+                    "needsPlanning": False,
+                    "isContextQuestion": True,
+                    "response": context_response,
+                    "contextType": "general"
+                })
         else:  # casual or anything else
             return JSONResponse(content={
                 "needsPlanning": False,
@@ -444,6 +465,7 @@ async def agent_query(request: Request):
         user_query = body.get("query")
         user_id = body.get("user_id", "default_user")
         session_id = body.get("session_id", "default_session")
+        use_deterministic = body.get("use_deterministic", False)
         
         if not user_query:
             return JSONResponse(status_code=400, content={"error": "Query is required"})
@@ -451,7 +473,8 @@ async def agent_query(request: Request):
         plan = await orchestrator.process_query(
             user_query=user_query,
             user_id=user_id,
-            session_id=session_id
+            session_id=session_id,
+            use_deterministic=use_deterministic
         )
         
         print(f"🔍 Plan object type: {type(plan)}")
@@ -1167,7 +1190,20 @@ async def query(request: Request):
             print(f"Schema cache status: {len(schema_cache)} tables")
             print(f"Sample schema cache tables: {list(schema_cache.keys())[:5]}")
         
-        generated = generate_sql(nl, relevant_schema, guardrail_cfg)
+        # Enhanced: Try deterministic generation first if enabled
+        use_deterministic = request_data.get('use_deterministic', False)
+        
+        if use_deterministic:
+            try:
+                from backend.nl2sql.enhanced_generator import generate_sql
+                # Pass use_deterministic flag to enhanced generator
+                generated = generate_sql(nl, relevant_schema, guardrail_cfg, use_deterministic=True)
+                print(f"🎯 Using deterministic SQL generation")
+            except Exception as e:
+                print(f"⚠️ Deterministic generation failed: {e}, falling back to standard generation")
+                generated = generate_sql(nl, relevant_schema, guardrail_cfg)
+        else:
+            generated = generate_sql(nl, relevant_schema, guardrail_cfg)
         
         print(f"🔧 LLM Generated SQL: {generated.sql}")
         print(f"🔧 SQL mentions tables: {[t for t in relevant_schema.keys() if t in generated.sql]}")

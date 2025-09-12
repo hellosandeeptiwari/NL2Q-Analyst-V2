@@ -469,6 +469,7 @@ FOLLOW-UP PLANNING LOGIC:
 - If user asks for chart/visualization of "this/that/above data", they likely want to visualize the provided results
 - For insight requests with actual data available, skip schema_discovery and query execution - use the data directly
 - For visualization requests with actual data, use python_generation → visualization_builder with the provided data
+- **CRITICAL**: If no actual data available (no PREVIOUS QUERY RESULTS section above), treat as NEW QUERY requiring full workflow
 - For data clarification follow-ups, focus on query refinement rather than visualization
 """
             else:
@@ -515,19 +516,24 @@ Available capabilities:
      * "insights from above chart" → Generate insights only (NO schema_discovery)
      * "show chart of this data" → visualization_builder only (reuse previous SQL)
      * "explain that result" → interpretation only
-5. For follow-up queries about "this/that/above data" requesting visualization:
+5. **FOLLOW-UP DATA VALIDATION:**
+   - If follow-up requests chart/visualization BUT no actual data available from previous queries
+   - Fall back to complete workflow: schema_discovery → query_generation → execution → python_generation → visualization_builder
+   - Look for "PREVIOUS QUERY RESULTS" section - if missing or empty, treat as new query
+6. For follow-up queries about "this/that/above data" requesting visualization:
    - If previous query context available, you may need to re-run similar SQL first
    - Then add python_generation → visualization_builder for the chart request
-6. For follow-up data clarification (no visualization request):
+7. For follow-up data clarification (no visualization request):
    - Focus on refined query_generation without visualization steps
 
 **WORKFLOW PATTERNS:**
-7. Simple data retrieval → schema_discovery → query_generation → execution
-8. EXPLICIT visualization → schema_discovery → query_generation → execution → python_generation → visualization_builder
-9. Ambiguous query → schema_discovery → user_interaction → query_generation → execution
-10. **FOLLOW-UP insight generation** → python_generation ONLY (NO schema_discovery)
-11. **FOLLOW-UP visualization** → python_generation → visualization_builder ONLY (reuse context)
-12. **FOLLOW-UP data clarification** → query_generation → execution ONLY (refine previous query)=== CRITICAL CONSTRAINTS ===
+8. Simple data retrieval → schema_discovery → query_generation → execution
+9. EXPLICIT visualization → schema_discovery → query_generation → execution → python_generation → visualization_builder
+10. Ambiguous query → schema_discovery → user_interaction → query_generation → execution
+11. **FOLLOW-UP insight generation** → python_generation ONLY (NO schema_discovery)
+12. **FOLLOW-UP visualization WITH data** → python_generation → visualization_builder ONLY (reuse context)
+13. **FOLLOW-UP visualization WITHOUT data** → schema_discovery → query_generation → execution → python_generation → visualization_builder (complete workflow)
+14. **FOLLOW-UP data clarification** → query_generation → execution ONLY (refine previous query)=== CRITICAL CONSTRAINTS ===
 - NO hardcoded visualization steps unless user explicitly asks for charts/graphs/plots
 - Use conversation context to understand follow-up intent
 - Always output structured JSON — NO natural language commentary outside the JSON
@@ -1706,7 +1712,7 @@ No explanations or extra text."""
             print(f"🎯 Target tables: {confirmed_tables}")
             
             # Generate SQL with whatever context we have
-            return await self._generate_sql_with_context(query, confirmed_tables, available_context)
+            return await self._generate_sql_with_context(query, confirmed_tables, available_context, getattr(self, 'use_deterministic', False))
             
         except Exception as e:
             print(f"❌ Query generation failed: {e}")
@@ -1921,7 +1927,7 @@ No explanations or extra text."""
             print(f"⚠️ Database table discovery failed: {e}")
             return []
     
-    async def _generate_sql_with_context(self, query: str, tables: List[str], context: Dict) -> Dict[str, Any]:
+    async def _generate_sql_with_context(self, query: str, tables: List[str], context: Dict, use_deterministic: bool = False) -> Dict[str, Any]:
         """Generate SQL using available tables and context"""
         try:
             # Use the existing database-aware SQL generation with enhanced retry logic
@@ -1929,7 +1935,8 @@ No explanations or extra text."""
                 query=query,
                 available_tables=tables,
                 error_context="",
-                pinecone_matches=context.get("pinecone_matches", [])
+                pinecone_matches=context.get("pinecone_matches", []),
+                use_deterministic=use_deterministic
             )
             
             if result and result.get("sql_query"):
@@ -2223,7 +2230,7 @@ Return only the corrected SQL query."""
                 print("=" * 80)
                 
                 response = client.chat.completions.create(
-                    model="gpt-5",
+                    model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
                     messages=[
                         {"role": "system", "content": f"You are an expert SQL developer for {db_engine.title()} databases. You MUST strictly adhere to {db_engine.title()} syntax rules and limitations. Fix the SQL error by generating compliant {db_engine.title()} SQL that will execute without errors. Return only the corrected SQL."},
                         {"role": "user", "content": correction_prompt}
@@ -2610,7 +2617,7 @@ Generate Python code that:
 """
 
             response = await client.chat.completions.create(
-                model=os.getenv("OPENAI_MODEL", "gpt-5"),
+                model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -2987,24 +2994,59 @@ Generate Python code that:
                     # DEBUGGING: Show detailed structure of each recent query
                     for i, query in enumerate(recent_queries):
                         print(f"🔍 Query {i+1} structure:")
-                        print(f"   Query keys: {list(query.keys())}")
-                        print(f"   Query NL: {query.get('nl', 'N/A')[:50]}...")
-                        print(f"   Results type: {type(query.get('results'))}")
-                        print(f"   Results length: {len(query.get('results', []))}")
-                        print(f"   Results sample: {query.get('results', [])[:2]}")
-                        print(f"   Row count: {query.get('row_count', 'N/A')}")
+                        try:
+                            query_keys = list(query.keys()) if query and hasattr(query, 'keys') else []
+                            print(f"   Query keys: {query_keys}")
+                            
+                            query_nl = query.get('nl', 'N/A') if query else 'N/A'
+                            if query_nl and hasattr(query_nl, '__len__') and len(query_nl) > 50:
+                                query_nl = query_nl[:50] + '...'
+                            print(f"   Query NL: {query_nl}")
+                            
+                            query_results = query.get('results') if query else None
+                            print(f"   Results type: {type(query_results)}")
+                            results_len = len(query_results) if query_results and hasattr(query_results, '__len__') else 0
+                            print(f"   Results length: {results_len}")
+                            
+                            # Safely show results sample
+                            if query_results and hasattr(query_results, '__getitem__'):
+                                try:
+                                    print(f"   Results sample: {query_results[:2]}")
+                                except (TypeError, IndexError):
+                                    print(f"   Results sample: [Unable to display]")
+                            else:
+                                print(f"   Results sample: []")
+                            
+                            row_count = query.get('row_count', 'N/A') if query else 'N/A'
+                            print(f"   Row count: {row_count}")
+                            
+                        except Exception as debug_error:
+                            print(f"   ❌ Debug error for query {i+1}: {debug_error}")
+                            continue
                     
                     # Look for the most recent query with actual results
                     for query in reversed(recent_queries):
-                        query_results = (query.get('results') or 
-                                       query.get('data') or 
-                                       query.get('rows', []))
+                        # Safely check for results with proper None handling
+                        query_results = None
+                        try:
+                            query_results = (query.get('results') or 
+                                           query.get('data') or 
+                                           query.get('rows', []))
+                        except (AttributeError, TypeError) as e:
+                            print(f"   ⚠️ Error accessing query results: {e}")
+                            continue
+                            
                         if query_results and isinstance(query_results, list) and query_results:
                             data = query_results
                             data_source = "recent_query_history"
                             print(f"✅ Found data from recent query: {len(data)} rows")
-                            print(f"   Query: {query.get('nl', 'Unknown')[:50]}...")
-                            print(f"   Data sample: {data[:2]}")
+                            query_nl = query.get('nl', 'Unknown') or 'Unknown'
+                            print(f"   Query: {query_nl[:50]}...")
+                            # Safely show data sample
+                            try:
+                                print(f"   Data sample: {data[:2] if data else []}")
+                            except (TypeError, AttributeError):
+                                print(f"   Data sample: [Unable to display]")
                             break
                     
                     if not data:
@@ -3045,16 +3087,32 @@ Generate Python code that:
             
             # Final fallback to sample data
             if not data:
-                print("⚠️ No actual data found in any source, falling back to sample data")
-                data = [
-                    {"category": "Sample A", "value": 10},
-                    {"category": "Sample B", "value": 20},
-                    {"category": "Sample C", "value": 15},
-                    {"category": "Sample D", "value": 25},
-                    {"category": "Sample E", "value": 18}
-                ]
-                data_source = "sample_fallback"
-                print(f"🎯 Using sample data for demonstration ({len(data)} rows)")
+                print("⚠️ No actual data found in any source")
+                
+                # For follow-up chart requests, we should ideally run a new query first
+                # But as a fallback, provide helpful sample data that explains the issue
+                current_query_lower = user_query.lower()
+                is_chart_request = any(word in current_query_lower for word in ['chart', 'graph', 'plot', 'visualize', 'visualization'])
+                
+                if is_chart_request:
+                    # Return a helpful message instead of generic sample data
+                    return {
+                        "error": "No data available from recent queries to create chart. Please run a data query first.",
+                        "status": "failed",
+                        "suggestion": "Try asking for specific data (e.g., 'Show me top 10 NBA records') then request a chart.",
+                        "fallback_available": True
+                    }
+                else:
+                    # For non-chart requests, use minimal sample data
+                    data = [
+                        {"category": "Sample A", "value": 10},
+                        {"category": "Sample B", "value": 20},
+                        {"category": "Sample C", "value": 15},
+                        {"category": "Sample D", "value": 25},
+                        {"category": "Sample E", "value": 18}
+                    ]
+                    data_source = "sample_fallback"
+                    print(f"🎯 Using sample data for demonstration ({len(data)} rows)")
             
             print(f"📊 Final data source: {data_source}")
             print(f"📊 Final data count: {len(data)} rows")
@@ -3121,17 +3179,17 @@ Generate Python code that:
         except Exception as e:
             error_msg = f"Python generation error: {e}"
             print(f"❌ Python generation failed: {error_msg}")
+            
+            # Check for common error types and provide helpful messages
+            if "'NoneType' object is not subscriptable" in str(e):
+                error_msg += "\n💡 This usually means no data is available from previous queries. Consider running a data query first."
+            elif "list index out of range" in str(e):
+                error_msg += "\n💡 This indicates empty data or missing query results."
+            
             return {
                 "error": error_msg,
-                "status": "failed"
-            }
-                
-        except Exception as e:
-            error_msg = f"Python generation error: {e}"
-            print(f"❌ Python generation failed: {error_msg}")
-            return {
-                "error": error_msg,
-                "status": "failed"
+                "status": "failed",
+                "suggestion": "Try running a data query first to get actual results, then request a chart."
             }
 
     async def _execute_visualization_builder(self, inputs: Dict) -> Dict[str, Any]:
@@ -3293,10 +3351,12 @@ else:
                                          error_context: str = "", pinecone_matches: List[Dict] = None) -> Dict[str, Any]:
         """Generate SQL with database-specific awareness using schema from Pinecone with retry logic"""
         # Redirect to the new retry-enabled method
-        return await self._generate_sql_with_retry(query, available_tables, error_context, pinecone_matches)
+        return await self._generate_sql_with_retry(query, available_tables, error_context, pinecone_matches, getattr(self, 'use_deterministic', False))
     async def _generate_sql_with_retry(self, query: str, available_tables: List[str], 
-                                     error_context: str = "", pinecone_matches: List[Dict] = None) -> Dict[str, Any]:
+                                     error_context: str = "", pinecone_matches: List[Dict] = None,
+                                     use_deterministic: bool = False) -> Dict[str, Any]:
         """Generate SQL with enhanced retry logic and stack trace collection"""
+        print(f"🔄 DEBUG: _generate_sql_with_retry called with use_deterministic={use_deterministic}")
         max_retries = 3
         retry_count = 0
         accumulated_errors = []
@@ -3314,10 +3374,14 @@ else:
                         for i, err in enumerate(accumulated_errors)
                     ])
                     enhanced_error_context += f"\n\nPREVIOUS RETRY ERRORS:\n{error_summary}\nPlease fix these issues and generate working SQL."
+                    
+                    print(f"🔍 DEBUG: Enhanced error context being sent to LLM:")
+                    print(f"  - Error context length: {len(enhanced_error_context)}")
+                    print(f"  - Last error: {accumulated_errors[-1]['error'][:100]}...")
                 
                 # Call the original SQL generation method
                 result = await self._generate_database_aware_sql_core(
-                    query, available_tables, enhanced_error_context, pinecone_matches
+                    query, available_tables, enhanced_error_context, pinecone_matches, use_deterministic
                 )
                 
                 if result.get("status") == "success" and result.get("sql_query"):
@@ -3391,8 +3455,10 @@ else:
 
 
     async def _generate_database_aware_sql_core(self, query: str, available_tables: List[str], 
-                                               error_context: str = "", pinecone_matches: List[Dict] = None) -> Dict[str, Any]:
+                                               error_context: str = "", pinecone_matches: List[Dict] = None,
+                                               use_deterministic: bool = False) -> Dict[str, Any]:
         """Core SQL generation logic with database schema awareness"""
+        print(f"🧠 DEBUG: _generate_database_aware_sql_core called with use_deterministic={use_deterministic}")
         try:
             import openai
             import os
@@ -3448,7 +3514,7 @@ else:
                 # Enhanced system prompt with LLM intelligence
                 system_prompt = self._create_intelligent_sql_system_prompt(
                     db_name, schema_name, schema_context, available_tables, 
-                    intelligent_context, len(available_tables), query
+                    intelligent_context, len(available_tables), query, use_deterministic
                 )
                 
                 print("🧠 Using LLM intelligence for enhanced SQL generation")
@@ -3509,17 +3575,26 @@ Use these tables: {', '.join(available_tables)}
 
 Return only the SQL query, properly formatted for Snowflake."""
 
-            response = await client.chat.completions.create(
-                model=os.getenv("OPENAI_MODEL", "gpt-5"),
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.1,
-                max_completion_tokens=1500
-            )
-            
-            sql_query = response.choices[0].message.content.strip()
+            try:
+                model_name = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+                print(f"🔍 DEBUG: Using OpenAI model: {model_name}")
+                
+                response = await client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    temperature=0.1,
+                    max_completion_tokens=1500
+                )
+                
+                sql_query = response.choices[0].message.content.strip()
+                print(f"🔍 DEBUG: Raw LLM response: {sql_query[:200]}...")
+                
+            except Exception as api_error:
+                print(f"❌ DEBUG: OpenAI API call failed: {api_error}")
+                raise Exception(f"SQL generation failed: {api_error}")
             
             # Clean the SQL (remove markdown if present)
             if sql_query.startswith("```sql"):
@@ -3532,6 +3607,10 @@ Return only the SQL query, properly formatted for Snowflake."""
             
             # Apply Snowflake-specific fixes
             sql_query = self._apply_snowflake_quoting(sql_query, available_tables)
+            
+            print(f"🎯 DEBUG: Final cleaned SQL query: {sql_query}")
+            if use_deterministic:
+                print("🔧 DEBUG: This was generated using DETERMINISTIC mode!")
             
             return {
                 "sql_query": sql_query,
@@ -3573,8 +3652,12 @@ Return only the SQL query, properly formatted for Snowflake."""
     def _create_intelligent_sql_system_prompt(self, db_name: str, schema_name: str, 
                                             schema_context: str, table_names: List[str],
                                             intelligent_context: Dict[str, Any], 
-                                            schema_success_count: int, query: str) -> str:
+                                            schema_success_count: int, query: str,
+                                            use_deterministic: bool = False) -> str:
         """Create enhanced system prompt with LLM intelligence"""
+        print(f"🎯 DEBUG: _create_intelligent_sql_system_prompt called with use_deterministic={use_deterministic}")
+        print(f"📊 DEBUG: Query: '{query[:100]}{'...' if len(query) > 100 else ''}'")
+        print(f"🔧 DEBUG: Using {'DETERMINISTIC' if use_deterministic else 'STANDARD'} prompt mode")
         
         prompt_parts = [
             f"You are an AI-powered SQL generator with deep schema intelligence.",
@@ -3695,8 +3778,37 @@ Return only the SQL query, properly formatted for Snowflake."""
             "14. NEVER join numeric IDs (like NPI) with text fields (like PROVIDER_NAME) - data types must match",
             "15. If no clear join path exists between tables, use separate queries or focus on single table",
             "16. Only join tables when you have explicit relationship intelligence or matching data types",
-            "",
+            ""
+        ])
+        
+        # Add deterministic enhancements if enabled
+        if use_deterministic:
+            print("🚀 DEBUG: Adding ENHANCED DETERMINISTIC RULES to prompt")
+            prompt_parts.extend([
+                "🎯 ENHANCED DETERMINISTIC RULES (Column-First Approach):",
+                "17. COLUMN-FIRST SELECTION: Score each column by name similarity, data type compatibility, and context boost",
+                "18. NO HALLUCINATIONS: Use ONLY columns/tables from schema above - never invent identifiers", 
+                "19. AGGREGATION DETECTION: If query asks for 'totals/sum/count/average' with attributes, use GROUP BY on non-aggregated columns",
+                "20. MEASURE/DATE GUARDS: If no numeric columns found for totals intent, return error explanation",
+                "21. JOIN ELIMINATION: Only join if answer needs columns on SAME ROW - avoid unnecessary joins",
+                "22. TIE-BREAKING: If multiple tables cover concepts, choose table with (a) more matched columns, (b) higher average score",
+                "23. VALIDATION GATE: Verify every table/column exists in schema before generating SQL",
+                "24. DETERMINISTIC OUTPUT: Clean JSON-parseable responses with confidence scores",
+                "25. TIME-SERIES LOGIC: For temporal queries like 'declining/consecutive months', check if date columns exist first",
+                "26. DATA AVAILABILITY CHECK: For historical analysis, use sample data patterns instead of assuming date ranges",
+                "27. COLUMN EXISTENCE VALIDATION: If query requires specific metrics/dates not in schema, explain limitations clearly",
+                "28. REALISTIC QUERIES: Generate queries that work with actual available data, not theoretical schemas",
+                ""
+            ])
+        
+        prompt_parts.extend([
             f"User Query: {query}",
+            "",
+            "🚨 CRITICAL TEMPORAL ANALYSIS CHECK:",
+            "If this query requires time-series analysis (declining, consecutive months, trends):",
+            "- First verify if date/timestamp columns exist in the available tables",
+            "- If no date columns found, generate a simple aggregation query instead",
+            "- Explain in comments why full temporal analysis cannot be performed",
             "",
             "Generate precise SQL that leverages the LLM schema intelligence above and STRICTLY follows all Snowflake syntax rules."
         ])
@@ -3848,11 +3960,17 @@ Return only the SQL query, properly formatted for Snowflake."""
             }
 
     # API Compatibility Methods
-    async def process_query(self, user_query: str, user_id: str = "default", session_id: str = "default") -> Dict[str, Any]:
+    async def process_query(self, user_query: str, user_id: str = "default", session_id: str = "default", use_deterministic: bool = False) -> Dict[str, Any]:
         """
         Main entry point for processing queries - compatible with main.py API
         """
         print(f"🚀 Dynamic Agent Orchestrator processing query: '{user_query}'")
+        print(f"🎯 DEBUG: Received use_deterministic={use_deterministic} from API call")
+        if use_deterministic:
+            print("🎯 Using deterministic SQL generation mode")
+        
+        # Store deterministic flag for use in SQL generation
+        self.use_deterministic = use_deterministic
         
         try:
             # Step 1: Build conversation context with previous data
@@ -3862,6 +3980,7 @@ Return only the SQL query, properly formatted for Snowflake."""
             workflow_decision = await self._llm_decide_workflow(user_query, conversation_context)
             
             # Step 3: Execute based on LLM decision
+            tasks = []  # Initialize tasks for all workflows
             if workflow_decision['workflow_type'] == 'casual':
                 results = await self._handle_casual_response(user_query, workflow_decision)
             elif workflow_decision['workflow_type'] == 'use_previous_data':
@@ -3875,6 +3994,9 @@ Return only the SQL query, properly formatted for Snowflake."""
             # Step 4: Format response for API compatibility
             plan_id = f"plan_{hash(user_query)}_{session_id}"
             
+            # Determine if tasks were created (for new_planning workflow)
+            tasks_created = len(tasks) > 0
+            
             # Step 5: Save query history with actual results for future follow-up detection
             try:
                 # Extract SQL and results from execution
@@ -3882,20 +4004,51 @@ Return only the SQL query, properly formatted for Snowflake."""
                 query_results = []
                 columns = []
                 
+                print(f"🔍 DEBUG: Results structure for query history extraction:")
+                print(f"  Results type: {type(results)}")
                 if results and isinstance(results, dict):
-                    # Find SQL query
+                    print(f"  Results keys: {list(results.keys())}")
+                    
+                    # Find SQL query - try multiple possible locations
                     if 'sql_query' in results:
                         sql_query = results['sql_query']
+                        print(f"  ✅ Found SQL in 'sql_query'")
                     elif 'query_generation' in results and isinstance(results['query_generation'], dict):
                         sql_query = results['query_generation'].get('sql_query', '')
+                        print(f"  ✅ Found SQL in 'query_generation'")
+                    else:
+                        # Try to find SQL in any task result
+                        for key, value in results.items():
+                            if isinstance(value, dict) and 'sql_query' in value:
+                                sql_query = value['sql_query']
+                                print(f"  ✅ Found SQL in '{key}.sql_query'")
+                                break
                     
-                    # Find execution results 
+                    # Find execution results - try multiple possible locations
                     if 'execution' in results and isinstance(results['execution'], dict):
                         execution_data = results['execution']
                         query_results = execution_data.get('results', [])
                         columns = execution_data.get('columns', [])
+                        print(f"  ✅ Found execution data: {len(query_results)} rows, {len(columns)} columns")
                     elif 'results' in results and isinstance(results['results'], list):
                         query_results = results['results']
+                        print(f"  ✅ Found results in 'results': {len(query_results)} rows")
+                    else:
+                        # Try to find results in any task result
+                        for key, value in results.items():
+                            if isinstance(value, dict):
+                                if 'results' in value and isinstance(value['results'], list):
+                                    query_results = value['results']
+                                    columns = value.get('columns', [])
+                                    print(f"  ✅ Found results in '{key}': {len(query_results)} rows, {len(columns)} columns")
+                                    break
+                                elif 'data' in value and isinstance(value['data'], list):
+                                    query_results = value['data']
+                                    columns = value.get('columns', [])
+                                    print(f"  ✅ Found data in '{key}': {len(query_results)} rows, {len(columns)} columns")
+                                    break
+                    
+                    print(f"  Final extraction: SQL={bool(sql_query)}, Results={len(query_results)} rows")
                 
                 # Save enhanced history with data
                 if sql_query:
@@ -3909,6 +4062,9 @@ Return only the SQL query, properly formatted for Snowflake."""
                         columns=columns
                     )
                     print(f"💾 Saved query to history with {len(query_results)} rows for user {user_id}")
+                else:
+                    print(f"❌ No SQL query found, skipping history save")
+                    
             except Exception as e:
                 print(f"⚠️ Could not save query history: {e}")
                 import traceback
@@ -3917,9 +4073,9 @@ Return only the SQL query, properly formatted for Snowflake."""
             return {
                 "plan_id": plan_id,
                 "user_query": user_query,
-                "reasoning_steps": [f"Planned {len(tasks)} execution steps", "Analyzed database structure and content", "Coordinated intelligent query processing"],
-                "estimated_execution_time": f"{len(tasks) * 2}s",
-                "tasks": [{"task_type": task.task_type.value, "agent": "dynamic"} for task in tasks],
+                "reasoning_steps": [f"Planned {len(tasks) if tasks_created else 0} execution steps", "Analyzed database structure and content", "Coordinated intelligent query processing"],
+                "estimated_execution_time": f"{len(tasks) * 2 if tasks_created else 2}s",
+                "tasks": [{"task_type": task.task_type.value, "agent": "dynamic"} for task in tasks] if tasks_created else [{"task_type": workflow_decision['workflow_type'], "agent": "dynamic"}],
                 "status": "completed" if "error" not in results else "failed",
                 "results": results
             }
@@ -4082,7 +4238,7 @@ Return only the SQL query, properly formatted for Snowflake."""
 
     async def _execute_sql_query(self, sql: str, user_id: str) -> dict:
         """
-        Execute SQL query and return results
+        Execute SQL query and return results with detailed error information
         """
         try:
             from backend.tools.sql_runner import SQLRunner
@@ -4097,15 +4253,26 @@ Return only the SQL query, properly formatted for Snowflake."""
                     "sql": sql
                 }
             else:
+                # Get detailed error information from the result
+                error_message = "SQL execution failed"
+                if hasattr(result, 'error') and result.error:
+                    error_message = str(result.error)
+                elif hasattr(result, 'message') and result.message:
+                    error_message = str(result.message)
+                
+                print(f"🔍 DEBUG: SQL execution error details: {error_message}")
+                
                 return {
                     "status": "failed", 
-                    "error": "SQL execution failed"
+                    "error": error_message
                 }
                 
         except Exception as e:
+            error_details = str(e)
+            print(f"🔍 DEBUG: SQL execution exception: {error_details}")
             return {
                 "status": "failed",
-                "error": f"SQL execution error: {str(e)}"
+                "error": f"SQL execution error: {error_details}"
             }
 
     async def _build_conversation_context(self, user_query: str, user_id: str, session_id: str) -> Dict[str, Any]:
@@ -4133,6 +4300,16 @@ Return only the SQL query, properly formatted for Snowflake."""
                         print(f"   Query {i+1}: results sample={query['results'][:1]}")
                     print(f"   Query {i+1}: row_count={query.get('row_count', 'N/A')}")
                     print(f"   Query {i+1}: timestamp={query.get('timestamp', 'N/A')}")
+                    
+                    # ENHANCED DEBUGGING: Check all possible result fields
+                    result_fields = ['results', 'data', 'rows', 'sample_data']
+                    for field in result_fields:
+                        field_value = query.get(field)
+                        if field_value:
+                            print(f"   Query {i+1}: {field} found with {len(field_value)} items")
+                            if isinstance(field_value, list) and len(field_value) > 0:
+                                print(f"   Query {i+1}: {field} sample: {field_value[0]}")
+                    
                     print()
             else:
                 print("🔍 DEBUG - No recent queries found in history")
@@ -4223,11 +4400,17 @@ WORKFLOW OPTIONS:
 3. **enhance_previous** - Modify/filter previous query while keeping same data structure
 4. **new_planning** - Fresh database query with full planning workflow
 
-DECISION CRITERIA:
+CRITICAL DECISION CRITERIA:
 - **casual**: Non-data queries like "hello", "thank you", "what can you do", general chat
-- **use_previous_data**: "change chart type", "show as pie chart", "analyze this data", "explain results"
-- **enhance_previous**: "add filter", "show more details", "group by something else", "different time range"
-- **new_planning**: New data requests, different tables, complex new analysis
+- **use_previous_data**: Chart modifications ("show as pie chart", "make it a bar chart") or textual analysis ("analyze this data", "explain results", "what insights")
+- **enhance_previous**: Modifications to existing query ("add filter", "show more details", "group by something else", "different time range")
+- **new_planning**: ALWAYS use for:
+  * Completely new business questions
+  * Identical queries to previous ones (user wants to re-run)
+  * Different data analysis requests
+  * Any query requiring fresh database execution
+
+IMPORTANT: If the current query is IDENTICAL or very similar to the previous query, choose **new_planning** because the user wants to re-run the analysis, not modify it.
 
 RESPOND with ONLY this JSON format:
 {{
@@ -4325,36 +4508,137 @@ Just ask me something like "Show me top NBA scorers" or "Create a chart of team 
         if not previous_data:
             return {"error": "Previous query has no data results", "status": "failed"}
         
-        # Use python generation with previous data
-        print(f"📊 Generating analysis/visualization with {len(previous_data)} rows of previous data")
+        print(f"📊 Analyzing query type for: '{query}'")
+        
+        # Use LLM to intelligently classify the query type based on context and intent
+        try:
+            import openai
+            import os
+            from openai import AsyncOpenAI
+            
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                print("⚠️ OpenAI API key not found, falling back to default insights")
+                is_insights_request = True
+                is_visualization_request = False
+            else:
+                client = AsyncOpenAI(api_key=api_key)
+                
+                # Prepare context about the data
+                data_context = f"""
+Previous Query: {last_query.get('nl', 'Unknown')}
+Available Data: {len(previous_data)} rows
+Sample Data: {previous_data[:2] if len(previous_data) >= 2 else previous_data}
+Data Columns: {list(previous_data[0].keys()) if previous_data else []}
+"""
+                
+                classification_prompt = f"""You are analyzing a follow-up query to determine the user's intent. Based on the context and user request, classify this as exactly one word.
+
+CONTEXT:
+{data_context}
+
+USER REQUEST: "{query}"
+
+CLASSIFICATION OPTIONS:
+- "insights" = User wants textual analysis, explanation, interpretation, thoughts, opinions, or understanding of the data
+- "visualization" = User wants charts, graphs, plots, or visual representations created
+
+Consider:
+- Does the user want to understand/analyze the data? → insights
+- Does the user want visual charts/graphs created? → visualization
+- Phrases like "what you think", "analysis", "explain", "interpret" → insights
+- Phrases like "create chart", "show graph", "plot" → visualization
+
+Respond with exactly one word: insights or visualization"""
+
+                response = await client.chat.completions.create(
+                    model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+                    messages=[
+                        {"role": "system", "content": "You are a precise query classifier. Respond with exactly one word."},
+                        {"role": "user", "content": classification_prompt}
+                    ],
+                    temperature=0,
+                    max_completion_tokens=5
+                )
+                
+                classification = response.choices[0].message.content.strip().lower()
+                print(f"🎯 LLM Query Classification: '{classification}'")
+                
+                is_insights_request = (classification == "insights")
+                is_visualization_request = (classification == "visualization")
+                
+        except Exception as e:
+            print(f"⚠️ LLM classification failed: {e}, defaulting to insights")
+            is_insights_request = True
+            is_visualization_request = False
+        
+        print(f"🎯 Final classification: visualization={is_visualization_request}, insights={is_insights_request}")
         
         try:
-            # Create task-like structure for python generation
-            python_result = await self._generate_python_visualization_code(
-                query=query,
-                data=previous_data,
-                attempt=1,
-                previous_error=None
-            )
-            
-            if python_result.get('status') == 'success':
-                # Execute the visualization
-                python_code = python_result.get('python_code', '')
-                execution_result = await self._execute_python_code_safely(python_code, previous_data)
+            if is_insights_request and not is_visualization_request:
+                # Generate textual insights using LLM
+                print(f"💬 Generating LLM-based insights for {len(previous_data)} rows of data")
+                print(f"🔍 DEBUG - Data being passed to insights generation:")
+                print(f"  Data type: {type(previous_data)}")
+                print(f"  Data length: {len(previous_data) if isinstance(previous_data, list) else 'Not a list'}")
+                if isinstance(previous_data, list) and len(previous_data) > 0:
+                    print(f"  Sample data (first 2 rows): {previous_data[:2]}")
+                    print(f"  Data keys: {list(previous_data[0].keys()) if isinstance(previous_data[0], dict) else 'Not dict'}")
+                else:
+                    print(f"  Raw data: {previous_data}")
+                print(f"🔍 DEBUG - Last query context:")
+                print(f"  Query NL: {last_query.get('nl', 'N/A')}")
+                print(f"  Available keys in last_query: {list(last_query.keys())}")
                 
+                insights_result = await self._generate_data_insights(query, previous_data, last_query)
+                
+                # Structure response to match frontend expectations
                 return {
-                    "python_code": python_code,
-                    "data": previous_data,
-                    "execution_result": execution_result,
-                    "summary": f"Reused previous data ({len(previous_data)} rows) for new analysis",
-                    "workflow_type": "data_reuse",
+                    "1_insights": {
+                        "insights": insights_result.get('insights', ''),
+                        "data": previous_data,
+                        "row_count": len(previous_data),
+                        "status": "success",
+                        "content_type": "text_insights"
+                    },
+                    "workflow_type": "data_reuse_insights",
+                    "summary": f"Generated insights from previous data ({len(previous_data)} rows)",
                     "status": "success"
                 }
             else:
-                return {
-                    "error": f"Failed to generate analysis code: {python_result.get('error')}",
-                    "status": "failed"
-                }
+                # Generate Python visualization code
+                print(f"🐍 Generating Python visualization for {len(previous_data)} rows of data")
+                python_result = await self._generate_python_visualization_code(
+                    query=query,
+                    data=previous_data,
+                    attempt=1,
+                    previous_error=None
+                )
+                
+                if python_result.get('status') == 'success':
+                    # Execute the visualization using the comprehensive method
+                    python_code = python_result.get('python_code', '')
+                    execution_result = await self._execute_python_visualization(python_code, previous_data)
+                    
+                    print(f"🎯 Python execution result status: {execution_result.get('status')}")
+                    print(f"🎯 Charts generated: {len(execution_result.get('charts', []))}")
+                    
+                    return {
+                        "python_code": python_code,
+                        "data": previous_data,
+                        "execution_result": execution_result,
+                        "charts": execution_result.get('charts', []),
+                        "chart_types": execution_result.get('chart_types', []),
+                        "summary": f"Reused previous data ({len(previous_data)} rows) for new visualization",
+                        "workflow_type": "data_reuse_visualization",
+                        "content_type": "visualization",
+                        "status": "success"
+                    }
+                else:
+                    return {
+                        "error": f"Failed to generate visualization code: {python_result.get('error')}",
+                        "status": "failed"
+                    }
                 
         except Exception as e:
             return {
@@ -4420,6 +4704,79 @@ Generate an enhanced SQL query based on the user's request."""
         except Exception as e:
             return {
                 "error": f"Data enhancement workflow failed: {e}",
+                "status": "failed"
+            }
+
+    async def _generate_data_insights(self, query: str, data: List[Dict], original_query_context: Dict) -> Dict[str, Any]:
+        """Generate textual insights from data using LLM analysis"""
+        try:
+            import openai
+            import os
+            from openai import AsyncOpenAI
+            
+            # Initialize OpenAI client
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                return {
+                    "error": "OpenAI API key not configured",
+                    "status": "failed"
+                }
+            
+            client = AsyncOpenAI(api_key=api_key)
+            
+            # Prepare data summary for analysis
+            data_sample = data[:10] if len(data) > 10 else data
+            data_columns = list(data_sample[0].keys()) if data_sample else []
+            
+            # Get original query context
+            original_query = original_query_context.get('nl', 'Unknown query')
+            
+            # Create analysis prompt
+            system_prompt = """You are an expert data analyst. Analyze the provided data and generate meaningful, actionable insights. Focus on:
+
+1. Key patterns and trends in the data
+2. Notable observations and outliers  
+3. Business implications and recommendations
+4. Statistical summaries where relevant
+
+Provide clear, concise insights that would be valuable to business stakeholders. Use bullet points and structure your response for easy reading."""
+
+            user_prompt = f"""Analyze this data and provide insights based on the request: "{query}"
+
+Original Query Context: {original_query}
+
+Data Summary:
+- Total records: {len(data)}
+- Columns: {data_columns}
+- Sample data: {data_sample}
+
+Please provide {('2' if '2' in query else '3-5')} specific insights about this data, focusing on what the numbers tell us and what actions or decisions could be made based on these findings."""
+
+            response = await client.chat.completions.create(
+                model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.3,
+                max_completion_tokens=1000
+            )
+            
+            insights_text = response.choices[0].message.content.strip()
+            
+            print(f"✅ Generated {len(insights_text)} characters of insights")
+            
+            return {
+                "insights": insights_text,
+                "data_analyzed": len(data),
+                "status": "success"
+            }
+            
+        except Exception as e:
+            error_msg = f"Insights generation failed: {e}"
+            print(f"❌ {error_msg}")
+            return {
+                "error": error_msg,
                 "status": "failed"
             }
 
@@ -4510,11 +4867,22 @@ Generate an enhanced SQL query based on the user's request."""
 {recent_context}
 Current Query: {current_query}
 
-Is the current query a follow-up to the previous queries? Respond with only ONE WORD:
-- "yes" if it refers to previous data/results (words like "above", "this", "that", "previous", "from the")
-- "no" if it's a new independent query
+ANALYSIS: Is the current query a follow-up that refers to previous results, or is it a NEW independent question that requires fresh data analysis?
 
-Response:"""
+FOLLOW-UP indicators:
+- References previous results: "above", "this chart", "that data", "previous analysis", "from the chart"
+- Asks for interpretation of existing data: "what you think", "insights from", "explain this"
+- Builds on previous context without needing new data
+
+NEW QUERY indicators:
+- Asks a completely different question about data
+- Requests new analysis or different metrics
+- Would require running a new database query
+- Independent business question not related to previous results
+
+Current query analysis: Does this query need NEW data from the database or can it work with previous results?
+
+Response with ONE WORD: "yes" (if follow-up) or "no" (if new independent query)"""
 
         try:
             from openai import OpenAI
@@ -4537,12 +4905,6 @@ Response:"""
             print(f"⚠️ LLM classification failed: {e}")
             # Fallback to False if LLM fails
             return False
-        
-        # Check for pronoun references that might indicate follow-up
-        pronoun_patterns = ['this', 'that', 'these', 'those', 'it', 'them']
-        has_pronouns = any(f' {pronoun} ' in f' {current_lower} ' for pronoun in pronoun_patterns)
-        
-        return has_follow_up_pattern or (has_pronouns and len(recent_queries) > 0)
     
     def _extract_schema_from_pinecone_matches(self, pinecone_matches: List[Dict[str, Any]]) -> str:
         """
@@ -4772,26 +5134,58 @@ Response:"""
                                           for word in ['chart', 'graph', 'visualize', 'plot', 'above', 'previous', 'insight', 'analysis'])
         }
         
-        # CRITICAL: Include actual data for insight generation
+        # ENHANCED: Look for actual data in ANY of the recent queries, not just the last one
+        found_data = False
+        
+        # First, try to find data in the most recent query
         if last_query:
+            print(f"🔍 DEBUG - Checking last query for data: {list(last_query.keys())}")
+            
             # Check for data under multiple possible keys with better priority
             last_data = (last_query.get('results') or 
                         last_query.get('data') or 
                         last_query.get('rows') or 
                         last_query.get('sample_data', []))
-            if last_data:
+                        
+            if last_data and isinstance(last_data, list) and len(last_data) > 0:
                 # Include first few rows for context (limit to prevent overwhelming LLM)
                 context['last_query_data'] = last_data[:10]  # First 10 rows
-                context['data_row_count'] = len(last_data)
+                context['data_row_count'] = last_query.get('row_count', len(last_data))
                 context['has_actual_data'] = True
+                found_data = True
                 
                 # Extract column names for better context
                 if isinstance(last_data[0], dict):
                     context['data_columns'] = list(last_data[0].keys())
                     
-                print(f"✅ Found actual data for follow-up: {len(last_data)} rows with columns {context.get('data_columns', [])}")
+                print(f"✅ Found actual data in last query: {len(last_data)} rows with columns {context.get('data_columns', [])}")
             else:
                 print(f"⚠️ No data found in last query: keys = {list(last_query.keys())}")
-                context['has_actual_data'] = False
+        
+        # If no data found in last query, check previous queries for successful results
+        if not found_data:
+            print("🔍 DEBUG - Checking previous queries for data...")
+            for i, query in enumerate(reversed(recent_queries)):
+                query_data = (query.get('results') or 
+                             query.get('data') or 
+                             query.get('rows') or 
+                             query.get('sample_data', []))
+                
+                if query_data and isinstance(query_data, list) and len(query_data) > 0:
+                    context['last_query_data'] = query_data[:10]
+                    context['data_row_count'] = query.get('row_count', len(query_data))
+                    context['has_actual_data'] = True
+                    context['data_source_query'] = query.get('nl', 'Unknown query')
+                    found_data = True
+                    
+                    if isinstance(query_data[0], dict):
+                        context['data_columns'] = list(query_data[0].keys())
+                    
+                    print(f"✅ Found data in previous query {i+1}: {len(query_data)} rows")
+                    break
+        
+        if not found_data:
+            context['has_actual_data'] = False
+            print("❌ No actual data found in any recent queries")
                     
         return context

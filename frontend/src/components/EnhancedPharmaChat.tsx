@@ -193,7 +193,8 @@ const api = {
       body: JSON.stringify({ 
         query, 
         user_id: userId, 
-        session_id: conversationId 
+        session_id: conversationId,
+        use_deterministic: true  // Enable deterministic mode by default for testing
       })
       // Explicitly no timeout specified - browser default is usually 5+ minutes
     });
@@ -2044,6 +2045,10 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                   key.includes('visualization') && result?.charts !== undefined
                 );
 
+                const insightsStep = Object.entries(resultsData || {}).find(([key, result]: [string, any]) => 
+                  key.includes('insights') && result?.insights !== undefined
+                );
+
                 // Debug visualization data
                 console.log('🎨 Visualization debug:', {
                   visualizationStepFound: !!visualizationStep,
@@ -2056,6 +2061,7 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
 
                 const executionResult = executionStep ? executionStep[1] as any : null;
                 const visualizationResult = visualizationStep ? visualizationStep[1] as any : null;
+                const insightsResult = insightsStep ? insightsStep[1] as any : null;
 
                 // Also check if any step has results, not just execution
                 let allResults: any[] = [];
@@ -2192,6 +2198,59 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                         FORCE DEBUG: allCharts length: {allCharts.length}
                         <br/>
                         FORCE DEBUG: stepResult.charts length: {stepResult.charts?.length || 0}
+                      </div>
+                    )}
+                    
+                    {/* Insights Display - Show textual insights when available */}
+                    {insightsResult && insightsResult.insights && (
+                      <div style={{
+                        background: 'rgba(139, 69, 19, 0.05)',
+                        border: '1px solid rgba(139, 69, 19, 0.2)',
+                        borderRadius: '8px',
+                        padding: '20px',
+                        marginBottom: '16px'
+                      }}>
+                        <h5 style={{
+                          margin: '0 0 16px 0',
+                          fontSize: '16px',
+                          fontWeight: '600',
+                          color: '#8B4513',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px'
+                        }}>
+                          🧠 Generated Insights
+                        </h5>
+                        <div style={{
+                          lineHeight: '1.6',
+                          color: '#374151'
+                        }}>
+                          <ReactMarkdown
+                            components={{
+                              p: ({children}) => <p style={{margin: '0 0 12px 0'}}>{children}</p>,
+                              ul: ({children}) => <ul style={{margin: '12px 0', paddingLeft: '20px'}}>{children}</ul>,
+                              li: ({children}) => <li style={{margin: '6px 0'}}>{children}</li>,
+                              strong: ({children}) => <strong style={{color: '#8B4513', fontWeight: '600'}}>{children}</strong>,
+                              h1: ({children}) => <h1 style={{fontSize: '1.2rem', fontWeight: '600', margin: '16px 0 8px 0', color: '#8B4513'}}>{children}</h1>,
+                              h2: ({children}) => <h2 style={{fontSize: '1.1rem', fontWeight: '600', margin: '14px 0 6px 0', color: '#A0522D'}}>{children}</h2>,
+                              h3: ({children}) => <h3 style={{fontSize: '1rem', fontWeight: '600', margin: '12px 0 4px 0', color: '#CD853F'}}>{children}</h3>
+                            }}
+                          >
+                            {insightsResult.insights}
+                          </ReactMarkdown>
+                        </div>
+                        {insightsResult.row_count && (
+                          <div style={{
+                            marginTop: '12px',
+                            padding: '8px 12px',
+                            background: 'rgba(139, 69, 19, 0.1)',
+                            borderRadius: '4px',
+                            fontSize: '12px',
+                            color: '#8B4513'
+                          }}>
+                            📊 Analysis based on {insightsResult.row_count} data rows
+                          </div>
+                        )}
                       </div>
                     )}
                     

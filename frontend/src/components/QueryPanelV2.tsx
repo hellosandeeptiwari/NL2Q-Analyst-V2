@@ -26,6 +26,7 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
   const [nl, setNl] = useState('');
   const [jobId, setJobId] = useState('');
   const [dbType, setDbType] = useState('snowflake');
+  const [useDeterministic, setUseDeterministic] = useState(false);
   const [response, setResponse] = useState<any>(null);
   const [error, setError] = useState('');
   const [errorDetails, setErrorDetails] = useState<ErrorResponse | null>(null);
@@ -84,7 +85,8 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
         natural_language: nl,
         job_id: jobId || `job_${Date.now()}`,
         db_type: dbType,
-        selected_tables: selectedTables
+        selected_tables: selectedTables,
+        use_deterministic: useDeterministic
       });
       
       setResponse(res.data);
@@ -128,7 +130,8 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
       const res = await axios.post('http://localhost:8000/query-with-table', {
         natural_language: tableSuggestions?.query || nl,
         job_id: jobId || `job_${Date.now()}`,
-        selected_tables: selectedTables
+        selected_tables: selectedTables,
+        use_deterministic: useDeterministic
       });
       setResponse(res.data);
       setTableSuggestions(null);
@@ -227,7 +230,7 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
         </div>
         
         <form onSubmit={handleSubmit}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px 150px', gap: '1rem', alignItems: 'end', marginBottom: '1.5rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px 150px 120px', gap: '1rem', alignItems: 'end', marginBottom: '1.5rem' }}>
             <div>
               <label style={{ 
                 display: 'block', 
@@ -295,6 +298,48 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
               <option value="postgres">🐘 PostgreSQL</option>
               <option value="azure_sql">☁️ Azure SQL</option>
             </select>
+          </div>
+          
+          <div>
+            <label style={{ 
+              display: 'block', 
+              marginBottom: '0.75rem', 
+              fontWeight: '600', 
+              color: 'white',
+              fontSize: '0.9rem',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em'
+            }}>
+              🎯 Mode
+            </label>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              background: 'white',
+              borderRadius: '12px',
+              padding: '8px 12px',
+              boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+              height: '52px'
+            }}>
+              <input
+                type="checkbox"
+                id="deterministic-toggle"
+                checked={useDeterministic}
+                onChange={(e) => setUseDeterministic(e.target.checked)}
+                style={{ marginRight: '8px' }}
+              />
+              <label 
+                htmlFor="deterministic-toggle"
+                style={{ 
+                  fontSize: '12px', 
+                  color: '#333',
+                  cursor: 'pointer',
+                  fontWeight: '500'
+                }}
+              >
+                Enhanced
+              </label>
+            </div>
           </div>
           
           <div>

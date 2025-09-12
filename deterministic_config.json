@@ -1,0 +1,67 @@
+{
+  "_description": "Configuration for Deterministic NL2SQL Generator - No Hardcoded Values",
+  "_version": "1.0.0",
+  
+  "scoring": {
+    "_comment": "Weights for column scoring algorithm - must sum to ~1.0",
+    "name_weight": 0.65,
+    "type_weight": 0.30,
+    "boost_weight": 0.05,
+    
+    "_comment_compatibility": "Compatibility scores for different pattern matches",
+    "high_compatibility": 0.9,
+    "medium_compatibility": 0.7,
+    "low_compatibility": 0.5,
+    "default_compatibility": 0.3,
+    
+    "_comment_thresholds": "Selection thresholds and limits",
+    "primary_threshold": 0.52,
+    "fallback_threshold": 0.48,
+    "min_columns_for_fallback": 3,
+    "max_columns_selected": 12
+  },
+  
+  "patterns": {
+    "_comment": "Data type and column name patterns - fully customizable per domain",
+    
+    "identifier_patterns": ["_id", "id", "code", "key", "identifier", "ref", "foreign_key"],
+    "date_patterns": ["date", "timestamp", "time", "datetime", "created_at", "updated_at"],
+    "numeric_patterns": ["int", "integer", "float", "decimal", "number", "numeric", "bigint", "money"],
+    "text_patterns": ["varchar", "text", "string", "char", "nvarchar", "clob"],
+    
+    "_comment_keywords": "Keywords in natural language queries that suggest data types",
+    
+    "identifier_keywords": ["id", "identifier", "code", "key", "reference", "lookup", "foreign"],
+    "date_keywords": ["date", "time", "when", "period", "year", "month", "day", "week", "created", "updated", "timestamp"],
+    "numeric_keywords": ["count", "sum", "average", "total", "amount", "value", "price", "cost", "number", "quantity", "rate", "score"],
+    "text_keywords": ["name", "description", "title", "label", "text", "comment", "note", "address", "email"]
+  },
+  
+  "joins": {
+    "_comment": "Join behavior configuration",
+    
+    "default_join_type": "LEFT",
+    "require_exact_key_match": true,
+    "allow_fuzzy_key_matching": false,
+    "fuzzy_key_threshold": 0.85,
+    
+    "_comment_alignment": "Keywords that indicate row-level alignment is needed across tables",
+    "alignment_keywords": [
+      "for each", "per", "by", "breakdown", "along with", "together", 
+      "combined", "correlated", "matching", "paired", "associated",
+      "corresponding", "related", "joined", "linked"
+    ]
+  },
+  
+  "_domain_specific": {
+    "_comment": "Domain-specific configurations can be added here",
+    "_healthcare_example": {
+      "additional_identifier_patterns": ["patient_id", "provider_id", "claim_id"],
+      "healthcare_keywords": ["patient", "provider", "diagnosis", "treatment", "medication"]
+    },
+    "_finance_example": {
+      "additional_identifier_patterns": ["account_id", "transaction_id", "customer_id"],
+      "finance_keywords": ["account", "transaction", "balance", "payment", "credit"]
+    }
+  }
+}
