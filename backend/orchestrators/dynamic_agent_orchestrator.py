@@ -99,6 +99,7 @@ class TaskType(Enum):
     USER_INTERACTION = "user_interaction"
 
 @dataclass
+@dataclass
 class AgentTask:
     """A specific task for an agent"""
     task_id: str
@@ -414,13 +415,20 @@ class DynamicAgentOrchestrator:
         
         print(f"🧠 Letting o3-mini analyze and plan dynamically for query: '{user_query}'")
         
-        # Try to get basic schema context if available (but don't fail if not)
+        # ENHANCED: Get intelligent planning context from Pinecone schema intelligence
         schema_context = ""
         follow_up_context = ""
         
-        if context and 'available_tables' in context:
+        # Get intelligent schema context for better planning decisions
+        intelligent_context = await self._get_intelligent_planning_context(user_query)
+        if intelligent_context:
+            schema_context = intelligent_context
+            print(f"🧠 Enhanced planning with intelligent schema context ({len(intelligent_context)} chars)")
+        elif context and 'available_tables' in context:
+            # Fallback to basic context if intelligent context not available
             tables = context['available_tables'][:5]  # Limit to first 5 tables
             schema_context = f"\n\nAVAILABLE DATABASE CONTEXT:\nKnown tables: {', '.join(tables)}\n(Note: Full schema discovery will provide complete column details)\n"
+            print(f"🔍 Using basic schema context as fallback")
         
         # Add conversation context for follow-up detection
         print(f"🔍 DEBUG - plan_execution called with context: {context is not None}")
@@ -529,7 +537,9 @@ Available capabilities:
 **WORKFLOW PATTERNS:**
 8. Simple data retrieval → schema_discovery → query_generation → execution
 9. EXPLICIT visualization → schema_discovery → query_generation → execution → python_generation → visualization_builder
-10. Ambiguous query → schema_discovery → user_interaction → query_generation → execution
+10. **CRITICAL: When schema intelligence is available (INTELLIGENT SCHEMA CONTEXT provided), NEVER use user_interaction**
+11. Queries with schema intelligence → schema_discovery → query_generation → execution (skip user_interaction)
+12. Only use user_interaction if NO schema intelligence and query is completely unclear
 11. **FOLLOW-UP insight generation** → python_generation ONLY (NO schema_discovery)
 12. **FOLLOW-UP visualization WITH data** → python_generation → visualization_builder ONLY (reuse context)
 13. **FOLLOW-UP visualization WITHOUT data** → schema_discovery → query_generation → execution → python_generation → visualization_builder (complete workflow)
@@ -886,6 +896,152 @@ No explanations or extra text."""
         print(f"✅ Successfully converted {len(tasks)} out of {len(tasks_data)} tasks")
         return tasks
     
+    async def _get_intelligent_planning_context(self, user_query: str) -> str:
+        """
+        Get intelligent schema context from Pinecone for better LLM planning decisions
+        This prevents simple queries from being misclassified as 'ambiguous'
+        """
+        try:
+            await self._ensure_initialized()
+            
+            if not self.pinecone_store:
+                print("⚠️ Pinecone not available for intelligent planning context")
+                return ""
+            
+            print(f"🧠 Getting intelligent planning context for: '{user_query}'")
+            
+            # Search for relevant tables using Pinecone
+            table_matches = await self.pinecone_store.search_relevant_tables(user_query, top_k=3)
+            
+            if not table_matches:
+                print("⚠️ No table matches found for intelligent planning")
+                return ""
+            
+            # Build intelligent context with table and column details
+            context_parts = [
+                "\n\nINTELLIGENT SCHEMA CONTEXT:",
+                "The following tables and columns are relevant to your query:\n"
+            ]
+            
+            for i, match in enumerate(table_matches, 1):
+                table_name = match['table_name']
+                relevance_score = match.get('best_score', 0)
+                
+                context_parts.append(f"{i}. TABLE: {table_name} (relevance: {relevance_score:.3f})")
+                
+                # Get detailed table information
+                try:
+                    table_details = await self.pinecone_store.get_table_details(table_name)
+                    if table_details and table_details.get('columns'):
+                        columns = table_details['columns']
+                        context_parts.append(f"   Available columns: {', '.join(columns[:10])}")  # Show first 10 columns
+                        if len(columns) > 10:
+                            context_parts.append(f"   ... and {len(columns) - 10} more columns")
+                    
+                    # Add business context if available
+                    if table_details and table_details.get('description'):
+                        description = table_details['description'][:150]  # Limit description length
+                        context_parts.append(f"   Purpose: {description}...")
+                        
+                except Exception as detail_error:
+                    print(f"⚠️ Could not get details for {table_name}: {detail_error}")
+                    context_parts.append(f"   (Column details available during schema_discovery)")
+                
+                context_parts.append("")  # Empty line between tables
+            
+            # Add dynamic domain knowledge analysis using LLM
+            domain_guidance = await self._get_domain_knowledge_guidance(user_query)
+            if domain_guidance:
+                context_parts.extend([
+                    "BUSINESS DOMAIN INTELLIGENCE:",
+                    domain_guidance,
+                    ""
+                ])
+            
+            # Add planning guidance
+            context_parts.extend([
+                "INTELLIGENT PLANNING GUIDANCE:",
+                "- These tables contain relevant data for the user's query",
+                "- The query appears to be specific and actionable (not ambiguous)",
+                "- If domain terms are recognized above, this is definitely NOT ambiguous",
+                "- Recommend proceeding with: schema_discovery → query_generation → execution", 
+                "- Skip user_interaction unless truly ambiguous or missing critical information",
+                ""
+            ])
+            
+            intelligent_context = "\n".join(context_parts)
+            print(f"✅ Generated intelligent planning context: {len(intelligent_context)} characters")
+            
+            return intelligent_context
+            
+        except Exception as e:
+            print(f"⚠️ Error getting intelligent planning context: {e}")
+            return ""
+    
+    async def _get_domain_knowledge_guidance(self, user_query: str) -> str:
+        """
+        Use LLM to dynamically analyze business terms in queries and provide domain intelligence
+        No hardcoded terms - fully dynamic analysis
+        """
+        try:
+            domain_analysis_prompt = f"""You are a Business Domain Intelligence Analyzer for pharmaceutical data analytics.
+
+TASK: Analyze this user query and identify any business/domain-specific terms that might exist as data values in a database, then provide intelligent guidance.
+
+USER QUERY: "{user_query}"
+
+ANALYSIS INSTRUCTIONS:
+1. Identify terms that sound like business classifications, categories, or domain-specific language
+2. For each term, predict what type of database column might contain such values
+3. Suggest likely column name patterns and possible data values
+4. Determine if this query contains recognizable business terminology (not ambiguous)
+
+Focus on terms like:
+- Performance classifications (growers, decliners, performers, etc.)
+- Status categories (active, inactive, new, existing, etc.)  
+- Priority levels (high, low, target, priority, etc.)
+- Business metrics (volume, share, ranking, tier, etc.)
+- Types/Categories (specialty, region, segment, etc.)
+
+OUTPUT FORMAT:
+If business terms are found, respond with:
+```
+DOMAIN INTELLIGENCE DETECTED:
+• 'term1' → business meaning → likely columns: [COLUMN_PATTERNS] → expected values: [VALUES]
+• 'term2' → business meaning → likely columns: [COLUMN_PATTERNS] → expected values: [VALUES]
+
+PLANNING DECISION: This query contains recognized business terminology and is NOT ambiguous.
+Proceed with: schema_discovery → query_generation → execution
+```
+
+If no clear business terms are found, respond with: "NO_DOMAIN_TERMS_DETECTED"
+
+Be intelligent but concise. Focus on actionable database insights."""
+
+            # Use fast model for domain analysis
+            from openai import AsyncOpenAI
+            client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            
+            response = await client.chat.completions.create(
+                model=self.fast_model,
+                messages=[{"role": "user", "content": domain_analysis_prompt}],
+                max_tokens=500,
+                temperature=0.1
+            )
+            
+            domain_intelligence = response.choices[0].message.content.strip()
+            
+            if domain_intelligence and "NO_DOMAIN_TERMS_DETECTED" not in domain_intelligence:
+                print(f"🧠 Dynamic domain intelligence generated: {len(domain_intelligence)} chars")
+                return domain_intelligence
+            else:
+                print(f"🔍 No domain terms detected in query")
+                return ""
+                
+        except Exception as e:
+            print(f"⚠️ Error in domain intelligence analysis: {e}")
+            return ""
+    
     def _create_default_plan(self, user_query: str) -> List[AgentTask]:
         """Create a query-aware execution plan based on user intent"""
         print(f"🔍 Creating dynamic plan for query: '{user_query}'")
@@ -1037,6 +1193,16 @@ No explanations or extra text."""
                     completed_tasks.add(task.task_id)
                     print(f"✅ Completed {task.task_id}")
                     
+                    # Check if we need to dynamically add continuation tasks
+                    if task.task_type == TaskType.USER_INTERACTION:
+                        # After successful user interaction (table selection), 
+                        # we need to continue with query generation and execution
+                        missing_tasks = self._check_and_add_continuation_tasks(tasks, user_query)
+                        if missing_tasks:
+                            print(f"🔄 Adding {len(missing_tasks)} continuation tasks after user_interaction")
+                            tasks.extend(missing_tasks)
+                            total_tasks = len(tasks)
+                    
                     # Broadcast task completion
                     await async_broadcast_progress({
                         "stage": "task_completed",
@@ -1125,6 +1291,49 @@ No explanations or extra text."""
             TaskType.VISUALIZATION_BUILDER: "visualization_builder"
         }
         return agent_mapping.get(task_type, "schema_discoverer")
+    
+    def _check_and_add_continuation_tasks(self, existing_tasks: List[AgentTask], user_query: str) -> List[AgentTask]:
+        """Check if continuation tasks are needed after user_interaction and add them"""
+        existing_task_types = {task.task_type for task in existing_tasks}
+        missing_tasks = []
+        
+        # After user_interaction, we typically need query_generation and execution
+        if TaskType.QUERY_GENERATION not in existing_task_types:
+            query_gen_task = AgentTask(
+                task_id=f"{len(existing_tasks) + len(missing_tasks) + 1}_query_generation",
+                task_type=TaskType.QUERY_GENERATION
+            )
+            missing_tasks.append(query_gen_task)
+            print(f"📝 Adding missing query_generation task: {query_gen_task.task_id}")
+        
+        if TaskType.EXECUTION not in existing_task_types:
+            execution_task = AgentTask(
+                task_id=f"{len(existing_tasks) + len(missing_tasks) + 1}_execution",
+                task_type=TaskType.EXECUTION
+            )
+            missing_tasks.append(execution_task)
+            print(f"🚀 Adding missing execution task: {execution_task.task_id}")
+        
+        # Check if visualization is requested in the query
+        viz_keywords = ['chart', 'graph', 'plot', 'visualize', 'visualization']
+        if any(keyword in user_query.lower() for keyword in viz_keywords):
+            if TaskType.PYTHON_GENERATION not in existing_task_types:
+                python_task = AgentTask(
+                    task_id=f"{len(existing_tasks) + len(missing_tasks) + 1}_python_generation",
+                    task_type=TaskType.PYTHON_GENERATION
+                )
+                missing_tasks.append(python_task)
+                print(f"🐍 Adding python_generation task for visualization")
+            
+            if TaskType.VISUALIZATION_BUILDER not in existing_task_types:
+                viz_task = AgentTask(
+                    task_id=f"{len(existing_tasks) + len(missing_tasks) + 1}_visualization_builder",
+                    task_type=TaskType.VISUALIZATION_BUILDER
+                )
+                missing_tasks.append(viz_task)
+                print(f"📊 Adding visualization_builder task")
+        
+        return missing_tasks
     
     def _resolve_task_inputs(self, task: AgentTask, previous_results: Dict, user_query: str, user_id: str = "default", conversation_context: Dict = None) -> Dict[str, Any]:
         """Resolve task inputs from previous task results"""
@@ -1948,12 +2157,22 @@ No explanations or extra text."""
                     "status": "completed"
                 }
             else:
-                # Fallback to intelligent fallback SQL generation
-                return await self._fallback_sql_generation(tables[0], query)
+                # No fallback - let the system handle the failure properly
+                print("❌ SQL generation failed after all retries - no fallback")
+                return {
+                    "error": "SQL generation failed after all retries",
+                    "status": "failed",
+                    "tables_available": tables,
+                    "context_used": list(context.keys())
+                }
                 
         except Exception as e:
             print(f"⚠️ Database-aware generation failed: {e}")
-            return await self._fallback_sql_generation(tables[0], query)
+            return {
+                "error": f"Database-aware generation failed: {str(e)}",
+                "status": "failed",
+                "tables_available": tables
+            }
 
     async def _execute_query_execution(self, inputs: Dict) -> Dict[str, Any]:
         """Execute SQL query - works with any planning scenario"""
@@ -2289,6 +2508,11 @@ Return only the corrected SQL query."""
     async def _try_alternative_tables(self, inputs: Dict, permission_error: str) -> Dict[str, Any]:
         """Try alternative tables when permission is denied for the primary table"""
         try:
+            # Extract required variables from inputs
+            query = inputs.get("original_query", "")
+            context = self._gather_available_context(inputs)
+            use_deterministic = getattr(self, 'use_deterministic', False)
+            
             # Get the original table suggestions from schema discovery
             table_suggestions = []
             if "1_discover_schema" in inputs:
@@ -2304,12 +2528,18 @@ Return only the corrected SQL query."""
                 alt_table = suggestion['table_name']
                 print(f"🔄 Trying alternative table: {alt_table}")
                 
-                # Generate SQL for the alternative table
-                fallback_result = await self._fallback_sql_generation(alt_table)
-                if not fallback_result.get("sql_query"):
+                # Generate proper SQL for the alternative table using LLM
+                alt_result = await self._generate_sql_with_retry(
+                    query=query,
+                    available_tables=[alt_table],
+                    error_context="",
+                    pinecone_matches=context.get("pinecone_matches", []),
+                    use_deterministic=use_deterministic
+                )
+                if not alt_result.get("sql_query"):
                     continue
                 
-                alt_sql = fallback_result["sql_query"]
+                alt_sql = alt_result["sql_query"]
                 print(f"🔍 Testing alternative SQL: {alt_sql}")
                 
                 # Test execution with the alternative table
@@ -2451,8 +2681,18 @@ Return only the corrected SQL query."""
                         else:
                             # Python code generation failed, prepare for retry
                             error_msg = python_result.get("error", "Unknown generation error")
+                            validation_suggestions = python_result.get("suggested_fixes", [])
+                            
                             print(f"❌ Python code generation failed on attempt {python_attempt}: {error_msg}")
-                            self._last_python_error = error_msg
+                            if validation_suggestions:
+                                print(f"💡 LLM suggestions for next attempt: {', '.join(validation_suggestions)}")
+                            
+                            # Include validation feedback in error context for next retry
+                            enhanced_error_msg = error_msg
+                            if validation_suggestions:
+                                enhanced_error_msg += f" | Suggested fixes: {'; '.join(validation_suggestions)}"
+                            
+                            self._last_python_error = enhanced_error_msg
                             
                             if python_attempt < max_python_attempts:
                                 python_attempt += 1
@@ -2590,11 +2830,21 @@ Important:
             if previous_error and attempt > 1:
                 error_context = f"""
 PREVIOUS ATTEMPT FAILED with error: {previous_error}
-Please fix the error and generate corrected code. Focus on:
-- Syntax corrections
-- Data type handling  
-- Library compatibility
-- Safe execution practices"""
+
+COMMON ISSUES TO AVOID:
+- Using column names that don't exist in the data
+- Incorrect data type assumptions
+- Missing variable definitions
+- Unsafe parsing (avoid eval(), use json.loads())
+- Missing required imports
+- Not assigning main chart to `fig` variable
+
+Please fix these issues and generate corrected code. Focus on:
+- Verify all column names match available data columns exactly
+- Handle data types appropriately based on actual data structure
+- Include proper error handling for data operations
+- Use safe parsing methods only
+- Ensure all variables are defined before use"""
 
             user_prompt = f"""Generate Python visualization code for this request:
 Query: {query}
@@ -2635,17 +2885,33 @@ Generate Python code that:
                 python_code = python_code[:-3]
             python_code = python_code.strip()
             
-            # Basic syntax validation
+            # Enhanced validation: Both syntax and semantic validation
             try:
+                # Step 1: Basic syntax validation
                 compile(python_code, '<string>', 'exec')
-                print(f"✅ Python code syntax validation passed on attempt {attempt}")
+                print(f"✅ Python syntax validation passed on attempt {attempt}")
                 
-                return {
-                    "python_code": python_code,
-                    "generation_method": "llm_agentic",
-                    "attempt": attempt,
-                    "status": "success"
-                }
+                # Step 2: LLM-based semantic validation
+                validation_result = await self._validate_python_with_llm(python_code, data, query)
+                
+                if validation_result.get("is_valid", False):
+                    print(f"✅ LLM semantic validation passed on attempt {attempt}")
+                    return {
+                        "python_code": python_code,
+                        "generation_method": "llm_agentic",
+                        "attempt": attempt,
+                        "status": "success",
+                        "validation_notes": validation_result.get("notes", "")
+                    }
+                else:
+                    error_msg = f"LLM validation failed: {validation_result.get('error', 'Semantic issues detected')}"
+                    print(f"❌ LLM validation failed on attempt {attempt}: {error_msg}")
+                    return {
+                        "error": error_msg,
+                        "attempt": attempt,
+                        "status": "failed",
+                        "suggested_fixes": validation_result.get("suggestions", [])
+                    }
                 
             except SyntaxError as e:
                 error_msg = f"Syntax error in generated Python code: {e}"
@@ -2663,6 +2929,90 @@ Generate Python code that:
                 "error": error_msg,
                 "attempt": attempt,
                 "status": "failed"
+            }
+
+    async def _validate_python_with_llm(self, python_code: str, data: List[Dict], query: str) -> Dict[str, Any]:
+        """Validate Python code using LLM for semantic correctness"""
+        try:
+            import openai
+            import os
+            from openai import AsyncOpenAI
+            
+            client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            
+            # Prepare data structure analysis
+            data_sample = data[:3] if len(data) > 3 else data
+            available_columns = list(data_sample[0].keys()) if data_sample else []
+            data_types = {}
+            if data_sample:
+                for col in available_columns:
+                    sample_val = data_sample[0].get(col)
+                    data_types[col] = type(sample_val).__name__ if sample_val is not None else "unknown"
+            
+            validation_prompt = f"""You are a Python code validator specializing in data visualization. Analyze the following Python code for potential issues.
+
+AVAILABLE DATA STRUCTURE:
+- Available columns: {available_columns}
+- Data types: {data_types}
+- Sample data: {data_sample}
+- User query context: "{query}"
+
+PYTHON CODE TO VALIDATE:
+```python
+{python_code}
+```
+
+VALIDATION CHECKLIST:
+1. **Column References**: Does the code reference columns that actually exist in the data?
+2. **Data Types**: Are data type operations compatible with actual column types?
+3. **Import Statements**: Are all imported libraries actually used and available?
+4. **Variable Usage**: Are all variables defined before use?
+5. **Pandas Operations**: Are DataFrame operations syntactically correct?
+6. **Chart Requirements**: Does code assign main chart to variable `fig` as required?
+7. **Logic Flow**: Does the code logic make sense for the given query?
+8. **Error Handling**: Are there potential runtime errors not handled?
+
+RESPOND WITH JSON:
+{{
+    "is_valid": true/false,
+    "error": "Brief description if invalid",
+    "issues": ["list of specific issues found"],
+    "suggestions": ["list of specific fixes to apply"],
+    "notes": "Additional validation notes",
+    "confidence": 0.0-1.0
+}}
+
+Focus on catching issues that would cause runtime errors or produce incorrect visualizations."""
+
+            response = await client.chat.completions.create(
+                model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+                messages=[{"role": "user", "content": validation_prompt}],
+                temperature=0.1,
+                max_completion_tokens=1000
+            )
+            
+            validation_text = response.choices[0].message.content.strip()
+            
+            # Parse JSON response
+            import json
+            try:
+                validation_result = json.loads(validation_text)
+                return validation_result
+            except json.JSONDecodeError:
+                # Fallback if LLM doesn't return proper JSON
+                return {
+                    "is_valid": False,
+                    "error": "LLM validation response was not parseable JSON",
+                    "raw_response": validation_text
+                }
+                
+        except Exception as e:
+            print(f"⚠️ LLM validation failed with exception: {e}")
+            # If LLM validation fails, don't block the process
+            return {
+                "is_valid": True,  # Allow to proceed if validation system fails
+                "error": f"Validation system error: {e}",
+                "fallback": True
             }
 
     async def _execute_python_visualization(self, python_code: str, data: List[Dict]) -> Dict[str, Any]:
@@ -3471,9 +3821,25 @@ else:
             
             client = AsyncOpenAI(api_key=api_key)
             
-            # Get database info
-            db_name = os.getenv("SNOWFLAKE_DATABASE", "HEALTHCARE_PRICING_ANALYTICS_SAMPLE")
-            schema_name = os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES")
+            # Detect database type dynamically 
+            db_type = os.getenv("DB_ENGINE", "snowflake").lower()
+            if "snowflake" in db_type:
+                db_engine = "snowflake"
+                db_name = os.getenv("SNOWFLAKE_DATABASE", "HEALTHCARE_PRICING_ANALYTICS_SAMPLE")
+                schema_name = os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES")
+            elif "postgres" in db_type:
+                db_engine = "postgres"
+                schema_name = os.getenv("POSTGRES_SCHEMA", "public")
+                db_name = os.getenv("POSTGRES_DATABASE", "analytics")
+            elif "azure" in db_type or "sql" in db_type:
+                db_engine = "azure-sql"
+                schema_name = os.getenv("AZURE_SCHEMA", "dbo") 
+                db_name = os.getenv("AZURE_DATABASE", "analytics")
+            else:
+                # Default to snowflake
+                db_engine = "snowflake"
+                db_name = os.getenv("SNOWFLAKE_DATABASE", "HEALTHCARE_PRICING_ANALYTICS_SAMPLE")
+                schema_name = os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES")
             
             # Enhanced schema context with Pinecone vector discovery
             schema_context = f"Available tables: {', '.join(available_tables)}"
@@ -3491,9 +3857,20 @@ else:
             intelligent_context = await self._get_llm_intelligence_context(available_tables)
             print(f"🧠 Local intelligence context: {intelligent_context}")
             
-            # Always try to extract from Pinecone matches to get enhanced schema intelligence
-            if pinecone_matches:
-                print("🔗 Extracting intelligence from Pinecone matches")
+            # ENHANCED: Get complete table details from Pinecone for all available tables
+            if available_tables:
+                print("🔗 Getting complete table details from Pinecone for all available tables")
+                complete_pinecone_intelligence = await self._get_complete_table_details_from_pinecone(available_tables)
+                print(f"🔍 Complete Pinecone intelligence tables: {list(complete_pinecone_intelligence.get('table_insights', {}).keys())}")
+                
+                # Use complete intelligence as primary source
+                if complete_pinecone_intelligence.get("table_insights"):
+                    intelligent_context = complete_pinecone_intelligence
+                    print("✅ Using complete Pinecone table intelligence")
+                
+            # Fallback: Also try to extract from search matches if complete details failed
+            if not intelligent_context and pinecone_matches:
+                print("🔗 Fallback: Extracting intelligence from Pinecone search matches")
                 print(f"🔍 Available tables: {available_tables}")
                 print(f"🔍 Pinecone matches count: {len(pinecone_matches)}")
                 pinecone_intelligence = self._extract_intelligence_from_pinecone(pinecone_matches, available_tables)
@@ -3514,7 +3891,7 @@ else:
                 # Enhanced system prompt with LLM intelligence
                 system_prompt = self._create_intelligent_sql_system_prompt(
                     db_name, schema_name, schema_context, available_tables, 
-                    intelligent_context, len(available_tables), query, use_deterministic
+                    intelligent_context, len(available_tables), query, use_deterministic, db_engine
                 )
                 
                 print("🧠 Using LLM intelligence for enhanced SQL generation")
@@ -3525,16 +3902,6 @@ else:
                     column_names = [col['column_name'] for col in insights.get('column_insights', [])]
                     print(f"  - {table_name}: {column_count} columns")
                     print(f"    Columns: {column_names}")
-                    
-                    # Check specifically for OVERALL_PCT_OF_AVG
-                    if 'OVERALL_PCT_OF_AVG' in column_names:
-                        print(f"    ✅ OVERALL_PCT_OF_AVG found in {table_name}!")
-                    else:
-                        print(f"    ❌ OVERALL_PCT_OF_AVG missing from {table_name}")
-                        avg_cols = [col for col in column_names if 'AVG' in col or 'PCT' in col]
-                        if avg_cols:
-                            print(f"    🔍 Similar columns found: {avg_cols}")
-                            
                 print(f"🔍 DEBUG: Available tables for SQL generation: {available_tables}")
                 print(f"🔍 DEBUG: Schema context keys: {list(schema_context.keys()) if isinstance(schema_context, dict) else 'Not a dict'}")
             else:
@@ -3649,11 +4016,221 @@ Return only the SQL query, properly formatted for Snowflake."""
             print(f"⚠️ Failed to get LLM intelligence: {e}")
             return {}
     
+    def _get_table_format(self, db_engine: str, db_name: str, schema_name: str) -> str:
+        """Get the correct table qualification format for the database engine"""
+        if db_engine == "azure-sql":
+            return f"[{schema_name}].[table_name]"
+        elif db_engine == "postgres":
+            return f'"{schema_name}"."table_name"'
+        else:  # snowflake
+            return f'"{db_name}"."{schema_name}"."table_name"'
+
+    def _get_database_syntax_rules(self, db_engine: str, db_name: str, schema_name: str) -> str:
+        """Generate comprehensive database-specific syntax rules for the LLM"""
+        
+        if db_engine == "azure-sql":
+            return f"""
+🔹 AZURE SQL SERVER SYNTAX RULES:
+- Table References: Use [{schema_name}].[TableName] format ONLY
+- Row Limiting: Use 'SELECT TOP n ...' NOT 'SELECT ... LIMIT n'
+- Column Names: Use [ColumnName] if names contain spaces or special characters
+- String Literals: Use single quotes 'text' NOT double quotes
+- Date Functions: Use GETDATE(), DATEADD(), DATEDIFF()
+- Aggregation: GROUP BY required for all non-aggregate columns in SELECT
+- NEVER use database prefixes: database.schema.table is NOT supported
+- Example: SELECT TOP 100 [Column1], COUNT(*) FROM [{schema_name}].[TableName] GROUP BY [Column1]
+
+CORRECT Azure SQL Examples:
+✅ SELECT COUNT(*) FROM [{schema_name}].[Reporting_BI_PrescriberProfile]
+✅ SELECT TOP 10 [PrescriberName] FROM [{schema_name}].[Reporting_BI_PrescriberProfile]
+✅ SELECT [Region], COUNT(*) FROM [{schema_name}].[Table] GROUP BY [Region]
+
+WRONG Examples (DO NOT USE):
+❌ SELECT * FROM {db_name}.{schema_name}.Table LIMIT 10
+❌ SELECT * FROM Table LIMIT 10
+❌ SELECT COUNT(*) FROM "schema"."table"
+"""
+
+        elif db_engine == "postgres":
+            return f"""
+🔹 POSTGRESQL SYNTAX RULES:
+- Table References: Use "{schema_name}"."table_name" format
+- Row Limiting: Use 'SELECT ... LIMIT n' (standard SQL)
+- Column Names: Use "column_name" for case-sensitive names
+- String Literals: Use single quotes 'text'
+- Date Functions: Use NOW(), CURRENT_DATE, INTERVAL
+- Aggregation: GROUP BY required for all non-aggregate columns in SELECT
+- Schema qualification recommended for clarity
+
+CORRECT PostgreSQL Examples:
+✅ SELECT COUNT(*) FROM "{schema_name}"."reporting_bi_prescriberprofile"
+✅ SELECT "prescriber_name" FROM "{schema_name}"."table" LIMIT 10
+✅ SELECT "region", COUNT(*) FROM "{schema_name}"."table" GROUP BY "region"
+
+WRONG Examples (DO NOT USE):
+❌ SELECT TOP 10 * FROM table
+❌ SELECT * FROM [schema].[table]
+❌ SELECT COUNT(*) FROM database.schema.table
+"""
+
+    def _get_row_limit_syntax(self, db_engine: str) -> str:
+        """Get the correct row limiting syntax for the database engine"""
+        if db_engine == "azure-sql":
+            return "Use 'SELECT TOP n' at the beginning, NEVER 'LIMIT n' at the end"
+        elif db_engine == "postgres":
+            return "Use 'SELECT ... LIMIT n' at the end of query"
+        else:  # snowflake
+            return "Use 'SELECT ... LIMIT n' at the end of query"
+
+    def _get_wrong_syntax_examples(self, db_engine: str) -> str:
+        """Get examples of syntax that should NOT be used for this database"""
+        if db_engine == "azure-sql":
+            return "LIMIT clauses, database.schema.table references, double-quoted identifiers"
+        elif db_engine == "postgres":
+            return "TOP clauses, [bracketed] identifiers, database.schema.table references"
+        else:  # snowflake
+            return "TOP clauses, [bracketed] identifiers, unqualified table names"
+
+    async def _get_complete_table_details_from_pinecone(self, table_names: List[str]) -> Dict[str, Any]:
+        """Get complete table details from Pinecone for all specified tables"""
+        table_insights = {}
+        
+        try:
+            for table_name in table_names:
+                print(f"🔍 Getting complete details for table: {table_name}")
+                
+                # Use Pinecone's get_table_details method to get ALL chunks for this table
+                table_details = await self.pinecone_store.get_table_details(table_name)
+                
+                if table_details.get("columns"):
+                    # Convert columns to the expected format
+                    column_insights = []
+                    columns = table_details.get("columns", [])
+                    
+                    if isinstance(columns, list):
+                        for col in columns:
+                            if isinstance(col, str):
+                                column_insights.append({
+                                    "column_name": col,
+                                    "data_type": "unknown",
+                                    "confidence": 0.9,
+                                    "semantic_role": "description",
+                                    "business_meaning": f"Column {col}",
+                                    "data_operations": ["select", "filter", "group_by"]
+                                })
+                            elif isinstance(col, dict):
+                                col_name = col.get("name", col.get("column_name", str(col)))
+                                data_type = col.get("data_type", "unknown")
+                                
+                                # Infer semantic role from column name and data type
+                                semantic_role = "description"
+                                if any(word in col_name.lower() for word in ['amount', 'price', 'cost', 'revenue', 'qty', 'quantity']):
+                                    semantic_role = "amount"
+                                elif any(word in col_name.lower() for word in ['id', 'key', 'number', 'code']):
+                                    semantic_role = "identifier"
+                                elif any(word in col_name.lower() for word in ['count', 'total', 'sum']):
+                                    semantic_role = "count"
+                                elif any(word in col_name.lower() for word in ['date', 'time', 'created', 'updated']):
+                                    semantic_role = "temporal"
+                                
+                                column_insights.append({
+                                    "column_name": col_name,
+                                    "data_type": data_type,
+                                    "confidence": 0.9,
+                                    "semantic_role": semantic_role,
+                                    "business_meaning": f"{semantic_role.title()} field: {col_name}",
+                                    "data_operations": ["select", "filter", "group_by"] if semantic_role != "amount" else ["select", "filter", "group_by", "sum", "avg", "count"]
+                                })
+                    
+                    table_insights[table_name] = {
+                        "column_insights": column_insights,
+                        "business_context": table_details.get("metadata", {}),
+                        "source": "pinecone_complete"
+                    }
+                    
+                    print(f"✅ Retrieved {len(column_insights)} columns for {table_name} from Pinecone")
+                    print(f"   First 10 columns: {[col['column_name'] for col in column_insights[:10]]}")
+                    
+                else:
+                    print(f"⚠️ No columns found for {table_name} in Pinecone")
+            
+            return {
+                "table_insights": table_insights,
+                "source": "pinecone_complete_details"
+            }
+            
+        except Exception as e:
+            print(f"❌ Error getting complete table details from Pinecone: {e}")
+            return {}
+
+    async def _get_direct_table_schema(self, table_name: str, db_engine: str) -> Dict[str, Any]:
+        """Get complete table schema directly from the database"""
+        try:
+            from backend.db.engine import get_adapter
+            adapter = get_adapter()
+            
+            if db_engine == "azure-sql":
+                # Azure SQL schema query
+                schema_query = f"""
+                    SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT
+                    FROM INFORMATION_SCHEMA.COLUMNS 
+                    WHERE TABLE_NAME = '{table_name}'
+                    ORDER BY ORDINAL_POSITION
+                """
+            elif db_engine == "postgres":
+                # PostgreSQL schema query  
+                schema_query = f"""
+                    SELECT column_name, data_type, is_nullable, column_default
+                    FROM information_schema.columns
+                    WHERE table_name = '{table_name}'
+                    ORDER BY ordinal_position
+                """
+            else:  # snowflake
+                # Snowflake schema query
+                schema_query = f"DESC TABLE {table_name}"
+            
+            result = adapter.run(schema_query)
+            
+            if result.error:
+                print(f"❌ Failed to get schema for {table_name}: {result.error}")
+                return {}
+                
+            columns = []
+            if result.rows:
+                for row in result.rows:
+                    if db_engine == "snowflake":
+                        # Snowflake DESC format: name, type, kind, null?, default, primary key, unique key, check, expression, comment
+                        columns.append({
+                            "name": row[0],
+                            "data_type": row[1],
+                            "nullable": row[3] == "Y",
+                            "default": row[4]
+                        })
+                    else:
+                        # Standard INFORMATION_SCHEMA format
+                        columns.append({
+                            "name": row[0],
+                            "data_type": row[1], 
+                            "nullable": row[2] == "YES",
+                            "default": row[3] if len(row) > 3 else None
+                        })
+            
+            print(f"✅ Retrieved {len(columns)} columns for {table_name} from database")
+            return {
+                "table_name": table_name,
+                "columns": columns,
+                "column_count": len(columns)
+            }
+            
+        except Exception as e:
+            print(f"❌ Error getting direct schema for {table_name}: {e}")
+            return {}
+
     def _create_intelligent_sql_system_prompt(self, db_name: str, schema_name: str, 
                                             schema_context: str, table_names: List[str],
                                             intelligent_context: Dict[str, Any], 
                                             schema_success_count: int, query: str,
-                                            use_deterministic: bool = False) -> str:
+                                            use_deterministic: bool = False, db_engine: str = "snowflake") -> str:
         """Create enhanced system prompt with LLM intelligence"""
         print(f"🎯 DEBUG: _create_intelligent_sql_system_prompt called with use_deterministic={use_deterministic}")
         print(f"📊 DEBUG: Query: '{query[:100]}{'...' if len(query) > 100 else ''}'")
@@ -3663,10 +4240,13 @@ Return only the SQL query, properly formatted for Snowflake."""
             f"You are an AI-powered SQL generator with deep schema intelligence.",
             "",
             f"Database Context:",
-            f"- Engine: Snowflake",
+            f"- Engine: {db_engine.upper().replace('-', ' ')}",
             f"- Database: {db_name}",
             f"- Schema: {schema_name}",
-            f"- Full qualification: \"{db_name}\".\"{schema_name}\".\"table_name\"",
+            f"- Table format: {self._get_table_format(db_engine, db_name, schema_name)}",
+            "",
+            "🚨 CRITICAL DATABASE-SPECIFIC SYNTAX RULES:",
+            self._get_database_syntax_rules(db_engine, db_name, schema_name),
             "",
             f"LLM SCHEMA INTELLIGENCE:",
         ]
@@ -3798,6 +4378,10 @@ Return only the SQL query, properly formatted for Snowflake."""
                 "26. DATA AVAILABILITY CHECK: For historical analysis, use sample data patterns instead of assuming date ranges",
                 "27. COLUMN EXISTENCE VALIDATION: If query requires specific metrics/dates not in schema, explain limitations clearly",
                 "28. REALISTIC QUERIES: Generate queries that work with actual available data, not theoretical schemas",
+                f"29. DATABASE-SPECIFIC SYNTAX: CRITICAL - Follow {db_engine.upper().replace('-', ' ')} syntax rules exactly as specified above",
+                f"30. TABLE QUALIFICATION: Use {self._get_table_format(db_engine, db_name, schema_name)} format EXCLUSIVELY",
+                f"31. ROW LIMITING: {self._get_row_limit_syntax(db_engine)}",
+                f"32. NEVER MIX SYNTAXES: Do not use {self._get_wrong_syntax_examples(db_engine)}",
                 ""
             ])
         
@@ -3810,7 +4394,9 @@ Return only the SQL query, properly formatted for Snowflake."""
             "- If no date columns found, generate a simple aggregation query instead",
             "- Explain in comments why full temporal analysis cannot be performed",
             "",
-            "Generate precise SQL that leverages the LLM schema intelligence above and STRICTLY follows all Snowflake syntax rules."
+            f"Generate precise SQL that leverages the schema intelligence above and STRICTLY follows {db_engine.upper().replace('-', ' ')} syntax rules.",
+            f"REMINDER: You are generating SQL for {db_engine.upper().replace('-', ' ')} - use the correct syntax patterns shown above.",
+            "Double-check your SQL follows the database-specific rules before responding."
         ])
         
         return "\n".join(prompt_parts)
@@ -4255,16 +4841,22 @@ Return only the SQL query, properly formatted for Snowflake."""
             else:
                 # Get detailed error information from the result
                 error_message = "SQL execution failed"
-                if hasattr(result, 'error') and result.error:
+                if hasattr(result, 'error_message') and result.error_message:
+                    error_message = str(result.error_message)
+                elif hasattr(result, 'error') and result.error:
                     error_message = str(result.error)
                 elif hasattr(result, 'message') and result.message:
                     error_message = str(result.message)
                 
+                # Enhanced error logging with SQL query for debugging
                 print(f"🔍 DEBUG: SQL execution error details: {error_message}")
+                print(f"🔍 DEBUG: Failed SQL query: {sql[:200]}{'...' if len(sql) > 200 else ''}")
+                print(f"🔍 DEBUG: Result object attributes: {[attr for attr in dir(result) if not attr.startswith('_')]}")
                 
                 return {
                     "status": "failed", 
-                    "error": error_message
+                    "error": error_message,
+                    "sql_query": sql  # Include the failed SQL for retry logic
                 }
                 
         except Exception as e:
@@ -4949,28 +5541,6 @@ Response with ONE WORD: "yes" (if follow-up) or "no" (if new independent query)"
                 table_name = metadata.get('table_name', 'Unknown')
                 chunks = metadata.get('chunks', {})
                 print(f"  Match {i+1}: table={table_name}, chunks={list(chunks.keys())}")
-                
-                # Check if OVERALL_PCT_OF_AVG appears anywhere in the raw match
-                match_str = str(match)
-                if 'OVERALL_PCT_OF_AVG' in match_str:
-                    print(f"    🎯 CRITICAL: OVERALL_PCT_OF_AVG found in raw match {i+1} for {table_name}!")
-                    # Find where exactly it appears
-                    for chunk_name, chunk_data in chunks.items():
-                        chunk_str = str(chunk_data)
-                        if 'OVERALL_PCT_OF_AVG' in chunk_str:
-                            print(f"    🎯 LOCATION: Found in chunk '{chunk_name}'")
-                            
-                    # EMERGENCY EXTRACTION: If OVERALL_PCT_OF_AVG is found anywhere in the match,
-                    # extract it using regex as a fallback
-                    import re
-                    column_pattern = r'\b([A-Z]+(?:_[A-Z]+)*)\b'
-                    potential_columns = re.findall(column_pattern, match_str)
-                    overall_pct_columns = [col for col in potential_columns if 'OVERALL' in col and 'PCT' in col and 'AVG' in col]
-                    
-                    if overall_pct_columns:
-                        print(f"    🎯 EMERGENCY REGEX EXTRACTION: Found columns: {overall_pct_columns}")
-                        # Store this for later use in extraction
-                        match['_emergency_columns'] = overall_pct_columns
             
             for i, match in enumerate(pinecone_matches):
                 metadata = match.get('metadata', {})
@@ -5005,15 +5575,20 @@ Response with ONE WORD: "yes" (if follow-up) or "no" (if new independent query)"
                         
                         if isinstance(chunk_data, dict):
                             chunk_metadata = chunk_data.get('metadata', {})
+                            
+                            # FIXED: Look for columns directly in metadata, not in nested JSON string
+                            direct_columns = chunk_metadata.get('columns', [])
+                            if direct_columns and isinstance(direct_columns, list):
+                                all_columns.update(direct_columns)
+                                print(f"🔍 DEBUG: Found {len(direct_columns)} columns directly in chunk '{chunk_name}': {direct_columns[:10]}{'...' if len(direct_columns) > 10 else ''}")
+                            
+                            # Also check for legacy nested JSON format (backward compatibility)
                             meta_str = chunk_metadata.get('metadata', '')
+                            print(f"🔍 DEBUG: Chunk metadata keys: {list(chunk_metadata.keys())}")
                             
-                            print(f"🔍 DEBUG: Full chunk metadata string ({len(meta_str)} chars): {meta_str}")
+
                             
-                            # Check for OVERALL_PCT_OF_AVG specifically
-                            if 'OVERALL_PCT_OF_AVG' in meta_str:
-                                print(f"🎯 CRITICAL: Found OVERALL_PCT_OF_AVG in chunk '{chunk_name}' metadata!")
-                            
-                            # Try to parse any JSON-like structure - be comprehensive
+                            # Legacy: Try to parse any JSON-like structure for backward compatibility
                             if meta_str and '{' in meta_str:
                                 import json
                                 try:
@@ -5070,21 +5645,7 @@ Response with ONE WORD: "yes" (if follow-up) or "no" (if new independent query)"
                     for col in sorted(all_columns):
                         print(f"  - {col}")
                     
-                    # Specific check for OVERALL_PCT_OF_AVG
-                    if 'OVERALL_PCT_OF_AVG' in all_columns:
-                        print(f"✅ SUCCESS: OVERALL_PCT_OF_AVG found in {table_name}!")
-                    else:
-                        print(f"❌ MISSING: OVERALL_PCT_OF_AVG not found in {table_name}")
-                        print(f"🔍 Available columns that contain 'PCT' or 'AVG': {[col for col in all_columns if 'PCT' in col or 'AVG' in col]}")
-                        print(f"🔍 Available columns that contain 'OVERALL': {[col for col in all_columns if 'OVERALL' in col]}")
-                        
-                        # Additional emergency check - look for it in the full match string
-                        match_str = str(match)
-                        if 'OVERALL_PCT_OF_AVG' in match_str:
-                            print(f"🚨 CRITICAL: OVERALL_PCT_OF_AVG exists in raw match but not extracted!")
-                            # Force add it if we can confirm it exists in the database
-                            print(f"🚨 FORCE ADDING: OVERALL_PCT_OF_AVG to column list")
-                            all_columns.add('OVERALL_PCT_OF_AVG')
+
                     
                     # Add each column as insight
                     for col_name in sorted(all_columns):
