@@ -520,15 +520,20 @@ JOIN Data Type Compatibility:
         else:
             return "Business intelligence and data analysis"
 
-    async def index_database_schema(self, db_adapter, progress_callback=None):
+    async def index_database_schema(self, db_adapter, progress_callback=None, selected_tables=None):
         import time
         start_time = time.time()
         
-        print("🚀 Indexing database schema in Pinecone with optimized batch processing...")
-        result = db_adapter.run("SHOW TABLES", dry_run=False)
-        if result.error:
-            raise Exception(f"Failed to get tables: {result.error}")
-        all_tables = [row[1] if len(row) > 1 else str(row[0]) for row in result.rows]
+        if selected_tables:
+            print(f"🚀 Indexing ONLY selected {len(selected_tables)} tables in Pinecone: {selected_tables}")
+            all_tables = selected_tables
+        else:
+            print("🚀 Indexing all database tables in Pinecone with optimized batch processing...")
+            result = db_adapter.run("SHOW TABLES", dry_run=False)
+            if result.error:
+                raise Exception(f"Failed to get tables: {result.error}")
+            all_tables = [row[1] if len(row) > 1 else str(row[0]) for row in result.rows]
+            
         print(f"📊 Found {len(all_tables)} tables to index")
         
         # Notify progress callback of total tables
@@ -546,6 +551,7 @@ JOIN Data Type Compatibility:
         
         # Filter out already indexed tables
         tables_to_index = [table for table in all_tables if table not in existing_tables]
+        print(f"🎯 Tables to index: {tables_to_index}")
         print(f"🎯 Need to index {len(tables_to_index)} new tables")
         
         if not tables_to_index:

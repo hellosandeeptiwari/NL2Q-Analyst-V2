@@ -140,8 +140,12 @@ def generate_query_suggestions(natural_language: str, schema_snapshot: dict = No
         print(f"Error generating suggestions: {e}")
         return []
 
-def generate_enhanced_sql(natural_language: str, schema_context: dict, database_type: str = "snowflake", limit: int = 10) -> dict:
+def generate_enhanced_sql(natural_language: str, schema_context: dict, database_type: str = None, limit: int = 10) -> dict:
     """Generate SQL using enhanced schema with vector grounding context"""
+    
+    # Get database type from environment if not provided
+    if database_type is None:
+        database_type = os.getenv("DB_ENGINE", "azure_sql")
     
     try:
         # Extract vector insights
@@ -294,12 +298,59 @@ def generate_sql(natural_language: str, schema_snapshot: dict, constraints: Guar
                 use_deterministic: bool = False) -> GeneratedSQL:
     """Enhanced function with error-aware retry capability and optional deterministic mode"""
     
+    # Import required modules at function start to avoid UnboundLocalError
+    import sys
+    import os
+    
+    # Get database engine from environment - defaults to azure_sql
+    db_engine = os.getenv("DB_ENGINE", "azure_sql").lower()
+    
+    # Get database-specific syntax rules
+    def get_db_syntax_rules(db_engine: str) -> str:
+        """Return database-specific SQL syntax rules"""
+        if db_engine in ["azure_sql", "mssql", "sqlserver"]:
+            return """
+DATABASE: Microsoft Azure SQL Server / SQL Server
+SYNTAX RULES:
+- Use square brackets [table].[column] for identifiers with spaces
+- Use TOP N instead of LIMIT N
+- Single SELECT statement only (no semicolons or multiple statements)
+- Use ISNULL() instead of COALESCE() when possible
+- Date format: 'YYYY-MM-DD' for dates
+- String concatenation with + operator
+- Use dbo schema prefix: dbo.TableName"""
+        elif db_engine == "snowflake":
+            return """
+DATABASE: Snowflake
+SYNTAX RULES:
+- Case-insensitive identifiers
+- Use LIMIT N for row limiting
+- Single SELECT statement only
+- Use || for string concatenation
+- Date format: 'YYYY-MM-DD' for dates"""
+        elif db_engine in ["postgres", "postgresql"]:
+            return """
+DATABASE: PostgreSQL
+SYNTAX RULES:
+- Case-sensitive identifiers (use quotes if needed)
+- Use LIMIT N for row limiting
+- Single SELECT statement only
+- Use || for string concatenation
+- Date format: 'YYYY-MM-DD' for dates"""
+        else:
+            return """
+DATABASE: Generic SQL
+SYNTAX RULES:
+- Standard SQL syntax
+- Single SELECT statement only
+- Use LIMIT N for row limiting"""
+    
+    db_syntax_rules = get_db_syntax_rules(db_engine)
+    
     # Option 1: Use enhanced deterministic column-first approach with micro-patches
     if use_deterministic and isinstance(schema_snapshot, dict) and 'tables' in schema_snapshot:
         try:
             # Import the enhanced prompt functions
-            import sys
-            import os
             sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
             from enhanced_prompt_with_micro_patches import create_production_prompt
             
@@ -322,13 +373,24 @@ def generate_sql(natural_language: str, schema_snapshot: dict, constraints: Guar
                 'foreign': []
             }
             
-            # Generate enhanced prompt with micro-patches
+            # Generate enhanced prompt with micro-patches  
+            # Map our db_engine to the dialect expected by create_production_prompt
+            dialect_map = {
+                "azure_sql": "mssql",
+                "mssql": "mssql", 
+                "sqlserver": "mssql",
+                "snowflake": "snowflake",
+                "postgres": "postgresql",
+                "postgresql": "postgresql"
+            }
+            dialect = dialect_map.get(db_engine, "mssql")  # Default to mssql for Azure SQL
+            
             enhanced_prompt = create_production_prompt(
                 user_query=natural_language,
                 db_tables=catalog_tables,
                 db_columns=catalog_columns,
                 db_keys=catalog_keys,
-                dialect="snowflake"
+                dialect=dialect
             )
             
             # Call LLM with enhanced prompt
@@ -385,19 +447,22 @@ def generate_sql(natural_language: str, schema_snapshot: dict, constraints: Guar
     simple_prompt = f"""
 Role: Expert SQL generator with deterministic approach.
 
+{db_syntax_rules}
+
 AUTHORITATIVE CATALOG:
 {format_catalog_for_prompt(schema_snapshot)}
 
-RULES:
+CRITICAL RULES:
 1. Use ONLY columns/tables present in catalog above
 2. If needed concept can't be mapped, explain why
-3. Generate safe SELECT-only queries
-4. Add LIMIT clause for unbounded queries
+3. Generate SINGLE SELECT statement only (no semicolons, no multiple statements)
+4. For Azure SQL Server: Use TOP N instead of LIMIT N
 5. Use exact table/column names from catalog
+6. Follow database-specific syntax rules above
 
 REQUEST: {natural_language}
 
-Generate SQL or explain if concepts cannot be mapped:"""
+Generate a single SQL SELECT statement or explain if concepts cannot be mapped:"""
     
     try:
         response = openai.chat.completions.create(
@@ -437,17 +502,54 @@ Generate SQL or explain if concepts cannot be mapped:"""
         )
 
 def format_catalog_for_prompt(schema_snapshot: dict) -> str:
-    """Format schema in catalog-like structure for deterministic prompting"""
+    """Format schema in catalog-like structure for deterministic prompting with clear table-column organization"""
     if not schema_snapshot:
         return "No catalog provided"
     
-    catalog_text = "AVAILABLE TABLES AND COLUMNS:\n"
+    catalog_text = "AVAILABLE TABLES AND COLUMNS:\n" + "="*60 + "\n\n"
+    
     for table_name, columns in schema_snapshot.items():
-        catalog_text += f"Table: {table_name}\n"
+        catalog_text += f"📊 TABLE: dbo.{table_name}\n"
+        catalog_text += "-" * (len(table_name) + 15) + "\n"
+        
         if isinstance(columns, list):
-            catalog_text += f"Columns: {', '.join(columns)}\n\n"
+            # Organize columns by category for better understanding
+            key_columns = []
+            id_columns = []
+            product_columns = []
+            metric_columns = []
+            other_columns = []
+            
+            for col in columns:
+                col_lower = col.lower()
+                if 'id' in col_lower and col_lower.endswith('id'):
+                    id_columns.append(col)
+                elif any(word in col_lower for word in ['product', 'tirosint', 'licart', 'flector']):
+                    product_columns.append(col) 
+                elif any(word in col_lower for word in ['trx', 'nrx', 'tqty', 'nqty', 'share', 'calls', 'samples']):
+                    metric_columns.append(col)
+                elif any(word in col_lower for word in ['name', 'territory', 'region', 'prescriber', 'address', 'city', 'state']):
+                    key_columns.append(col)
+                else:
+                    other_columns.append(col)
+            
+            if key_columns:
+                catalog_text += f"  🏷️  Key Columns: {', '.join(key_columns)}\n"
+            if id_columns:
+                catalog_text += f"  🔑 ID Columns: {', '.join(id_columns)}\n"
+            if product_columns:
+                catalog_text += f"  💊 Product Columns: {', '.join(product_columns)}\n"
+            if metric_columns:
+                catalog_text += f"  📈 Metrics: {', '.join(metric_columns)}\n"
+            if other_columns:
+                catalog_text += f"  📋 Other: {', '.join(other_columns)}\n"
         else:
-            catalog_text += f"Columns: {columns}\n\n"
+            catalog_text += f"  Columns: {columns}\n"
+        
+        catalog_text += "\n"
+    
+    catalog_text += "⚠️  CRITICAL: Only use columns from the exact table they belong to above!\n"
+    catalog_text += "⚠️  Do NOT assume columns exist in tables where they are not listed!\n"
     
     return catalog_text
 

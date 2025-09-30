@@ -13,7 +13,9 @@ def sanitize_sql(sql: str, cfg: GuardrailConfig) -> tuple[str,bool]:
     s = sql.strip().strip(";")
     if not cfg.enable_write and s.upper().startswith(DDL_DML):
         raise ValueError("Write operations disabled.")
-    if ";" in s:
+    # Check for multiple statements (more than one semicolon or semicolon not at end)
+    semicolon_count = sql.count(";")
+    if semicolon_count > 1 or (semicolon_count == 1 and not sql.strip().endswith(";")):
         raise ValueError("Multiple statements blocked.")
     if "/*" in s or "--" in s:
         # optionally strip comments

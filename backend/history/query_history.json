@@ -1,15 +1,32 @@
 [
   {
-    "nl": "tell me about COLISEUM MEDICAL CENTER, LLC\t from above data",
-    "sql": "SELECT \n    pr.PROVIDER_ID,\n    pr.PROVIDER_GROUP_ID,\n    m.NPI,\n    m.PROVIDER_NAME,\n    m.BILLING_CODE_COUNT,\n    m.OVERALL_PCT_OF_AVG,\n    ar.ADDRESS,\n    ar.CITY,\n    ar.STATE,\n    ar.PAYER,\n    ar.NEGOTIATED_TYPE\nFROM \n    \"HEALTHCARE_PRICING_ANALYTICS_SAMPLE\".\"SAMPLES\".\"PROVIDER_REFERENCES\" pr\nJOIN \n    \"HEALTHCARE_PRICING_ANALYTICS_SAMPLE\".\"SAMPLES\".\"METRICS\" m ON pr.PROVIDER_ID = m.NPI\nJOIN \n    \"HEALTHCARE_PRICING_ANALYTICS_SAMPLE\".\"SAMPLES\".\"ALL_RATES\" ar ON m.NPI = ar.NPI\nWHERE \n    m.PROVIDER_NAME = 'COLISEUM MEDICAL CENTER, LLC'\nLIMIT 100;",
-    "job_id": "plan_3133355792845937702_conv_1",
+    "nl": "how many types of prescriber profile are new vs growers\n",
+    "sql": "-- Full temporal analysis cannot be performed as no date columns are specified for filtering new vs growers.\nSELECT \n    COUNT(DISTINCT [PrescriberId]) AS [TotalPrescriberProfiles],\n    CASE \n        WHEN [ProductPriority] = 'New' THEN 'New'\n        WHEN [ProductPriority] = 'Grower' THEN 'Grower'\n        ELSE 'Other'\n    END AS [ProfileType]\nFROM \n    [dbo].[Reporting_BI_PrescriberProfile]\nGROUP BY \n    CASE \n        WHEN [ProductPriority] = 'New' THEN 'New'\n        WHEN [ProductPriority] = 'Grower' THEN 'Grower'\n        ELSE 'Other'\n    END",
+    "job_id": "plan_-1414988946792471235_conv_1",
     "user": "default_user",
-    "timestamp": "2025-09-12T15:27:07.168138",
-    "results": [
-      {
-        "PROVIDER_ID": "1275587263",
-        "PROVIDER_GROUP_ID": "102.0015779236",
-        "NPI": "1275587263",
-        "PROVIDER_NAME": "COLISEUM MEDICAL CENTER, LLC",
-        "BILLING_CODE_COUNT": 9,
-        "OVERALL_PCT_OF_AVG": 
+    "timestamp": "2025-09-30T06:19:31.195494",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "how many new vs growers and decliners are there ? chart them",
+    "sql": "-- Note: Full temporal analysis cannot be performed as no date columns are specified for tracking new, growers, and decliners over time.\n\nSELECT \n    COUNT(CASE WHEN [TRX(C4 Wk)] > 0 AND [TRX(P4 Wk)] = 0 THEN 1 END) AS New,\n    COUNT(CASE WHEN [TRX(C4 Wk)] > 0 AND [TRX(P4 Wk)] > 0 THEN 1 END) AS Growers,\n    COUNT(CASE WHEN [TRX(C4 Wk)] = 0 AND [TRX(P4 Wk)] > 0 THEN 1 END) AS Decliners\nFROM \n    [dbo].[Reporting_BI_PrescriberOverview]",
+    "job_id": "plan_8550011833131954621_conv_1",
+    "user": "default_user",
+    "timestamp": "2025-09-30T12:41:00.664618",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "use ngd table how many new vs growers and decliners are there ? chart them\n",
+    "sql": "-- Note: Full temporal analysis cannot be performed as no date columns are specified for tracking trends over time.\nSELECT \n    [NGDType], \n    COUNT(*) AS [Count]\nFROM \n    [dbo].[Reporting_BI_NGD]\nGROUP BY \n    [NGDType]\nORDER BY \n    [Count] DESC",
+    "job_id": "plan_6407623733985615428_conv_1",
+    "user": "default_user",
+    "timestamp": "2025-09-30T13:04:09.029868",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  }
+]

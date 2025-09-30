@@ -36,6 +36,13 @@ from backend.storage.data_storage import DataStorage
 # Global variables
 orchestrator = None
 
+# Global table cache for fast lookups
+table_names_cache = {
+    "tables": [],
+    "last_updated": None,
+    "is_loading": False
+}
+
 # WebSocket connections for real-time progress
 active_connections: List[WebSocket] = []
 
@@ -162,6 +169,53 @@ async def update_progress(stage: str, current_table: str = "", processed: int = 
         "completedTables": indexing_progress["completedTables"]
     })
 
+async def populate_table_cache():
+    """Populate table names cache in background for fast UI responses"""
+    global table_names_cache
+    
+    if table_names_cache["is_loading"]:
+        return  # Already loading
+    
+    try:
+        table_names_cache["is_loading"] = True
+        print("🔄 Loading table names into cache...")
+        
+        adapter = get_adapter()
+        if adapter:
+            # Test connection first
+            await adapter.test_connection()
+            
+            # Get table names (fast operation - just names, no schemas)
+            tables = await adapter.get_table_names()
+            
+            # Extract just the table names for fast searching
+            table_list = []
+            for table_info in tables:
+                if isinstance(table_info, dict):
+                    table_name = table_info.get('name', '')
+                    schema_name = table_info.get('schema', 'dbo')
+                    table_list.append({
+                        "name": table_name,
+                        "schema": schema_name,
+                        "full_name": f"{schema_name}.{table_name}" if schema_name else table_name
+                    })
+                else:
+                    table_list.append({
+                        "name": str(table_info),
+                        "schema": "dbo",
+                        "full_name": str(table_info)
+                    })
+            
+            table_names_cache["tables"] = table_list
+            table_names_cache["last_updated"] = time.time()
+            print(f"✅ Cached {len(table_list)} table names for fast search")
+            
+    except Exception as e:
+        print(f"⚠️ Failed to populate table cache: {e}")
+        table_names_cache["tables"] = []
+    finally:
+        table_names_cache["is_loading"] = False
+
 async def startup_tasks():
     """Initialize and auto-index on startup if needed"""
     print("🚀 Starting backend initialization...")
@@ -173,6 +227,10 @@ async def startup_tasks():
     
     # Perform comprehensive startup initialization including optimized auto-indexing
     await orchestrator.initialize_on_startup()
+    
+    # Load table names into cache for fast UI responses
+    await populate_table_cache()
+    
     print("✅ Backend initialization complete")
 
 # Initialize FastAPI app
@@ -593,7 +651,15 @@ async def approve_plan(plan_id: str, request: Request):
         return JSONResponse(status_code=500, content={"error": f"An error occurred: {str(e)}"})
 
 
-adapter = get_adapter()
+# Initialize adapter with proper error handling
+try:
+    adapter = get_adapter()
+    print("✅ Database adapter initialized successfully")
+except Exception as e:
+    print(f"⚠️ Database adapter failed to initialize: {e}")
+    print("🔄 Application will continue without database connection")
+    adapter = None
+
 # Initialize empty schema cache, will load on first request
 schema_cache = {}
 storage = DataStorage(os.getenv("STORAGE_TYPE", "local"))
@@ -604,7 +670,10 @@ print("✅ Backend initialized with empty schema cache")
 @app.get("/health")
 def health():
     log_usage("/health")
-    return adapter.health()
+    if adapter:
+        return adapter.health()
+    else:
+        return {"status": "degraded", "message": "Database adapter not initialized"}
 
 @app.get("/schema")
 def schema():
@@ -792,53 +861,151 @@ async def save_database_config(request: Request):
 async def get_database_status():
     """Get current database connection status"""
     try:
-        # Check if we have database configuration
-        account = os.getenv("SNOWFLAKE_ACCOUNT", "")
-        user = os.getenv("SNOWFLAKE_USER", "")
-        database = os.getenv("SNOWFLAKE_DATABASE", "")
-        schema = os.getenv("SNOWFLAKE_SCHEMA", "")
-        warehouse = os.getenv("SNOWFLAKE_WAREHOUSE", "")
+        # Get the actual database engine from environment
+        db_engine = os.getenv("DB_ENGINE", "sqlite")
         
-        if not account or not user:
+        if db_engine == "snowflake":
+            # Snowflake configuration
+            account = os.getenv("SNOWFLAKE_ACCOUNT", "")
+            user = os.getenv("SNOWFLAKE_USER", "")
+            database = os.getenv("SNOWFLAKE_DATABASE", "")
+            schema = os.getenv("SNOWFLAKE_SCHEMA", "")
+            warehouse = os.getenv("SNOWFLAKE_WAREHOUSE", "")
+            
+            if not account or not user:
+                return {
+                    "isConnected": False,
+                    "databaseType": "Snowflake",
+                    "server": "",
+                    "database": "",
+                    "schema": "",
+                    "warehouse": ""
+                }
+            
+            # Test connection
+            try:
+                import logging
+                snowflake_logger = logging.getLogger("snowflake.connector")
+                original_level = snowflake_logger.level
+                snowflake_logger.setLevel(logging.WARNING)
+                
+                db_adapter = get_adapter("snowflake")
+                result = db_adapter.run("SELECT 1", dry_run=False)
+                is_connected = not result.error
+                
+                snowflake_logger.setLevel(original_level)
+            except Exception:
+                is_connected = False
+            
+            return {
+                "isConnected": is_connected,
+                "databaseType": "Snowflake",
+                "server": account,
+                "database": database,
+                "schema": schema,
+                "warehouse": warehouse,
+                "lastConnected": time.time() if is_connected else None
+            }
+            
+        elif db_engine == "azure_sql":
+            # Azure SQL configuration
+            host = os.getenv("AZURE_SQL_HOST", "")
+            user = os.getenv("AZURE_SQL_USER", "")
+            database = os.getenv("AZURE_SQL_DATABASE", "")
+            
+            if not host or not user:
+                return {
+                    "isConnected": False,
+                    "databaseType": "Azure SQL",
+                    "server": "",
+                    "database": "",
+                    "schema": "",
+                    "warehouse": ""
+                }
+            
+            # Test connection
+            try:
+                db_adapter = get_adapter("azure_sql")
+                health = db_adapter.health()
+                is_connected = health.get("connected", False)
+            except Exception:
+                is_connected = False
+            
+            return {
+                "isConnected": is_connected,
+                "databaseType": "Azure SQL",
+                "server": host,
+                "database": database,
+                "schema": "dbo",  # Default schema for Azure SQL
+                "warehouse": "",  # Not applicable for Azure SQL
+                "lastConnected": time.time() if is_connected else None
+            }
+            
+        elif db_engine == "postgres":
+            # PostgreSQL configuration
+            host = os.getenv("PG_HOST", "")
+            user = os.getenv("PG_USER", "")
+            database = os.getenv("PG_DBNAME", "")
+            
+            if not host or not user:
+                return {
+                    "isConnected": False,
+                    "databaseType": "PostgreSQL",
+                    "server": "",
+                    "database": "",
+                    "schema": "",
+                    "warehouse": ""
+                }
+            
+            # Test connection
+            try:
+                db_adapter = get_adapter("postgres")
+                health = db_adapter.health()
+                is_connected = health.get("connected", False)
+            except Exception:
+                is_connected = False
+            
+            return {
+                "isConnected": is_connected,
+                "databaseType": "PostgreSQL",
+                "server": host,
+                "database": database,
+                "schema": "public",  # Default schema for PostgreSQL
+                "warehouse": "",  # Not applicable for PostgreSQL
+                "lastConnected": time.time() if is_connected else None
+            }
+            
+        elif db_engine == "sqlite":
+            # SQLite configuration
+            db_path = os.getenv("SQLITE_DB_PATH", "backend/db/nl2q.db")
+            
+            # Test connection
+            try:
+                db_adapter = get_adapter("sqlite")
+                health = db_adapter.health()
+                is_connected = health.get("connected", False)
+            except Exception:
+                is_connected = False
+            
+            return {
+                "isConnected": is_connected,
+                "databaseType": "SQLite",
+                "server": db_path,
+                "database": "local",
+                "schema": "",
+                "warehouse": "",
+                "lastConnected": time.time() if is_connected else None
+            }
+            
+        else:
             return {
                 "isConnected": False,
-                "databaseType": "Snowflake",
+                "databaseType": f"Unknown ({db_engine})",
                 "server": "",
                 "database": "",
                 "schema": "",
                 "warehouse": ""
             }
-        
-        # Test connection (silently to avoid log spam)
-        try:
-            # Temporarily store the original log level
-            import logging
-            snowflake_logger = logging.getLogger("snowflake.connector")
-            original_level = snowflake_logger.level
-            
-            # Suppress Snowflake connector logs for status checks
-            snowflake_logger.setLevel(logging.WARNING)
-            
-            db_adapter = get_adapter("snowflake")
-            # Simple test query
-            result = db_adapter.run("SELECT 1", dry_run=False)
-            is_connected = not result.error
-            
-            # Restore original log level
-            snowflake_logger.setLevel(original_level)
-            
-        except Exception:
-            is_connected = False
-        
-        return {
-            "isConnected": is_connected,
-            "databaseType": "Snowflake",
-            "server": account,
-            "database": database,
-            "schema": schema,
-            "warehouse": warehouse,
-            "lastConnected": time.time() if is_connected else None
-        }
         
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
@@ -946,26 +1113,214 @@ async def get_indexing_status():
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
+@app.get("/api/database/table-names")
+async def get_table_names():
+    """Get cached table names for fast search - returns just names for UI autocomplete"""
+    global table_names_cache
+    
+    try:
+        # Check if cache is empty or stale (older than 5 minutes)
+        cache_age = time.time() - (table_names_cache.get("last_updated") or 0)
+        if not table_names_cache["tables"] or cache_age > 300:
+            # Refresh cache if needed
+            await populate_table_cache()
+        
+        return {
+            "success": True,
+            "tables": table_names_cache["tables"],
+            "cached_at": table_names_cache.get("last_updated"),
+            "cache_age_seconds": cache_age
+        }
+    except Exception as e:
+        print(f"❌ Error getting table names: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.get("/api/database/discover-tables")
+async def discover_tables():
+    """Discover all available tables in the database with metadata"""
+    try:
+        adapter = get_adapter()
+        if not adapter:
+            return JSONResponse(status_code=400, content={"error": "Database not configured"})
+        
+        # Get all tables from the database
+        tables_info = []
+        
+        # Test connection first
+        try:
+            await adapter.test_connection()
+        except Exception as e:
+            return JSONResponse(status_code=400, content={"error": f"Database connection failed: {str(e)}"})
+        
+        # Get table names and schemas
+        tables = await adapter.get_table_names()
+        
+        for table_info in tables:
+            table_name = table_info.get('name', table_info) if isinstance(table_info, dict) else table_info
+            schema_name = table_info.get('schema', 'dbo') if isinstance(table_info, dict) else 'dbo'
+            
+            try:
+                # Get column information
+                columns = await adapter.get_table_schema(table_name, schema_name)
+                
+                # Get row count (with timeout to avoid hanging)
+                row_count = None
+                try:
+                    row_count_result = await asyncio.wait_for(
+                        adapter.execute_query(f"SELECT COUNT(*) as count FROM {schema_name}.{table_name}"),
+                        timeout=5.0
+                    )
+                    if row_count_result and len(row_count_result) > 0:
+                        row_count = row_count_result[0].get('count', 0)
+                except (asyncio.TimeoutError, Exception):
+                    # Skip row count if it takes too long or fails
+                    row_count = None
+                
+                # Calculate priority based on heuristics
+                priority = calculate_table_priority(table_name, columns, row_count)
+                
+                # Check if it's a primary/important table
+                is_primary = is_primary_table(table_name, columns)
+                
+                # Check for relationships (simplified - just check for foreign key columns)
+                has_relationships = any(
+                    'id' in col['name'].lower() and col['name'].lower() != 'id' 
+                    for col in columns if isinstance(col, dict)
+                )
+                
+                table_metadata = {
+                    "name": table_name,
+                    "schema": schema_name,
+                    "columns": [
+                        {
+                            "name": col.get('name', col) if isinstance(col, dict) else col,
+                            "type": col.get('type', 'unknown') if isinstance(col, dict) else 'unknown',
+                            "nullable": col.get('nullable', True) if isinstance(col, dict) else True
+                        }
+                        for col in columns
+                    ],
+                    "columnCount": len(columns),
+                    "rowCount": row_count,
+                    "priority": priority,
+                    "isPrimaryTable": is_primary,
+                    "hasRelationships": has_relationships,
+                    "size": f"{len(columns)} columns" + (f", ~{row_count:,} rows" if row_count else "")
+                }
+                
+                tables_info.append(table_metadata)
+                
+            except Exception as e:
+                print(f"Error getting metadata for table {table_name}: {e}")
+                # Still add basic info even if we can't get full metadata
+                tables_info.append({
+                    "name": table_name,
+                    "schema": schema_name,
+                    "columns": [],
+                    "columnCount": 0,
+                    "rowCount": None,
+                    "priority": "low",
+                    "isPrimaryTable": False,
+                    "hasRelationships": False,
+                    "size": "unknown",
+                    "error": str(e)
+                })
+        
+        return {
+            "success": True,
+            "tables": tables_info,
+            "totalTables": len(tables_info),
+            "discoveredAt": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        print(f"Table discovery error: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+def calculate_table_priority(table_name: str, columns: List, row_count: int = None) -> str:
+    """Calculate table priority based on heuristics"""
+    table_name_lower = table_name.lower()
+    
+    # High priority indicators
+    high_priority_keywords = [
+        'user', 'customer', 'order', 'product', 'sale', 'transaction', 'account',
+        'employee', 'patient', 'client', 'invoice', 'payment', 'inventory'
+    ]
+    
+    # Low priority indicators
+    low_priority_keywords = [
+        'log', 'audit', 'temp', 'backup', 'archive', 'cache', 'queue',
+        'staging', 'etl', 'migration', 'test'
+    ]
+    
+    # Check for high priority keywords
+    if any(keyword in table_name_lower for keyword in high_priority_keywords):
+        return "high"
+    
+    # Check for low priority keywords
+    if any(keyword in table_name_lower for keyword in low_priority_keywords):
+        return "low"
+    
+    # Check column count and row count
+    column_count = len(columns) if columns else 0
+    
+    # Tables with many columns are often important
+    if column_count > 10:
+        return "high"
+    elif column_count > 5:
+        return "medium"
+    
+    # Large tables might be important
+    if row_count and row_count > 10000:
+        return "high"
+    elif row_count and row_count > 1000:
+        return "medium"
+    
+    return "medium"  # Default to medium priority
+
+def is_primary_table(table_name: str, columns: List) -> bool:
+    """Check if a table appears to be a primary/core business table"""
+    table_name_lower = table_name.lower()
+    
+    # Core business entity indicators
+    primary_indicators = [
+        'user', 'customer', 'order', 'product', 'sale', 'account',
+        'employee', 'patient', 'client', 'member', 'person'
+    ]
+    
+    # Check table name
+    if any(indicator in table_name_lower for indicator in primary_indicators):
+        return True
+    
+    # Check if it has an ID column (typical of primary entities)
+    if columns:
+        column_names = [
+            col.get('name', col).lower() if isinstance(col, dict) else str(col).lower()
+            for col in columns
+        ]
+        if 'id' in column_names or f'{table_name_lower}_id' in column_names:
+            return True
+    
+    return False
+
 @app.post("/api/database/start-indexing")
 async def start_schema_indexing(request: Request):
     """Start schema indexing process"""
     try:
         body = await request.json()
         force_reindex = body.get("force_reindex", False)
+        selected_tables = body.get("selected_tables", [])
         
-        global indexing_status, pinecone_store
+        global indexing_progress
         
-        if indexing_status["isIndexing"]:
+        if indexing_progress["isIndexing"]:
             return {"error": "Indexing already in progress"}
         
-        if not pinecone_store:
-            from backend.pinecone_schema_vector_store import PineconeSchemaVectorStore
-            pinecone_store = PineconeSchemaVectorStore()
+        print(f"🚀 Starting indexing with selected tables: {selected_tables}")
         
-        # Start indexing in background
-        asyncio.create_task(perform_schema_indexing(force_reindex))
+        # Start indexing in background with selected tables
+        asyncio.create_task(perform_schema_indexing(force_reindex, selected_tables))
         
-        return {"success": True, "message": "Indexing started"}
+        return {"success": True, "message": f"Indexing started for {len(selected_tables) if selected_tables else 'all'} tables"}
         
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
@@ -988,13 +1343,24 @@ async def check_pinecone_indexing_status() -> Dict[str, Any]:
         result = db_adapter.run("SHOW TABLES", dry_run=False)
         total_tables = len(result.rows) if not result.error else 0
         
-        # Calculate actual indexed tables based on whether we have vectors and are not currently indexing
-        indexed_tables = total_tables if total_vectors > 0 and not indexing_status.get("isIndexing", False) else 0
+        # Get actual count and names of indexed tables from Pinecone
+        try:
+            from backend.pinecone_schema_vector_store import PineconeSchemaVectorStore
+            pinecone_store = PineconeSchemaVectorStore()
+            indexed_table_names = await pinecone_store._get_indexed_tables_fast()
+            actual_indexed_tables = len(indexed_table_names)
+            indexed_table_list = sorted(list(indexed_table_names))  # Convert to sorted list
+            print(f"📊 Actual indexed tables: {actual_indexed_tables} ({indexed_table_list})")
+        except Exception as e:
+            print(f"⚠️ Could not get indexed table count: {e}")
+            actual_indexed_tables = 0
+            indexed_table_list = []
         
         return {
             "isIndexed": total_vectors > 0,
             "totalTables": total_tables,
-            "indexedTables": indexed_tables,  # Use total_tables when fully indexed
+            "indexedTables": actual_indexed_tables,  # Use actual count from Pinecone
+            "indexedTableNames": indexed_table_list,  # List of actual indexed table names
             "lastIndexed": indexing_status.get("lastIndexed"),
             "isIndexing": indexing_status.get("isIndexing", False)
         }
@@ -1009,34 +1375,39 @@ async def check_pinecone_indexing_status() -> Dict[str, Any]:
             "isIndexing": False
         }
 
-async def perform_schema_indexing(force_reindex: bool = False):
+async def perform_schema_indexing(force_reindex: bool = False, selected_tables: List[str] = None):
     """Perform the actual schema indexing with optimized chunking and progress tracking"""
-    global indexing_status, pinecone_store, orchestrator
+    global indexing_progress, orchestrator
     
     try:
-        indexing_status["isIndexing"] = True
-        print("🚀 Starting manual schema indexing with optimized chunking...")
+        indexing_progress["isIndexing"] = True
         
-        # Get total table count first
-        db_adapter = get_adapter("snowflake")
-        if not db_adapter:
-            raise Exception("Failed to get database adapter")
-            
-        result = db_adapter.run("SHOW TABLES", dry_run=False)
-        total_tables = len(result.rows) if not result.error else 0
+        if selected_tables:
+            print(f"🚀 Starting selective schema indexing for {len(selected_tables)} tables: {selected_tables}")
+            total_tables = len(selected_tables)
+        else:
+            print("🚀 Starting full schema indexing with optimized chunking...")
+            # Get total table count first
+            adapter = get_adapter()
+            if not adapter:
+                raise Exception("Failed to get database adapter")
+                
+            tables = await adapter.get_table_names()
+            total_tables = len(tables)
         
         # Initialize progress tracking
         await update_progress("start", total=total_tables)
         
         # Use the orchestrator's optimized indexing if available
         if orchestrator and hasattr(orchestrator, '_perform_full_database_indexing'):
-            await orchestrator._perform_full_database_indexing(force_clear=force_reindex)
+            # force_reindex=True means ALWAYS clear the index (for both selective and full indexing)
+            # force_reindex=False means additive indexing (don't clear, just add new tables)
+            await orchestrator._perform_full_database_indexing(force_clear=force_reindex, selected_tables=selected_tables)
         else:
             # Fallback to direct indexing with progress tracking
             print("📁 Using direct indexing fallback...")
-            if not pinecone_store:
-                from backend.pinecone_schema_vector_store import PineconeSchemaVectorStore
-                pinecone_store = PineconeSchemaVectorStore()
+            from backend.pinecone_schema_vector_store import PineconeSchemaVectorStore
+            pinecone_store = PineconeSchemaVectorStore()
             
             # Clear existing index if force reindex
             if force_reindex:
@@ -1044,29 +1415,37 @@ async def perform_schema_indexing(force_reindex: bool = False):
                 pinecone_store.clear_index()
                 print("🧹 Cleared existing index for fresh indexing")
             
-            # Index schema with optimized chunking and progress tracking
-            await pinecone_store.index_database_schema(db_adapter)
-        
-        # Get final statistics
-        if not pinecone_store:
-            from backend.pinecone_schema_vector_store import PineconeSchemaVectorStore
-            pinecone_store = PineconeSchemaVectorStore()
+            # Define progress callback for direct indexing
+            async def direct_progress_callback(stage: str, current_table: str = "", processed: int = None, total: int = None, error: str = None):
+                await update_progress(stage, current_table, processed, total, error)
             
-        stats = pinecone_store.index.describe_index_stats()
+            # Index schema with optimized chunking and progress tracking
+            await pinecone_store.index_database_schema(adapter, progress_callback=direct_progress_callback, selected_tables=selected_tables)
         
         # Update progress to complete
         await update_progress("complete")
         
-        # Update status
-        indexing_status.update({
-            "isIndexed": True,
-            "totalTables": total_tables,
-            "indexedTables": total_tables,
-            "lastIndexed": datetime.now().isoformat(),  # Use ISO format for proper date display
-            "isIndexing": False
+        # Get final statistics
+        try:
+            from backend.pinecone_schema_vector_store import PineconeSchemaVectorStore
+            if not 'pinecone_store' in locals():
+                pinecone_store = PineconeSchemaVectorStore()
+                
+            stats = pinecone_store.index.describe_index_stats()
+            vector_count = stats.total_vector_count if stats else "unknown"
+        except Exception as e:
+            print(f"⚠️ Could not get vector stats: {e}")
+            vector_count = "unknown"
+        
+        # Update final status
+        indexing_progress.update({
+            "isIndexing": False,
+            "stage": f"✅ Indexing complete! {total_tables} tables processed successfully",
+            "processedTables": total_tables,
+            "currentTable": "Complete"
         })
         
-        print(f"✅ Optimized schema indexing complete! {stats.total_vector_count} vectors for {total_tables} tables.")
+        print(f"✅ Schema indexing complete! {total_tables} tables processed (Total vectors in index: {vector_count})")
         
     except Exception as e:
         print(f"❌ Schema indexing failed: {e}")
@@ -1076,9 +1455,10 @@ async def perform_schema_indexing(force_reindex: bool = False):
         # Update progress to failed
         await update_progress("failed", error=str(e))
         
-        indexing_status.update({
+        indexing_progress.update({
             "isIndexing": False,
-            "error": str(e)
+            "stage": f"❌ Indexing failed: {str(e)}",
+            "errors": [str(e)]
         })
 
 async def ensure_pinecone_initialized():

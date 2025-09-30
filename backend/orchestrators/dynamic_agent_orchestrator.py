@@ -18,6 +18,15 @@ except ImportError:
     LLM_INTELLIGENCE_AVAILABLE = False
     print("⚠️ LLM Schema Intelligence not available - using basic schema discovery")
 
+# Import Intelligent Query Planning
+try:
+    from backend.query_intelligence.intelligent_query_planner import IntelligentQueryPlanner
+    from backend.query_intelligence.schema_semantic_analyzer import SchemaSemanticAnalyzer
+    INTELLIGENT_PLANNING_AVAILABLE = True
+except ImportError:
+    INTELLIGENT_PLANNING_AVAILABLE = False
+    print("⚠️ Intelligent Query Planning not available - using legacy table selection")
+
 # Global reference to progress callback - will be set by main.py
 _progress_callback = None
 
@@ -128,15 +137,37 @@ class DynamicAgentOrchestrator:
             try:
                 self.schema_embedder = SchemaEmbedder()
                 # Load cached schema intelligence from reingestion
-                if self.schema_embedder.load_cache():
-                    print("🧠 LLM Schema Intelligence initialized with cached data")
-                else:
-                    print("🧠 LLM Schema Intelligence initialized (no cached data)")
+                try:
+                    if self.schema_embedder.load_cache():
+                        print("🧠 LLM Schema Intelligence initialized with cached data")
+                    else:
+                        print("🧠 LLM Schema Intelligence initialized (no cached data)")
+                except Exception as cache_error:
+                    print(f"⚠️ Failed to load schema cache: {cache_error}")
+                    print("🧠 LLM Schema Intelligence initialized without cache")
             except Exception as e:
                 print(f"⚠️ Failed to initialize LLM Schema Intelligence: {e}")
-                self.schema_embedder = None
+                # Try to continue with basic schema embedder
+                try:
+                    self.schema_embedder = SchemaEmbedder()
+                    print("🧠 Basic Schema Intelligence initialized")
+                except:
+                    self.schema_embedder = None
         else:
             self.schema_embedder = None
+        
+        # Initialize Intelligent Query Planning if available
+        self.intelligent_planner = None
+        self.schema_analyzer = None
+        if INTELLIGENT_PLANNING_AVAILABLE:
+            try:
+                self.intelligent_planner = IntelligentQueryPlanner()
+                self.schema_analyzer = SchemaSemanticAnalyzer()
+                print("🧠 Intelligent Query Planning initialized")
+            except Exception as e:
+                print(f"⚠️ Failed to initialize Intelligent Query Planning: {e}")
+                self.intelligent_planner = None
+                self.schema_analyzer = None
         
         # Token usage tracking for optimization
         self.token_usage_history = []
@@ -251,10 +282,13 @@ class DynamicAgentOrchestrator:
         except Exception as e:
             print(f"⚠️ Error checking indexing status: {e}")
             
-    async def _perform_full_database_indexing(self, force_clear: bool = True):
+    async def _perform_full_database_indexing(self, force_clear: bool = True, selected_tables: List[str] = None):
         """Perform full database indexing with optimized chunking"""
         try:
-            print("🗂️ Starting full database schema indexing with improved chunking...")
+            if selected_tables:
+                print(f"🎯 Starting SELECTIVE schema indexing for {len(selected_tables)} tables: {selected_tables}")
+            else:
+                print("🗂️ Starting full database schema indexing with improved chunking...")
             
             # Ensure pinecone store is initialized
             if not self.pinecone_store:
@@ -292,11 +326,24 @@ class DynamicAgentOrchestrator:
                 except Exception as e:
                     print(f"Progress callback error: {e}")
                 
-            await self.pinecone_store.index_database_schema(self.db_connector, progress_callback=local_progress_callback)
+            await self.pinecone_store.index_database_schema(self.db_connector, progress_callback=local_progress_callback, selected_tables=selected_tables)
             
-            # Verify indexing completed successfully
-            final_stats = self.pinecone_store.index.describe_index_stats()
-            print(f"✅ Indexing completed: {final_stats.total_vector_count} vectors indexed")
+            # Verify indexing completed successfully (with retry for stats)
+            import time
+            final_stats = None
+            for attempt in range(3):  # Try 3 times
+                try:
+                    final_stats = self.pinecone_store.index.describe_index_stats()
+                    if final_stats.total_vector_count > 0 or attempt == 2:  # Accept result on last attempt
+                        break
+                    time.sleep(1)  # Wait 1 second before retry
+                except Exception:
+                    if attempt == 2:
+                        raise
+                    time.sleep(1)
+            
+            vector_count = final_stats.total_vector_count if final_stats else "unknown"
+            print(f"✅ Indexing completed: {vector_count} vectors in index")
             
             self._index_initialized = True
             
@@ -1881,50 +1928,110 @@ Be intelligent but concise. Focus on actionable database insights."""
             return {"error": str(e), "status": "failed"}
     
     async def _execute_query_generation(self, inputs: Dict) -> Dict[str, Any]:
-        """Generate SQL query - completely self-sufficient for any planning scenario"""
+        """Generate SQL query using enhanced intelligent planning architecture"""
         try:
             query = inputs.get("original_query", inputs.get("query", ""))
-            print(f"🔍 SQL Generation for: {query}")
+            print(f"🎯 Enhanced SQL Generation for: {query}")
             
-            # Discover what context we have available (from ANY previous tasks)
+            # Discover available context
             available_context = self._gather_available_context(inputs)
             
-            # Build table context from whatever is available
-            confirmed_tables = self._determine_target_tables(available_context, query)
-            print(f"🔍 DEBUG: Confirmed tables from _determine_target_tables: {confirmed_tables}")
-            print(f"🔍 DEBUG: Available context keys: {list(available_context.keys())}")
-            if "matched_tables" in available_context:
-                print(f"🔍 DEBUG: available_context['matched_tables']: {available_context['matched_tables']}")
-            if "schemas" in available_context:
-                print(f"🔍 DEBUG: Schemas in context: {len(available_context['schemas'])} items")
-                if available_context['schemas']:
-                    print(f"🔍 DEBUG: First schema: {available_context['schemas'][0] if available_context['schemas'] else 'None'}")
+            # Determine target tables
+            confirmed_tables = await self._determine_target_tables(available_context, query)
+            print(f"📊 Target tables: {confirmed_tables}")
             
             if not confirmed_tables:
-                print(f"🔍 No table context available - performing autonomous table discovery with Pinecone context")
+                # Perform autonomous table discovery
                 autonomous_result = await self._autonomous_table_discovery_with_context(query)
                 confirmed_tables = autonomous_result.get("tables", [])
-                print(f"🔍 DEBUG: Autonomous discovery returned tables: {confirmed_tables}")
-                # CRITICAL FIX: Extract Pinecone matches from autonomous discovery
                 if autonomous_result.get("pinecone_matches"):
                     available_context["pinecone_matches"] = autonomous_result["pinecone_matches"]
-                    print(f"🔍 Autonomous discovery found {len(autonomous_result['pinecone_matches'])} Pinecone matches")
             
             if not confirmed_tables:
-                print("❌ DEBUG: No confirmed tables found after all attempts!")
                 return {
                     "error": "Could not determine target tables for query",
                     "status": "failed",
                     "suggestion": "Query may be too ambiguous - consider specifying table names"
                 }
             
-            print(f"🎯 Target tables: {confirmed_tables}")
+            # Use Intelligent Query Planner (required)
+            if not self.intelligent_planner:
+                return {
+                    "error": "Intelligent Query Planner not available",
+                    "status": "failed"
+                }
             
-            # Generate SQL with whatever context we have
-            return await self._generate_sql_with_context(query, confirmed_tables, available_context, getattr(self, 'use_deterministic', False))
+            print("🧠 Using Enhanced Intelligent Query Planner")
+            
+            # Get enhanced table metadata
+            table_metadata = {}
+            for table in confirmed_tables:
+                if hasattr(self, 'pinecone_store') and self.pinecone_store:
+                    table_details = await self.pinecone_store.get_table_details(table)
+                    if table_details:
+                        table_metadata[table] = table_details
+            
+            # Generate query with intelligent planning
+            context_with_metadata = {
+                'matched_tables': [
+                    {'table_name': table, **metadata}
+                    for table, metadata in table_metadata.items()
+                ],
+                'db_adapter': self.db_connector,  # Real database access
+                'query_context': available_context
+            }
+            
+            result = await self.intelligent_planner.generate_query_with_plan(
+                query, context_with_metadata, confirmed_tables
+            )
+            
+            if result.get('sql') and not result.get('error'):
+                print(f"✅ Enhanced SQL generated with confidence: {result.get('confidence', 0):.2f}")
+                
+                # Test SQL execution
+                sql_query = result["sql"]
+                print(f"🧪 Testing generated SQL execution...")
+                
+                try:
+                    test_result = await self._execute_sql_query(sql_query, "test_user")
+                    
+                    if test_result.get("error"):
+                        print(f"❌ SQL execution failed: {test_result.get('error')}")
+                        return {
+                            "error": f"Generated SQL failed execution: {test_result.get('error')}",
+                            "status": "failed",
+                            "sql_attempted": sql_query
+                        }
+                    else:
+                        print(f"✅ SQL executed successfully with {len(test_result.get('data', []))} rows")
+                        return {
+                            "sql_query": result["sql"],
+                            "explanation": result.get("explanation", f"Enhanced intelligent query for {', '.join(confirmed_tables)}"),
+                            "tables_used": result.get("tables_used", confirmed_tables),
+                            "planning_method": "enhanced_intelligent_planner",
+                            "confidence_score": result.get("confidence", 0.85),
+                            "business_logic_applied": result.get("business_logic_applied", []),
+                            "join_strategy": result.get("join_strategy", []),
+                            "intelligent_enhancements": result.get("intelligent_enhancements", {}),
+                            "test_execution_result": test_result,
+                            "status": "completed"
+                        }
+                        
+                except Exception as sql_ex:
+                    print(f"❌ SQL execution test failed: {str(sql_ex)}")
+                    return {
+                        "error": f"SQL execution failed: {str(sql_ex)}",
+                        "status": "failed",
+                        "sql_attempted": sql_query
+                    }
+            else:
+                return {
+                    "error": result.get("error", "Intelligent planner failed to generate SQL"),
+                    "status": "failed"
+                }
             
         except Exception as e:
-            print(f"❌ Query generation failed: {e}")
+            print(f"❌ Enhanced query generation failed: {e}")
             return {"error": str(e), "status": "failed"}
     
     def _gather_available_context(self, inputs: Dict) -> Dict[str, Any]:
@@ -1966,50 +2073,73 @@ Be intelligent but concise. Focus on actionable database insights."""
         
         return context
     
-    def _determine_target_tables(self, context: Dict, query: str) -> List[str]:
-        """Determine target tables from available context"""
-        print(f"🔍 DEBUG: _determine_target_tables called with query: '{query}'")
-        print(f"🔍 DEBUG: Context keys: {list(context.keys())}")
+    async def _determine_target_tables(self, context: Dict, query: str) -> List[str]:
+        """
+        Determine target tables using intelligent planning instead of artificial restrictions.
+        Replaces the old complex/simple query logic with semantic understanding.
+        """
+        print(f"🧠 Intelligent table planning for query: '{query}'")
+        print(f"🔍 Available context keys: {list(context.keys())}")
         
-        # Priority 1: User-approved tables
+        # Priority 1: User-approved tables (still respect explicit user choices)
         if context.get("user_preferences", {}).get("tables"):
             tables = context["user_preferences"]["tables"]
-            print(f"🔍 DEBUG: Using user-approved tables: {tables}")
+            print(f"🔍 Using user-approved tables: {tables}")
             return tables
         
-        # Priority 2: Matched tables from similarity
+        # Priority 2: Use Intelligent Query Planner if available
+        if self.intelligent_planner and hasattr(self, 'pinecone_store') and self.pinecone_store:
+            try:
+                print("🧠 Using Intelligent Query Planner for table selection")
+                
+                # Get available tables from the context (matched tables from Pinecone)
+                available_tables = context.get("matched_tables", [])
+                
+                if available_tables:
+                    print(f"🧠 Found {len(available_tables)} tables for intelligent analysis")
+                    
+                    # Use intelligent query planner to analyze and select optimal tables
+                    query_plan = self.intelligent_planner.analyze_query_requirements(
+                        query, available_tables
+                    )
+                    
+                    if query_plan.selected_tables:
+                        print(f"🎯 Intelligent planner selected {len(query_plan.selected_tables)} tables: {query_plan.selected_tables}")
+                        print(f"📋 Query plan reasoning: {query_plan.reasoning}")
+                        print(f"🎯 Confidence score: {query_plan.confidence_score:.2f}")
+                        return query_plan.selected_tables
+                    else:
+                        print("⚠️ Intelligent planner found no relevant tables")
+                else:
+                    print("🧠 No matched tables available for intelligent analysis")
+                
+            except Exception as e:
+                print(f"⚠️ Intelligent planning failed, falling back to legacy logic: {e}")
+        
+        # Priority 3: Legacy matched tables logic (fallback)
         if context.get("matched_tables"):
             matched_tables = context["matched_tables"]
-            print(f"🔍 DEBUG: Found matched_tables: {matched_tables}")
-            print(f"🔍 DEBUG: Type of matched_tables: {type(matched_tables)}")
-            print(f"🔍 DEBUG: Length of matched_tables: {len(matched_tables) if isinstance(matched_tables, (list, tuple)) else 'not a list'}")
-            print(f"🔍 DEBUG: Query keywords check: {[term for term in ['payment', 'rate', 'average', 'level', 'provider'] if term in query.lower()]}")
+            print(f"🔍 Fallback to legacy matched_tables: {matched_tables}")
             
-            # Check if it's the expected format
             if isinstance(matched_tables, list) and len(matched_tables) > 0:
-                print(f"🔍 DEBUG: First matched table: {matched_tables[0]}")
-                print(f"🔍 DEBUG: All matched tables: {matched_tables}")
-            
-            # For payment/provider queries, include multiple relevant tables
-            if any(term in query.lower() for term in ['payment', 'rate', 'average', 'level', 'provider']):
-                result = matched_tables[:3]  # Top 3 matches for complex queries
-                print(f"🔍 DEBUG: Payment query detected - returning top 3: {result}")
-                return result
-            else:
-                result = matched_tables[:1]  # Top match for simple queries
-                print(f"🔍 DEBUG: Simple query - returning top 1: {result}")
+                # No longer artificially restrict to 1 table - use semantic understanding
+                # Let the planner consider all potentially relevant tables
+                max_tables = min(len(matched_tables), 3)  # Reasonable limit for performance
+                result = matched_tables[:max_tables]
+                print(f"🔍 Legacy fallback returning {len(result)} tables: {result}")
                 return result
         
-        # Priority 3: Schema suggestions
+        # Priority 4: Schema suggestions (fallback)
         schemas = context.get("schemas", [])
         if schemas:
-            # Handle both dict and string formats
+            print(f"🔍 Using schema suggestions fallback: {len(schemas)} schemas")
             for schema in schemas:
                 if isinstance(schema, dict) and "table_name" in schema:
                     return [schema["table_name"]]
                 elif isinstance(schema, str):
                     return [schema]
         
+        print("⚠️ No tables determined from any method")
         return []
     
     async def _autonomous_table_discovery_with_context(self, query: str) -> Dict[str, Any]:
@@ -2136,43 +2266,7 @@ Be intelligent but concise. Focus on actionable database insights."""
             print(f"⚠️ Database table discovery failed: {e}")
             return []
     
-    async def _generate_sql_with_context(self, query: str, tables: List[str], context: Dict, use_deterministic: bool = False) -> Dict[str, Any]:
-        """Generate SQL using available tables and context"""
-        try:
-            # Use the existing database-aware SQL generation with enhanced retry logic
-            result = await self._generate_sql_with_retry(
-                query=query,
-                available_tables=tables,
-                error_context="",
-                pinecone_matches=context.get("pinecone_matches", []),
-                use_deterministic=use_deterministic
-            )
-            
-            if result and result.get("sql_query"):
-                return {
-                    "sql_query": result["sql_query"],
-                    "explanation": result.get("explanation", f"Generated query for {tables[0]}"),
-                    "tables_used": tables,
-                    "context_used": list(context.keys()),
-                    "status": "completed"
-                }
-            else:
-                # No fallback - let the system handle the failure properly
-                print("❌ SQL generation failed after all retries - no fallback")
-                return {
-                    "error": "SQL generation failed after all retries",
-                    "status": "failed",
-                    "tables_available": tables,
-                    "context_used": list(context.keys())
-                }
-                
-        except Exception as e:
-            print(f"⚠️ Database-aware generation failed: {e}")
-            return {
-                "error": f"Database-aware generation failed: {str(e)}",
-                "status": "failed",
-                "tables_available": tables
-            }
+    # Legacy _generate_sql_with_context method removed - now using enhanced intelligent planner only
 
     async def _execute_query_execution(self, inputs: Dict) -> Dict[str, Any]:
         """Execute SQL query - works with any planning scenario"""
@@ -3998,23 +4092,31 @@ Return only the SQL query, properly formatted for Snowflake."""
 
     async def _get_llm_intelligence_context(self, table_names: List[str]) -> Dict[str, Any]:
         """Get LLM intelligence context for the specified tables"""
-        if not self.schema_embedder:
-            return {}
         
+        # First try to get from Pinecone (primary source - doesn't require DB connection)
         try:
-            # Get intelligent context from cached LLM analysis
-            intelligence = self.schema_embedder.get_query_intelligence(table_names)
-            
-            if intelligence and intelligence.get("table_insights"):
-                print(f"🧠 Retrieved LLM intelligence for {len(intelligence['table_insights'])} tables")
-                return intelligence
-            else:
-                print("⚠️ No LLM intelligence available for these tables")
-                return {}
-                
+            await self._ensure_initialized()
+            if self.pinecone_store:
+                print(f"🔍 Getting table intelligence from Pinecone for {len(table_names)} tables")
+                intelligence = await self._get_complete_table_details_from_pinecone(table_names)
+                if intelligence:
+                    print(f"🧠 Retrieved Pinecone intelligence for {len(table_names)} tables")
+                    return intelligence
         except Exception as e:
-            print(f"⚠️ Failed to get LLM intelligence: {e}")
-            return {}
+            print(f"⚠️ Failed to get Pinecone intelligence: {e}")
+        
+        # Fallback: try schema embedder cache (secondary source)
+        if self.schema_embedder:
+            try:
+                intelligence = self.schema_embedder.get_query_intelligence(table_names)
+                if intelligence and intelligence.get("table_insights"):
+                    print(f"🧠 Retrieved cached LLM intelligence for {len(intelligence['table_insights'])} tables")
+                    return intelligence
+            except Exception as e:
+                print(f"⚠️ Failed to get cached LLM intelligence: {e}")
+        
+        print("⚠️ No LLM intelligence available - Pinecone and cache both unavailable")
+        return {}
     
     def _get_table_format(self, db_engine: str, db_name: str, schema_name: str) -> str:
         """Get the correct table qualification format for the database engine"""

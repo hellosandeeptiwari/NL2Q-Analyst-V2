@@ -1,28 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import './DatabaseSettings.css';
 
-interface DatabaseConfig {
-  type: 'snowflake' | 'azure-sql' | 'postgresql';
-  host: string;
-  port: number;
-  database: string;
-  schema: string;
-  username: string;
-  password: string;
-  // Snowflake specific
-  warehouse?: string;
-  account?: string;
-  role?: string;
-}
-
 interface DatabaseSettingsProps {
-  onNavigateBack?: () => void;
-}
-
-interface TestResult {
-  success: boolean;
-  message: string;
-  details?: any;
+  onNavigateBack: () => void;
 }
 
 interface IndexingStatus {
@@ -30,144 +10,242 @@ interface IndexingStatus {
   isIndexing: boolean;
   totalTables: number;
   indexedTables: number;
-  lastIndexed?: string;
-  error?: string;
+  indexedTableNames?: string[];  // List of actual indexed table names
+  lastIndexed: string | null;
+  error: string | null;
 }
 
-interface IndexingProgress {
-  isIndexing: boolean;
-  totalTables: number;
-  processedTables: number;
-  currentTable: string;
-  stage: string;
-  startTime?: string;
-  estimatedTimeRemaining?: number;
-  errors: Array<{table: string; error: string; timestamp: string}>;
-  completedTables: string[];
+interface TestResult {
+  success: boolean;
+  message: string;
+  latency_ms?: number;
+  database_type?: string;
+  database_name?: string;
 }
-
-const defaultConfigs: Record<string, Partial<DatabaseConfig>> = {
-  snowflake: {
-    type: 'snowflake',
-    schema: 'PUBLIC'
-  },
-  'azure-sql': {
-    type: 'azure-sql',
-    port: 1433,
-    schema: 'dbo'
-  },
-  postgresql: {
-    type: 'postgresql',
-    port: 5432,
-    schema: 'public'
-  }
-};
 
 const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) => {
-  const [config, setConfig] = useState<DatabaseConfig>({
-    type: 'snowflake',
+  const [config, setConfig] = useState({
+    database_type: 'azure_sql',
     host: '',
-    port: 0, // Not used for Snowflake
-    database: 'COMMERCIAL_AI',
-    schema: 'ENHANCED_NBA',
-    username: 'SVCGCPENBADEVRW',
-    password: 'Gfm2@gy@u7%HDQyoDn~N',
-    warehouse: 'GCP_AI_WH',
-    account: 'BTA93699-NNA65393',
-    role: ''
+    port: '1433',
+    database: '',
+    username: '',
+    password: ''
   });
 
   const [testResult, setTestResult] = useState<TestResult | null>(null);
-  const [showScrollTop, setShowScrollTop] = useState(false);
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
-  const [isForceIndexing, setIsForceIndexing] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
   const [indexingStatus, setIndexingStatus] = useState<IndexingStatus>({
     isIndexed: false,
     isIndexing: false,
     totalTables: 0,
-    indexedTables: 0
+    indexedTables: 0,
+    indexedTableNames: [],
+    lastIndexed: null,
+    error: null
   });
 
-  // Real-time progress tracking
-  const [indexingProgress, setIndexingProgress] = useState<IndexingProgress>({
-    isIndexing: false,
-    totalTables: 0,
-    processedTables: 0,
-    currentTable: '',
-    stage: '',
-    errors: [],
-    completedTables: []
-  });
-  const [websocket, setWebsocket] = useState<WebSocket | null>(null);
+  // Database status bar state
+  const [dbStatus, setDbStatus] = useState<any>(null);
+  const [isLoadingDbStatus, setIsLoadingDbStatus] = useState(true);
 
+  // Smart table selection state
+  const [tableInput, setTableInput] = useState('');
+  const [selectedTables, setSelectedTables] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [isIndexingTables, setIsIndexingTables] = useState(false);
+
+  // Table caching system
+  const [allTablesCache, setAllTablesCache] = useState<any[]>([]);
+  const [isLoadingTables, setIsLoadingTables] = useState(false);
+  const [tablesCacheTime, setTablesCacheTime] = useState<number | null>(null);
+  const [cacheStatus, setCacheStatus] = useState<'loading' | 'loaded' | 'error' | 'empty'>('empty');
+  const [cacheDetails, setCacheDetails] = useState<string>('');
+
+  // Load saved configuration and database status
   useEffect(() => {
-    loadSavedConfig();
-    checkIndexingStatus();
-    
-    // Setup WebSocket connection for real-time progress
-    const connectWebSocket = () => {
-      const ws = new WebSocket('ws://localhost:8000/ws/progress');
-      
-      ws.onopen = () => {
-        console.log('Connected to progress WebSocket');
-        setWebsocket(ws);
-      };
-      
-      ws.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          if (message.type === 'indexing_progress' && message.data) {
-            setIndexingProgress(message.data);
-            // Also update the old indexing status for compatibility
-            setIndexingStatus(prev => ({
-              ...prev,
-              isIndexing: message.data.isIndexing || false,
-              totalTables: message.data.totalTables || 0,
-              indexedTables: message.data.processedTables || 0
-            }));
-          }
-        } catch (error) {
-          console.error('Error parsing WebSocket message:', error, event.data);
-        }
-      };
-      
-      ws.onclose = () => {
-        console.log('WebSocket connection closed, attempting to reconnect...');
-        setTimeout(connectWebSocket, 3000); // Reconnect after 3 seconds
-      };
-      
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-      };
+    const initializeSettings = async () => {
+      await loadSavedConfig();
+      await loadDatabaseStatus(); // This will load backend connection status and cache tables
+      await checkIndexingStatus();
     };
-    
-    connectWebSocket();
-    
-    // Cleanup
-    return () => {
-      if (websocket) {
-        websocket.close();
-      }
-    };
+    initializeSettings();
   }, []);
 
-  // Cleanup WebSocket when component unmounts
+  // Refresh cache when database connection changes
   useEffect(() => {
-    return () => {
-      if (websocket) {
-        websocket.close();
-      }
-    };
-  }, [websocket]);
+    if (dbStatus?.connected && allTablesCache.length === 0 && cacheStatus !== 'loading') {
+      console.log('Database connected, preloading tables...');
+      preloadAllTables();
+    }
+  }, [dbStatus?.connected]);
 
-  // Handle scroll to show/hide back to top button
+  // Debug logging
+  useEffect(() => {
+    console.log('Cache status:', cacheStatus, 'Tables cached:', allTablesCache.length);
+  }, [cacheStatus, allTablesCache.length]);
+
+  const loadDatabaseStatus = async () => {
+    setIsLoadingDbStatus(true);
+    console.log('Loading database status...');
+    
+    try {
+      // Add timeout to prevent hanging
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
+      const response = await fetch('/api/database/status', {
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      console.log('Database status response:', response.status);
+      
+      if (response.ok) {
+        const status = await response.json();
+        console.log('Database status data:', status);
+        
+        // Map backend field names to frontend expectations
+        const mappedStatus = {
+          connected: status.isConnected || false,
+          database_type: status.databaseType || 'Unknown',
+          database_name: status.database || 'Unknown',
+          server: status.server || 'Unknown',
+          schema: status.schema || '',
+          warehouse: status.warehouse || '',
+          lastConnected: status.lastConnected || null
+        };
+        
+        console.log('Mapped status:', mappedStatus);
+        setDbStatus(mappedStatus);
+        
+        // Update config to reflect currently connected database
+        if (status.isConnected) {
+          updateConfigWithConnectedDatabase(status);
+          await preloadAllTables(); // Load table names from backend cache
+        }
+      } else {
+        console.error('Database status API error:', response.status, response.statusText);
+        const errorText = await response.text();
+        console.error('Error response:', errorText);
+        
+        setDbStatus({
+          connected: false,
+          database_type: 'API Error',
+          database_name: `HTTP ${response.status}: ${response.statusText}`
+        });
+      }
+    } catch (error) {
+      console.error('Failed to load database status:', error);
+      
+      let errorMessage = 'Unknown error';
+      let errorType = 'Network Error';
+      
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          errorType = 'Timeout Error';
+          errorMessage = 'Request timed out after 10 seconds';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      setDbStatus({
+        connected: false,
+        database_type: errorType,
+        database_name: errorMessage
+      });
+    } finally {
+      console.log('Database status loading complete');
+      setIsLoadingDbStatus(false);
+    }
+  };
+
+  // Update config form to show currently connected database
+  const updateConfigWithConnectedDatabase = (status: any) => {
+    const databaseTypeMapping: { [key: string]: string } = {
+      'Azure SQL': 'azure_sql',
+      'Snowflake': 'snowflake',
+      'PostgreSQL': 'postgres',
+      'SQLite': 'sqlite'
+    };
+
+    const portMapping: { [key: string]: string } = {
+      'azure_sql': '1433',
+      'snowflake': '443',
+      'postgres': '5432',
+      'sqlite': ''
+    };
+
+    const mappedType = databaseTypeMapping[status.databaseType] || 'azure_sql';
+    
+    setConfig(prevConfig => ({
+      ...prevConfig,
+      database_type: mappedType,
+      host: status.server || prevConfig.host,
+      port: portMapping[mappedType] || prevConfig.port,
+      database: status.database || prevConfig.database,
+      // Keep existing username/password from saved config for security
+      // but update the display fields for currently connected database
+    }));
+  };
+
+  // Preload all tables for instant search
+  const preloadAllTables = async () => {
+    // Check if we have recent cache (less than 5 minutes old)
+    const now = Date.now();
+    if (tablesCacheTime && (now - tablesCacheTime) < 300000 && allTablesCache.length > 0) {
+      console.log('Using cached tables data');
+      return;
+    }
+
+    setIsLoadingTables(true);
+    setCacheStatus('loading');
+    
+    try {
+      // Use the fast table names endpoint first for instant search
+      const response = await fetch('/api/database/table-names');
+      if (response.ok) {
+        const data = await response.json();
+        const tables = data.tables || [];
+        
+        // Simple table data for fast search - just names
+        const simpleTables = tables.map((table: any) => ({
+          name: table.name || table.full_name || table,
+          schema: table.schema || 'dbo',
+          full_name: table.full_name || table.name || table,
+          searchText: `${table.name || table} ${table.schema || ''}`.toLowerCase(),
+          priority: 'medium', // Default priority
+          cached: true
+        }));
+
+        setAllTablesCache(simpleTables);
+        setTablesCacheTime(now);
+        setCacheStatus('loaded');
+        setCacheDetails(`${simpleTables.length} tables cached (${Math.round((data.cache_age_seconds || 0))}s old)`);
+        
+        console.log(`✅ Loaded ${simpleTables.length} table names from backend cache for instant search`);
+      } else {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+    } catch (error) {
+      console.error('Failed to preload tables:', error);
+      setCacheStatus('error');
+      setAllTablesCache([]);
+    } finally {
+      setIsLoadingTables(false);
+    }
+  };
+
+  // Scroll to top button visibility
   useEffect(() => {
     const handleScroll = () => {
       setShowScrollTop(window.scrollY > 300);
     };
-
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
@@ -181,9 +259,14 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
       const response = await fetch('/api/database/config');
       if (response.ok) {
         const savedConfig = await response.json();
-        if (savedConfig) {
-          setConfig(savedConfig);
-        }
+        setConfig({
+          database_type: savedConfig.database_type || 'azure_sql',
+          host: savedConfig.host || '',
+          port: savedConfig.port || '1433',
+          database: savedConfig.database || '',
+          username: savedConfig.username || '',
+          password: savedConfig.password || ''
+        });
       }
     } catch (error) {
       console.error('Failed to load saved config:', error);
@@ -193,115 +276,30 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
   const checkIndexingStatus = async () => {
     setIsRefreshingStatus(true);
     try {
-      console.log('Fetching indexing status...');
       const response = await fetch('/api/database/indexing-status');
       if (response.ok) {
         const status = await response.json();
-        console.log('Received indexing status:', status);
         setIndexingStatus({
           isIndexed: status.isIndexed || false,
           isIndexing: status.isIndexing || false,
           totalTables: status.totalTables || 0,
           indexedTables: status.indexedTables || 0,
+          indexedTableNames: status.indexedTableNames || [],
           lastIndexed: status.lastIndexed || null,
           error: status.error || null
         });
-      } else {
-        console.error('Failed to fetch indexing status:', response.status);
-        setIndexingStatus(prev => ({
-          ...prev,
-          error: `HTTP Error: ${response.status}`
-        }));
       }
     } catch (error) {
       console.error('Failed to check indexing status:', error);
-      setIndexingStatus(prev => ({
-        ...prev,
-        error: `Network Error: ${error instanceof Error ? error.message : 'Unknown error'}`
-      }));
     } finally {
       setIsRefreshingStatus(false);
     }
   };
 
-  const forceReindex = async () => {
-    setIsForceIndexing(true);
-    try {
-      console.log('Starting force re-index...');
-      const response = await fetch('/api/database/start-indexing', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ force_reindex: true })
-      });
-      if (response.ok) {
-        const result = await response.json();
-        console.log('Re-index triggered:', result);
-        // Refresh status after triggering reindex
-        setTimeout(() => {
-          checkIndexingStatus();
-        }, 2000); // Wait 2 seconds for the indexing to start
-      } else {
-        console.error('Failed to trigger re-indexing:', response.status);
-      }
-    } catch (error) {
-      console.error('Failed to trigger re-indexing:', error);
-    } finally {
-      setIsForceIndexing(false);
-    }
-  };
-
-  const resumeIndexing = async () => {
-    setIsForceIndexing(true);
-    try {
-      console.log('Resuming indexing from where left off...');
-      const response = await fetch('/api/database/start-indexing', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ force_reindex: false })
-      });
-      if (response.ok) {
-        const result = await response.json();
-        console.log('Resume indexing triggered:', result);
-        // Refresh status after triggering reindex
-        setTimeout(() => {
-          checkIndexingStatus();
-        }, 2000); // Wait 2 seconds for the indexing to start
-      } else {
-        console.error('Failed to resume indexing:', response.status);
-      }
-    } catch (error) {
-      console.error('Failed to resume indexing:', error);
-    } finally {
-      setIsForceIndexing(false);
-    }
-  };
-
-  const handleTypeChange = (newType: DatabaseConfig['type']) => {
-    const defaultConfig = defaultConfigs[newType];
-    setConfig(prev => ({
-      ...prev,
-      ...defaultConfig,
-      type: newType
-    }));
-    setTestResult(null);
-  };
-
-  const handleInputChange = (field: keyof DatabaseConfig, value: string | number) => {
-    setConfig(prev => ({
-      ...prev,
-      [field]: value
-    }));
-    setTestResult(null);
-  };
-
   const testConnection = async () => {
     setIsTestingConnection(true);
     setTestResult(null);
-
+    
     try {
       const response = await fetch('/api/database/test-connection', {
         method: 'POST',
@@ -309,25 +307,12 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
         body: JSON.stringify(config)
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
       const result = await response.json();
-      console.log('Connection test result:', result);
-      
-      // Ensure the result has the proper structure
-      setTestResult({
-        success: result.success || false,
-        message: result.message || (result.success ? 'Connection successful' : 'Connection failed'),
-        details: result.connection_details || result.indexing_status || result
-      });
+      setTestResult(result);
     } catch (error) {
-      console.error('Connection test error:', error);
       setTestResult({
         success: false,
-        message: 'Failed to test connection',
-        details: { error: error instanceof Error ? error.message : String(error) }
+        message: `Connection failed: ${error}`
       });
     } finally {
       setIsTestingConnection(false);
@@ -336,7 +321,6 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
 
   const saveConfiguration = async () => {
     setIsSaving(true);
-
     try {
       const response = await fetch('/api/database/config', {
         method: 'POST',
@@ -345,287 +329,701 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
       });
 
       if (response.ok) {
-        // Start auto-indexing after successful save
-        await startIndexing();
-        await checkIndexingStatus();
+        alert('Configuration saved successfully!');
       } else {
-        throw new Error('Failed to save configuration');
+        alert('Failed to save configuration');
       }
     } catch (error) {
-      console.error('Failed to save configuration:', error);
+      alert(`Error saving configuration: ${error}`);
     } finally {
       setIsSaving(false);
     }
   };
 
-  const startIndexing = async () => {
+  // Enterprise-grade debounced table search
+  const [isSearching, setIsSearching] = useState(false);
+
+  // Clear searching state when component loads
+  useEffect(() => {
+    setIsSearching(false);
+  }, []);
+
+  // Fast debounced search function (reduced delay since we're using cache)
+  const debouncedSearch = useMemo(() => {
+    let timeoutId: NodeJS.Timeout;
+    return (value: string) => {
+      clearTimeout(timeoutId);
+      // Immediate search if cache is loaded, debounced if not
+      const delay = cacheStatus === 'loaded' ? 50 : 150;
+      timeoutId = setTimeout(() => {
+        performTableSearch(value);
+      }, delay);
+    };
+  }, [allTablesCache, cacheStatus]);
+
+  const performTableSearch = (value: string) => {
+    if (!value) {
+      setShowSuggestions(false);
+      setIsSearching(false);
+      return;
+    }
+
+    // If tables aren't cached yet, don't search and show appropriate message
+    if (allTablesCache.length === 0) {
+      if (cacheStatus === 'loading') {
+        // Show loading state but don't set isSearching
+        setSuggestions([]);
+        setShowSuggestions(false);
+        return;
+      } else if (cacheStatus === 'error') {
+        // Show error state
+        setSuggestions([]);
+        setShowSuggestions(false);
+        return;
+      } else {
+        // Try to load tables if not already loading
+        preloadAllTables();
+        setSuggestions([]);
+        setShowSuggestions(false);
+        return;
+      }
+    }
+
+    // Instant search through cached tables (no loading state needed)
     try {
-      await fetch('/api/database/start-indexing', {
-        method: 'POST'
-      });
+      const searchTerm = value.toLowerCase();
+      
+      // Fast filtering through cached data
+      const filtered = allTablesCache
+        .filter((table: any) => 
+          table.searchText?.includes(searchTerm) ||
+          table.name?.toLowerCase().includes(searchTerm)
+        )
+        .map((table: any) => ({
+          ...table,
+          matchScore: calculateMatchScore(table, value)
+        }))
+        .sort((a: any, b: any) => b.matchScore - a.matchScore)
+        .slice(0, 8);
+
+      setSuggestions(filtered);
+      setShowSuggestions(true);
+      setIsSearching(false); // Ensure searching state is cleared
     } catch (error) {
-      console.error('Failed to start indexing:', error);
+      console.error('Error during table search:', error);
+      setSuggestions([]);
+      setShowSuggestions(false);
+      setIsSearching(false);
     }
   };
 
-  const getDatabaseIcon = (type: string) => {
-    switch (type) {
-      case 'snowflake': return '❄️';
-      case 'azure-sql': return '☁️';
-      case 'postgresql': return '🐘';
-      default: return '🗄️';
-    }
+  const calculateMatchScore = (table: any, searchTerm: string): number => {
+    const term = searchTerm.toLowerCase();
+    const name = table.name.toLowerCase();
+    let score = 0;
+
+    // Exact name match gets highest score
+    if (name === term) score += 100;
+    // Name starts with term
+    else if (name.startsWith(term)) score += 80;
+    // Name contains term
+    else if (name.includes(term)) score += 60;
+    
+    // Priority boost
+    if (table.priority === 'high') score += 20;
+    else if (table.priority === 'medium') score += 10;
+    
+    // Row count boost (more data = more relevant)
+    if (table.row_count > 1000) score += 15;
+    else if (table.row_count > 100) score += 10;
+    
+    return score;
   };
 
-  const isValidForTesting = () => {
-    // Common required fields
-    if (!config.username || !config.database) {
-      return false;
-    }
-
-    // Snowflake specific validation
-    if (config.type === 'snowflake') {
-      return !!(config.account && config.warehouse);
-    }
-
-    // Other databases require host
-    return !!(config.host);
+  // Handle table input change with debouncing
+  const handleTableInputChange = (value: string) => {
+    setTableInput(value);
+    debouncedSearch(value);
   };
 
-  const renderDatabaseTypeSelector = () => (
-    <div className="database-type-selector">
-      <label className="database-type-label">
-        Database Type
-      </label>
-      <div className="database-type-grid">
-        {Object.keys(defaultConfigs).map((type) => (
-          <button
-            key={type}
-            onClick={() => handleTypeChange(type as DatabaseConfig['type'])}
-            className={`database-type-card ${config.type === type ? 'active' : ''}`}
-          >
-            <div className="database-icon">{getDatabaseIcon(type)}</div>
-            <div className="database-name">
-              {type.replace('-', ' ')}
-            </div>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
+  // Add table to selection
+  const addTable = (tableName: string) => {
+    if (!selectedTables.includes(tableName)) {
+      setSelectedTables([...selectedTables, tableName]);
+    }
+    setTableInput('');
+    setShowSuggestions(false);
+  };
 
-  const renderFormField = (
-    label: string,
-    field: keyof DatabaseConfig,
-    type: string = 'text',
-    required: boolean = true,
-    placeholder?: string
-  ) => (
-    <div className="form-field">
-      <label className="form-label">
-        {label} {required && <span className="required">*</span>}
-      </label>
-      <input
-        type={type}
-        value={config[field] || ''}
-        onChange={(e) => handleInputChange(field, type === 'number' ? parseInt(e.target.value) || 0 : e.target.value)}
-        placeholder={placeholder}
-        className="form-input"
-        required={required}
-      />
-    </div>
-  );
+  // Remove table from selection
+  const removeTable = (tableName: string) => {
+    setSelectedTables(selectedTables.filter(t => t !== tableName));
+  };
 
-  const renderConnectionForm = () => (
-    <div className="connection-form">
-      <div className="form-row">
-        {/* Only show Host/Server for non-Snowflake databases */}
-        {config.type !== 'snowflake' && renderFormField('Host/Server', 'host', 'text', true, 'server.database.windows.net')}
-        {config.type !== 'snowflake' && renderFormField('Port', 'port', 'number', true)}
+  // Enterprise indexing progress tracking
+  const [indexingProgress, setIndexingProgress] = useState({
+    current: 0,
+    total: 0,
+    currentTable: '',
+    eta: '',
+    completedTables: [] as string[],
+    errors: [] as string[]
+  });
+
+  // Start indexing with real-time progress
+  const startTableIndexing = async (forceReindex = false) => {
+    if (selectedTables.length === 0) return;
+    
+    // If force reindex, show confirmation
+    if (forceReindex) {
+      const confirmed = window.confirm(
+        `⚠️ Force Reindex will COMPLETELY CLEAR the existing vector index and rebuild it from scratch with the selected ${selectedTables.length} table${selectedTables.length !== 1 ? 's' : ''}.\n\n` +
+        `This is recommended when:\n` +
+        `• Switching to a different database\n` +
+        `• Starting fresh with new table selection\n` +
+        `• Fixing index corruption issues\n\n` +
+        `Continue with Force Reindex?`
+      );
+      if (!confirmed) return;
+    }
+    
+    setIsIndexingTables(true);
+    setIndexingProgress({
+      current: 0,
+      total: selectedTables.length,
+      currentTable: selectedTables[0],
+      eta: 'Calculating...',
+      completedTables: [],
+      errors: []
+    });
+
+    try {
+      const response = await fetch('/api/database/start-indexing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          force_reindex: forceReindex,
+          selected_tables: selectedTables
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Indexing started:', result);
         
-        {/* For Snowflake, show Account and Warehouse in the first row */}
-        {config.type === 'snowflake' && renderFormField('Account', 'account', 'text', true, 'BTA93699-NNA65393')}
-        {config.type === 'snowflake' && renderFormField('Warehouse', 'warehouse', 'text', true, 'GCP_AI_WH')}
-      </div>
+        // Start progress monitoring
+        startProgressMonitoring();
+        
+        await checkIndexingStatus();
+      } else {
+        const error = await response.text();
+        setIndexingProgress(prev => ({
+          ...prev,
+          errors: [...prev.errors, `Failed to start indexing: ${error}`]
+        }));
+      }
+    } catch (error) {
+      console.error('Error starting indexing:', error);
+      setIndexingProgress(prev => ({
+        ...prev,
+        errors: [...prev.errors, `Network error: ${error}`]
+      }));
+    } finally {
+      setIsIndexingTables(false);
+    }
+  };
 
-      <div className="form-row">
-        {renderFormField('Database', 'database', 'text', true)}
-        {renderFormField('Schema', 'schema', 'text', true)}
-      </div>
+  // Real-time progress monitoring
+  const startProgressMonitoring = () => {
+    const interval = setInterval(async () => {
+      try {
+        const response = await fetch('/api/database/indexing-progress');
+        if (response.ok) {
+          const progress = await response.json();
+          setIndexingProgress(prev => ({
+            ...prev,
+            current: progress.completed || prev.current,
+            currentTable: progress.currentTable || prev.currentTable,
+            eta: progress.eta || prev.eta,
+            completedTables: progress.completedTables || prev.completedTables,
+            errors: progress.errors || prev.errors
+          }));
 
-      <div className="form-row">
-        {renderFormField('Username', 'username', 'text', true)}
-        {renderFormField('Password', 'password', 'password', true)}
-      </div>
+          // Stop monitoring when complete
+          if (progress.completed >= selectedTables.length) {
+            clearInterval(interval);
+            setIsIndexingTables(false);
+          }
+        }
+      } catch (error) {
+        console.error('Progress monitoring error:', error);
+      }
+    }, 2000);
 
-      {config.type === 'snowflake' && (
-        <div className="form-row">
-          {renderFormField('Role', 'role', 'text', false, 'Optional role')}
-          {renderFormField('Port', 'port', 'number', false, '443')}
+    // Cleanup after 10 minutes max
+    setTimeout(() => clearInterval(interval), 600000);
+  };
+
+  // Enhanced Database Status Bar Component
+  const renderDatabaseStatusBar = () => {
+    const getStatusIcon = () => {
+      if (isLoadingDbStatus) return '⏳';
+      return dbStatus?.connected ? '🟢' : '🔴';
+    };
+
+    const getStatusText = () => {
+      if (isLoadingDbStatus) return 'Checking connection...';
+      return dbStatus?.connected ? 'Connected' : 'Not Connected';
+    };
+
+    const renderConnectionDetails = () => {
+      if (isLoadingDbStatus) return 'Loading database information...';
+      
+      if (!dbStatus?.connected) {
+        return 'Database connection not available';
+      }
+
+      return (
+        <div className="connection-details">
+          <div className="primary-details">
+            <span className="db-type">{dbStatus.database_type}</span>
+            <span className="separator">•</span>
+            <span className="db-name">{dbStatus.database_name}</span>
+          </div>
+          <div className="secondary-details">
+            <span className="server-info">📡 {dbStatus.server}</span>
+            {dbStatus.schema && <span className="schema-info">🗂️ Schema: {dbStatus.schema}</span>}
+            {dbStatus.lastConnected && (
+              <span className="last-connected">
+                🕒 Connected: {new Date(dbStatus.lastConnected * 1000).toLocaleTimeString()}
+              </span>
+            )}
+          </div>
         </div>
-      )}
-    </div>
-  );
-
-  const renderTestResult = () => {
-    if (!testResult) return null;
+      );
+    };
 
     return (
-      <div className={`test-result ${testResult.success ? 'success' : 'error'}`}>
-        <div className="test-result-header">
-          <span className="text-lg">
-            {testResult.success ? '✅' : '❌'}
+      <div className="database-status-bar">
+        <div className="status-indicator">
+          <span className={`status-icon ${isLoadingDbStatus ? 'loading' : ''}`}>
+            {getStatusIcon()}
           </span>
-          <span>
-            {testResult.message}
-          </span>
+          <div className="status-details">
+            <div className={`status-title ${dbStatus?.connected ? 'connected' : 'disconnected'}`}>
+              {getStatusText()}
+            </div>
+            <div className="status-subtitle">
+              {renderConnectionDetails()}
+            </div>
+          </div>
         </div>
-        {testResult.details && (
-          <div className="test-result-details">
-            <pre>{JSON.stringify(testResult.details, null, 2)}</pre>
+        <div className="status-actions">
+          <button 
+            onClick={loadDatabaseStatus} 
+            className={`refresh-status-btn ${isLoadingDbStatus ? 'loading' : ''}`}
+            disabled={isLoadingDbStatus}
+            title="Refresh connection status"
+          >
+            🔄 {isLoadingDbStatus ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // Currently Indexed Tables Display Component
+  const renderIndexedTablesStatus = () => {
+    return (
+      <div className="indexed-tables-status">
+        <div className="subsection-header">
+          <span>✅</span>
+          <span>Currently Indexed Tables</span>
+          <div className="subsection-info">
+            <span className="subsection-subtitle">Tables available for AI-powered natural language queries</span>
+          </div>
+        </div>
+        
+        {indexingStatus.isIndexing ? (
+          <div className="indexing-in-progress">
+            <span className="info-text">⏳ Indexing in progress... Status will update when complete</span>
+          </div>
+        ) : indexingStatus.indexedTables > 0 ? (
+          <div className="indexed-tables-display">
+            <div className="indexed-count-banner">
+              <span className="count-badge">{indexingStatus.indexedTables}</span>
+              <span className="count-text">table{indexingStatus.indexedTables !== 1 ? 's' : ''} indexed and ready for AI queries</span>
+            </div>
+            
+            {indexingStatus.indexedTableNames && indexingStatus.indexedTableNames.length > 0 && (
+              <div className="indexed-tables-list">
+                <div className="indexed-tables-grid">
+                  {indexingStatus.indexedTableNames.map((tableName) => (
+                    <div key={tableName} className="indexed-table-card">
+                      <span className="table-icon">🗂️</span>
+                      <span className="table-name">{tableName}</span>
+                      <span className="indexed-badge">✅ Indexed</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            <div className="indexed-status-footer">
+              <span className="last-indexed">
+                {indexingStatus.lastIndexed ? 
+                  `Last indexed: ${new Date(indexingStatus.lastIndexed).toLocaleString()}` : 
+                  'Recently indexed'
+                }
+              </span>
+              <button 
+                onClick={checkIndexingStatus} 
+                className="refresh-index-status-btn"
+                title="Refresh indexed tables status"
+              >
+                🔄 Refresh Status
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="no-indexed-tables">
+            <div className="empty-state">
+              <span className="empty-icon">📋</span>
+              <span className="empty-title">No tables indexed yet</span>
+              <span className="empty-subtitle">Select and index tables below to enable AI-powered queries</span>
+            </div>
           </div>
         )}
       </div>
     );
   };
 
-  const renderIndexingStatus = () => (
-    <div className="indexing-section">
-      <h3 className="section-header">
-        <span>🔍</span>
-        <span>Vector Search Indexing</span>
-      </h3>
-
-      <div className="indexing-content">
-        <div className="status-row">
-          <span className="status-label">Status:</span>
-          <span className={`status-badge ${
-            indexingStatus?.isIndexing 
-              ? 'indexing'
-              : indexingStatus?.isIndexed
-              ? 'indexed'
-              : 'not-indexed'
-          }`}>
-            {indexingStatus?.isIndexing 
-              ? 'Indexing...' 
-              : indexingStatus?.isIndexed 
-              ? 'Indexed' 
-              : 'Not Indexed'}
-          </span>
+  // Enhanced Smart Table Selection Component
+  const renderSmartTableSelection = () => {
+    return (
+      <div className="smart-table-selection">
+        <div className="subsection-header">
+          <span>📋</span>
+          <span>Select Tables for Reindexing</span>
+          <div className="subsection-info">
+            <span className="subsection-subtitle">Choose specific tables to reindex for enhanced AI analysis</span>
+            <div className="cache-status">
+              {cacheStatus === 'loading' && (
+                <span className="cache-indicator loading">⏳ Loading tables...</span>
+              )}
+              {cacheStatus === 'loaded' && (
+                <span className="cache-indicator loaded">
+                  ⚡ {cacheDetails || `${allTablesCache.length} tables cached (instant search)`}
+                </span>
+              )}
+              {cacheStatus === 'error' && (
+                <span className="cache-indicator error">
+                  ⚠️ Failed to load tables
+                  <button onClick={preloadAllTables} className="retry-cache-btn">Retry</button>
+                </span>
+              )}
+            </div>
+          </div>
         </div>
 
-        {indexingStatus.totalTables > 0 && (
-          <div className="status-row">
-            <span className="status-label">Tables:</span>
-            <span>
-              {indexingStatus.indexedTables} / {indexingStatus.totalTables}
-            </span>
-          </div>
-        )}
-
-        {indexingStatus.lastIndexed && (
-          <div className="status-row">
-            <span className="status-label">Last Indexed:</span>
-            <span>{new Date(indexingStatus.lastIndexed).toLocaleString()}</span>
-          </div>
-        )}
-
-        {indexingStatus.error && (
-          <div className="error-message">
-            {indexingStatus.error}
-          </div>
-        )}
-
-        {/* Real-time Progress Display */}
-        {indexingProgress?.isIndexing && (
-          <div className="indexing-progress">
-            <div className="progress-header">
-              <span className="progress-icon">🔄</span>
-              <span>Indexing in Progress</span>
+        {/* Enterprise Table Search */}
+        <div className="table-search-container">
+          <div className="search-input-wrapper">
+            <div className="search-icon">🔍</div>
+            <input
+              type="text"
+              placeholder={
+                cacheStatus === 'loaded' 
+                  ? `Instant search through ${allTablesCache.length} tables...`
+                  : cacheStatus === 'loading'
+                  ? "Loading tables for search..."
+                  : "Start typing to search available tables..."
+              }
+              value={tableInput}
+              onChange={(e) => handleTableInputChange(e.target.value)}
+              className="enterprise-table-input"
+              onFocus={() => tableInput && setShowSuggestions(true)}
+              disabled={cacheStatus === 'loading'}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && tableInput && suggestions.length > 0) {
+                  const firstTable = suggestions[0];
+                  const tableName = typeof firstTable === 'string' ? firstTable : (firstTable?.name || firstTable);
+                  addTable(tableName);
+                  e.preventDefault();
+                }
+                if (e.key === 'Escape') {
+                  setShowSuggestions(false);
+                  setTableInput('');
+                  e.preventDefault();
+                }
+                if (e.key === 'ArrowDown' && showSuggestions && suggestions.length > 0) {
+                  // Future: implement arrow key navigation
+                  e.preventDefault();
+                }
+              }}
+            />
+            <div className="input-actions">
+              {tableInput && (
+                <button 
+                  onClick={() => {setTableInput(''); setShowSuggestions(false);}}
+                  className="clear-input-btn"
+                  title="Clear search"
+                >
+                  ❌
+                </button>
+              )}
+              <button 
+                onClick={preloadAllTables}
+                className={`refresh-cache-btn ${isLoadingTables ? 'loading' : ''}`}
+                disabled={isLoadingTables}
+                title="Refresh table cache"
+              >
+                {isLoadingTables ? '⏳' : '🔄'}
+              </button>
             </div>
-            
-            <div className="progress-details">
-              <div className="progress-stage">{indexingProgress.stage}</div>
-              {indexingProgress.currentTable && (
-                <div className="current-table">
-                  Currently processing: <strong>{indexingProgress.currentTable}</strong>
+          </div>
+
+          {/* Enhanced Suggestions Dropdown */}
+          {showSuggestions && (
+            <div className="enterprise-suggestions-dropdown">
+              <div className="suggestions-header">
+                <span>
+                  {isSearching ? '🔍 Searching...' : `Available Tables (${suggestions.length})`}
+                </span>
+                <span className="suggestions-hint">Click to select • Enter for first • Esc to close</span>
+              </div>
+              
+              {cacheStatus === 'loading' ? (
+                <div className="loading-suggestions">
+                  <div className="loading-spinner-container">
+                    <div className="loading-spinner"></div>
+                    <span>Loading table cache for instant search...</span>
+                  </div>
+                </div>
+              ) : cacheStatus === 'error' ? (
+                <div className="error-suggestions">
+                  <div className="error-container">
+                    <span>⚠️ Failed to load tables</span>
+                    <button onClick={preloadAllTables} className="retry-btn">
+                      🔄 Retry
+                    </button>
+                  </div>
+                </div>
+              ) : suggestions.length > 0 ? (
+                <div className="suggestions-list">
+                  {suggestions.map((table: any, index) => (
+                    <div
+                      key={table.name || table}
+                      className={`enterprise-suggestion-item ${index === 0 ? 'highlighted' : ''}`}
+                      onClick={() => addTable(typeof table === 'string' ? table : table.name)}
+                    >
+                      <div className="suggestion-main">
+                        <span className="table-icon">📋</span>
+                        <div className="table-details">
+                          <span className="table-name">{typeof table === 'string' ? table : table.name}</span>
+                          {typeof table === 'object' && table.row_count && (
+                            <span className="table-metadata">
+                              📊 {table.row_count.toLocaleString()} rows
+                              {table.priority && (
+                                <span className={`priority-indicator ${table.priority}`}>
+                                  {table.priority === 'high' ? '🔥' : table.priority === 'medium' ? '⭐' : '📋'}
+                                </span>
+                              )}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {selectedTables.includes(typeof table === 'string' ? table : table.name) && (
+                        <span className="already-selected">✅ Selected</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : tableInput && cacheStatus === 'loaded' && (
+                <div className="no-suggestions">
+                  <span>🔍 No tables found matching "{tableInput}"</span>
+                  <div className="search-stats">
+                    Searched through {allTablesCache.length} cached tables
+                  </div>
+                  <button 
+                    onClick={() => {setTableInput(''); setShowSuggestions(false);}}
+                    className="clear-search-btn"
+                  >
+                    Clear Search
+                  </button>
                 </div>
               )}
+            </div>
+          )}
+
+          {showSuggestions && suggestions.length === 0 && tableInput && (
+            <div className="no-suggestions">
+              <span>🔍 No tables found matching "{tableInput}"</span>
+            </div>
+          )}
+        </div>
+
+        {/* Selected Tables Display */}
+        {selectedTables.length > 0 && (
+          <div className="selected-tables-container">
+            <div className="selected-tables-header">
+              <span>✅ Selected Tables ({selectedTables.length})</span>
+              <button
+                onClick={() => setSelectedTables([])}
+                className="clear-all-btn"
+                disabled={isIndexingTables}
+                title="Clear all selections"
+              >
+                🗑️ Clear All
+              </button>
+            </div>
+            <div className="enterprise-table-tags">
+              {selectedTables.map((tableName, index) => (
+                <div key={tableName} className="enterprise-table-tag">
+                  <span className="tag-number">{index + 1}</span>
+                  <span className="tag-icon">📋</span>
+                  <span className="tag-name">{tableName}</span>
+                  <button 
+                    onClick={() => removeTable(tableName)}
+                    className="enterprise-remove-btn"
+                    disabled={isIndexingTables}
+                    title={`Remove ${tableName}`}
+                  >
+                    ❌
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Enterprise Action Panel */}
+        <div className="enterprise-action-panel">
+          {/* Progress Display */}
+          {isIndexingTables && indexingProgress.total > 0 && (
+            <div className="indexing-progress-display">
+              <div className="progress-header">
+                <span>⚡ Reindexing in Progress</span>
+                <span className="progress-percentage">
+                  {Math.round((indexingProgress.current / indexingProgress.total) * 100)}%
+                </span>
+              </div>
               
               <div className="progress-bar-container">
                 <div className="progress-bar">
                   <div 
-                    className="progress-fill" 
-                    style={{
-                      width: `${indexingProgress.totalTables > 0 
-                        ? (indexingProgress.processedTables / indexingProgress.totalTables) * 100 
-                        : 0}%`
-                    }}
+                    className="progress-fill"
+                    style={{ width: `${(indexingProgress.current / indexingProgress.total) * 100}%` }}
                   ></div>
                 </div>
-                <div className="progress-text">
-                  {indexingProgress.processedTables} / {indexingProgress.totalTables} tables
-                  {indexingProgress.estimatedTimeRemaining && (
-                    <span className="time-remaining">
-                      {' '}• ETA: {Math.ceil(indexingProgress.estimatedTimeRemaining / 60)} min
-                    </span>
-                  )}
+                <div className="progress-details">
+                  <span>Processing: {indexingProgress.currentTable}</span>
+                  <span>ETA: {indexingProgress.eta}</span>
                 </div>
               </div>
-              
+
               {indexingProgress.completedTables.length > 0 && (
-                <div className="completed-tables">
-                  <div className="completed-header">Recently completed:</div>
-                  <div className="completed-list">
-                    {indexingProgress.completedTables.slice(-5).map((table, index) => (
-                      <span key={index} className="completed-table">✅ {table}</span>
-                    ))}
-                  </div>
+                <div className="completed-tables-summary">
+                  <span>✅ Completed: {indexingProgress.completedTables.join(', ')}</span>
                 </div>
               )}
-              
+
               {indexingProgress.errors.length > 0 && (
-                <div className="progress-errors">
-                  <div className="errors-header">⚠️ Errors encountered:</div>
-                  {indexingProgress.errors.slice(-3).map((error, index) => (
-                    <div key={index} className="error-item">
-                      <strong>{error.table}:</strong> {error.error}
-                    </div>
-                  ))}
+                <div className="indexing-errors">
+                  <span>⚠️ Errors: {indexingProgress.errors.length}</span>
+                  <details>
+                    <summary>View Details</summary>
+                    {indexingProgress.errors.map((error, i) => (
+                      <div key={i} className="error-detail">{error}</div>
+                    ))}
+                  </details>
                 </div>
               )}
             </div>
-          </div>
-        )}
+          )}
 
-        <div className="indexing-actions">
-          <button
-            onClick={checkIndexingStatus}
-            disabled={indexingProgress?.isIndexing || isRefreshingStatus}
-            className="refresh-button"
-          >
-            {isRefreshingStatus ? 'Refreshing...' : indexingProgress?.isIndexing ? 'Indexing...' : 'Refresh Status'}
-          </button>
+          <div className="action-info">
+            {selectedTables.length === 0 ? (
+              <span className="info-text">💡 Select tables above to enable reindexing</span>
+            ) : isIndexingTables ? (
+              <span className="info-text">
+                ⚡ Reindexing {indexingProgress.total} tables for enhanced AI analysis...
+              </span>
+            ) : indexingProgress.completedTables && indexingProgress.completedTables.length > 0 ? (
+              <div className="completion-status">
+                <span className="success-text">
+                  ✅ Successfully indexed {indexingProgress.completedTables.length} table{indexingProgress.completedTables.length !== 1 ? 's' : ''} with smart schema analysis
+                </span>
+                <div className="completed-tables-list">
+                  <strong>Indexed Tables:</strong>
+                  {indexingProgress.completedTables.map((table, index) => (
+                    <span key={table} className="completed-table-badge">
+                      {table}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <span className="info-text">
+                🚀 Ready to reindex {selectedTables.length} table{selectedTables.length !== 1 ? 's' : ''} for enhanced AI analysis
+              </span>
+            )}
+          </div>
           
-          <button
-            onClick={resumeIndexing}
-            disabled={indexingProgress?.isIndexing || isRefreshingStatus || isForceIndexing}
-            className="resume-index-button"
-          >
-            {isForceIndexing ? 'Starting Resume...' : 'Resume Indexing'}
-          </button>
-          
-          <button
-            onClick={forceReindex}
-            disabled={indexingStatus?.isIndexing || isRefreshingStatus || isForceIndexing}
-            className="force-reindex-button"
-          >
-            {isForceIndexing ? 'Starting Re-index...' : 'Force Re-index All Tables'}
-          </button>
+          <div className="action-buttons-row">
+            <button
+              onClick={() => startTableIndexing(false)}
+              disabled={selectedTables.length === 0 || isIndexingTables}
+              className={`enterprise-start-btn ${selectedTables.length > 0 && !isIndexingTables ? 'ready' : 'disabled'}`}
+            >
+              <span className="btn-icon">
+                {isIndexingTables ? '⏳' : selectedTables.length > 0 ? '➕' : '💡'}
+              </span>
+              <span className="btn-text">
+                {isIndexingTables 
+                  ? `Reindexing... (${indexingProgress.current}/${indexingProgress.total})`
+                  : selectedTables.length > 0 
+                    ? `Add ${selectedTables.length} Table${selectedTables.length !== 1 ? 's' : ''} to Index`
+                    : 'Select Tables to Reindex'
+                }
+              </span>
+            </button>
+
+            <button
+              onClick={() => startTableIndexing(true)}
+              disabled={selectedTables.length === 0 || isIndexingTables}
+              className={`enterprise-force-btn ${selectedTables.length > 0 && !isIndexingTables ? 'ready' : 'disabled'}`}
+              title="Clear existing index and rebuild from scratch with selected tables"
+            >
+              <span className="btn-icon">
+                {isIndexingTables ? '⏳' : selectedTables.length > 0 ? '🔄' : '⚠️'}
+              </span>
+              <span className="btn-text">
+                {isIndexingTables 
+                  ? `Force Reindexing...`
+                  : selectedTables.length > 0 
+                    ? `Force Reindex ${selectedTables.length} Table${selectedTables.length !== 1 ? 's' : ''}`
+                    : 'Force Reindex (Clear & Rebuild)'
+                }
+              </span>
+            </button>
+
+            {isIndexingTables && (
+              <button
+                onClick={() => {
+                  setIsIndexingTables(false);
+                  setIndexingProgress(prev => ({ ...prev, errors: [...prev.errors, 'Reindexing cancelled by user'] }));
+                }}
+                className="cancel-indexing-btn"
+              >
+                ⏹️ Cancel Reindexing
+              </button>
+            )}
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="database-settings">
@@ -633,94 +1031,211 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
         {/* Header */}
         <div className="database-settings-header">
           <div className="header-content">
-            <div className="breadcrumb">
-              <span className="breadcrumb-item">🏠 Home</span>
-              <span className="breadcrumb-separator">→</span>
-              <span className="breadcrumb-item active">⚙️ Database Settings</span>
-            </div>
-            <div className="header-title">
-              <span className="header-icon">⚙️</span>
-              <h1>Database Settings</h1>
-            </div>
+            <h1 className="page-title">⚙️ Database Settings</h1>
+            <p className="page-subtitle">Configure your database connection and indexing preferences</p>
           </div>
-          {onNavigateBack && (
-            <button
-              onClick={onNavigateBack}
-              className="back-button"
-              title="Return to main chat interface"
-            >
-              <span>←</span>
-              <span>Back to Chat</span>
-            </button>
-          )}
+          <button onClick={onNavigateBack} className="back-button">
+            ← Back to Chat
+          </button>
         </div>
 
         <div className="settings-content">
-          {/* Database Connection Section */}
-          <div className="connection-section">
-            <h2 className="section-header">
-              <span>🗄️</span>
-              <span>Database Connection</span>
-            </h2>
+          {/* Database Status Bar */}
+          {renderDatabaseStatusBar()}
 
-            {renderDatabaseTypeSelector()}
-            {renderConnectionForm()}
+          {/* Connection Section */}
+          <div className="connection-section">
+            <div className="section-header-with-status">
+              <h2 className="section-header">
+                <span>🗄️</span>
+                <span>Database Connection Configuration</span>
+              </h2>
+              {dbStatus?.connected && (
+                <div className="connected-indicator">
+                  <span className="indicator-dot"></span>
+                  <span>Currently Connected: {dbStatus.database_type}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="config-info">
+              <p className="config-description">
+                💡 Configure database connection settings below. The currently active connection is shown in the status bar above.
+              </p>
+            </div>
+
+            <div className="form-group">
+              <label>Database Type</label>
+              <select
+                value={config.database_type}
+                onChange={(e) => setConfig({...config, database_type: e.target.value})}
+                className="form-input"
+              >
+                <option value="azure_sql">Azure SQL Server</option>
+                <option value="snowflake">Snowflake</option>
+                <option value="postgres">PostgreSQL</option>
+                <option value="sqlite">SQLite</option>
+              </select>
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label>Host/Server</label>
+                <input
+                  type="text"
+                  value={config.host}
+                  onChange={(e) => setConfig({...config, host: e.target.value})}
+                  className="form-input"
+                  placeholder="server.database.windows.net"
+                />
+              </div>
+              <div className="form-group">
+                <label>Port</label>
+                <input
+                  type="text"
+                  value={config.port}
+                  onChange={(e) => setConfig({...config, port: e.target.value})}
+                  className="form-input"
+                  placeholder="1433"
+                />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label>Database Name</label>
+              <input
+                type="text"
+                value={config.database}
+                onChange={(e) => setConfig({...config, database: e.target.value})}
+                className="form-input"
+                placeholder="your-database-name"
+              />
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label>Username</label>
+                <input
+                  type="text"
+                  value={config.username}
+                  onChange={(e) => setConfig({...config, username: e.target.value})}
+                  className="form-input"
+                  placeholder="username"
+                />
+              </div>
+              <div className="form-group">
+                <label>Password</label>
+                <input
+                  type="password"
+                  value={config.password}
+                  onChange={(e) => setConfig({...config, password: e.target.value})}
+                  className="form-input"
+                  placeholder="password"
+                />
+              </div>
+            </div>
 
             {/* Test Result */}
-            {testResult && renderTestResult()}
+            {testResult && (
+              <div className={`test-result ${testResult.success ? 'success' : 'error'}`}>
+                <span className="result-icon">{testResult.success ? '✅' : '❌'}</span>
+                <span className="result-message">{testResult.message}</span>
+                {testResult.latency_ms && (
+                  <span className="result-latency">({testResult.latency_ms}ms)</span>
+                )}
+              </div>
+            )}
 
             {/* Action Buttons */}
             <div className="action-buttons">
               <button
                 onClick={testConnection}
-                disabled={isTestingConnection || !isValidForTesting()}
+                disabled={isTestingConnection}
                 className="action-button test-button"
               >
-                {isTestingConnection && (
-                  <div className="loading-spinner"></div>
-                )}
+                {isTestingConnection && <div className="loading-spinner"></div>}
                 <span>{isTestingConnection ? 'Testing...' : 'Test Connection'}</span>
               </button>
 
               <button
                 onClick={saveConfiguration}
-                disabled={isSaving || !testResult?.success}
+                disabled={isSaving}
                 className="action-button save-button"
               >
-                {isSaving && (
-                  <div className="loading-spinner"></div>
-                )}
+                {isSaving && <div className="loading-spinner"></div>}
                 <span>{isSaving ? 'Saving...' : 'Save Configuration'}</span>
               </button>
             </div>
-
-            {!testResult?.success && testResult && (
-              <p className="help-text">
-                <span>💡</span>
-                <span>Please test the connection successfully before saving the configuration.</span>
-              </p>
-            )}
           </div>
 
-          {/* Vector Search Indexing Section */}
-          {renderIndexingStatus()}
+          {/* Smart Table Selection & Vector Search Indexing */}
+          <div className="indexing-section">
+            <h2 className="section-header">
+              <span>🔍</span>
+              <span>Vector Search & Table Reindexing</span>
+            </h2>
 
-          {/* Usage Instructions */}
+            {/* Current Indexing Status */}
+            <div className="indexing-status-container">
+              <div className="status-row">
+                <span className="status-label">Current Status:</span>
+                <span className={`status-badge ${
+                  indexingStatus?.isIndexing 
+                    ? 'indexing'
+                    : indexingStatus?.isIndexed
+                    ? 'indexed'
+                    : 'not-indexed'
+                }`}>
+                  {indexingStatus?.isIndexing 
+                    ? '⏳ Indexing in Progress'
+                    : indexingStatus?.isIndexed
+                    ? '✅ Indexed'
+                    : '⚪ Not Indexed'
+                  }
+                </span>
+                <button 
+                  onClick={checkIndexingStatus}
+                  disabled={isRefreshingStatus}
+                  className={`refresh-button ${isRefreshingStatus ? 'loading' : ''}`}
+                >
+                  🔄 {isRefreshingStatus ? 'Refreshing...' : 'Refresh'}
+                </button>
+              </div>
+              
+              {indexingStatus?.totalTables > 0 && (
+                <div className="progress-info">
+                  <span>📊 {indexingStatus.indexedTables} of {indexingStatus.totalTables} tables indexed</span>
+                  {indexingStatus.lastIndexed && (
+                    <span className="last-indexed">
+                      🕒 Last indexed: {new Date(indexingStatus.lastIndexed).toLocaleString()}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Currently Indexed Tables Status */}
+            {renderIndexedTablesStatus()}
+
+            {/* Smart Table Selection */}
+            {renderSmartTableSelection()}
+          </div>
+
+          {/* Instructions */}
           <div className="instructions-section">
             <h3 className="instructions-header">
               <span>💡</span>
               <span>How it works</span>
             </h3>
             <div className="instructions-list">
-              <p>1. Select your database type and enter connection details</p>
-              <p>2. Test the connection to ensure it's working properly</p>
-              <p>3. Save the configuration to enable auto-indexing</p>
-              <p>4. The system will automatically create vector embeddings for schema discovery</p>
-              <p>5. Use natural language queries in the chat to find and analyze data</p>
+              <p>1. Check database connection status at the top</p>
+              <p>2. Select tables you want to index for AI analysis</p>
+              <p>3. Start indexing to enable intelligent schema discovery</p>
+              <p>4. Use natural language queries in the chat interface</p>
             </div>
           </div>
         </div>
-        
+
         {/* Back to Top Button */}
         {showScrollTop && (
           <button
