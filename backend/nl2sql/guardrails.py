@@ -10,18 +10,18 @@ class GuardrailConfig:
     default_limit: int
 
 def sanitize_sql(sql: str, cfg: GuardrailConfig) -> tuple[str,bool]:
+    """Basic safety checks only - no modification of LLM-generated SQL"""
+    print(f"🧠 LLM Generated SQL (passed through unmodified):\n{sql}")
     s = sql.strip().strip(";")
+    
+    # Basic safety checks only
     if not cfg.enable_write and s.upper().startswith(DDL_DML):
         raise ValueError("Write operations disabled.")
-    # Check for multiple statements (more than one semicolon or semicolon not at end)
+    
+    # Check for multiple statements (security check)
     semicolon_count = sql.count(";")
     if semicolon_count > 1 or (semicolon_count == 1 and not sql.strip().endswith(";")):
         raise ValueError("Multiple statements blocked.")
-    if "/*" in s or "--" in s:
-        # optionally strip comments
-        s = re.sub(r"(--.*?$|/\*.*?\*/)", "", s, flags=re.MULTILINE|re.DOTALL)
-    # add LIMIT if absent and query seems unbounded
-    if re.match(r"^SELECT\b", s, re.I) and re.search(r"\bLIMIT\b", s, re.I) is None:
-        s = f"{s} LIMIT {cfg.default_limit}"
-        return s, True
+    
+    # Return SQL unmodified - LLM with complete semantic analysis should generate correct syntax
     return s, False

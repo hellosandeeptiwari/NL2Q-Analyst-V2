@@ -21,7 +21,7 @@ except ImportError:
 # Import Intelligent Query Planning
 try:
     from backend.query_intelligence.intelligent_query_planner import IntelligentQueryPlanner
-    from backend.query_intelligence.schema_semantic_analyzer import SchemaSemanticAnalyzer
+    from backend.query_intelligence.schema_analyzer import SchemaSemanticAnalyzer
     INTELLIGENT_PLANNING_AVAILABLE = True
 except ImportError:
     INTELLIGENT_PLANNING_AVAILABLE = False
@@ -161,9 +161,10 @@ class DynamicAgentOrchestrator:
         self.schema_analyzer = None
         if INTELLIGENT_PLANNING_AVAILABLE:
             try:
+                # Initialize without db_adapter initially - will be set later
                 self.intelligent_planner = IntelligentQueryPlanner()
                 self.schema_analyzer = SchemaSemanticAnalyzer()
-                print("🧠 Intelligent Query Planning initialized")
+                print("🧠 Intelligent Query Planning initialized (db_adapter will be set later)")
             except Exception as e:
                 print(f"⚠️ Failed to initialize Intelligent Query Planning: {e}")
                 self.intelligent_planner = None
@@ -209,6 +210,12 @@ class DynamicAgentOrchestrator:
             self.db_connector = get_adapter("snowflake")
             if self.db_connector:
                 print("✅ Database connector initialized successfully")
+                
+                # Set database adapter in intelligent planner if available
+                if self.intelligent_planner:
+                    self.intelligent_planner.db_adapter = self.db_connector
+                    print("🔗 Database adapter connected to intelligent planner")
+                
                 # Test the connection
                 test_result = self.db_connector.run("SELECT 1 as test", dry_run=False)
                 if test_result and not test_result.error:
@@ -302,6 +309,12 @@ class DynamicAgentOrchestrator:
             if not self.db_connector:
                 from backend.main import get_adapter
                 self.db_connector = get_adapter("snowflake")
+                
+                # Set database adapter in intelligent planner if available
+                if self.db_connector and self.intelligent_planner:
+                    self.intelligent_planner.db_adapter = self.db_connector
+                    print("🔗 Database adapter connected to intelligent planner (during schema indexing)")
+                    
             if not self.db_connector:
                 raise Exception("Database adapter not initialized")
 
@@ -1981,9 +1994,17 @@ Be intelligent but concise. Focus on actionable database insights."""
                 'query_context': available_context
             }
             
+            print(f"🔍 DEBUG: About to call intelligent_planner.generate_query_with_plan")
+            print(f"🔍 DEBUG: Query: {query[:100]}...")
+            print(f"🔍 DEBUG: Confirmed tables: {confirmed_tables}")
+            print(f"🔍 DEBUG: Context keys: {list(context_with_metadata.keys())}")
+            
             result = await self.intelligent_planner.generate_query_with_plan(
                 query, context_with_metadata, confirmed_tables
             )
+            
+            print(f"🔍 DEBUG: Intelligent planner returned: {result.get('sql') is not None}")
+            print(f"🔍 DEBUG: Result keys: {list(result.keys()) if result else None}")
             
             if result.get('sql') and not result.get('error'):
                 print(f"✅ Enhanced SQL generated with confidence: {result.get('confidence', 0):.2f}")

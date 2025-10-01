@@ -1,30 +1,561 @@
 [
   {
-    "nl": "how many types of prescriber profile are new vs growers\n",
-    "sql": "-- Full temporal analysis cannot be performed as no date columns are specified for filtering new vs growers.\nSELECT \n    COUNT(DISTINCT [PrescriberId]) AS [TotalPrescriberProfiles],\n    CASE \n        WHEN [ProductPriority] = 'New' THEN 'New'\n        WHEN [ProductPriority] = 'Grower' THEN 'Grower'\n        ELSE 'Other'\n    END AS [ProfileType]\nFROM \n    [dbo].[Reporting_BI_PrescriberProfile]\nGROUP BY \n    CASE \n        WHEN [ProductPriority] = 'New' THEN 'New'\n        WHEN [ProductPriority] = 'Grower' THEN 'Grower'\n        ELSE 'Other'\n    END",
-    "job_id": "plan_-1414988946792471235_conv_1",
-    "user": "default_user",
-    "timestamp": "2025-09-30T06:19:31.195494",
+    "nl": null,
+    "sql": "Since there is no specific request provided, I will generate a sample SQL SELECT statement that retrieves data from the `dbo.Reporting_BI_PrescriberOverview` table. This statement will select the top 10 records, displaying the `TerritoryName`, `ProductGroupName`, `TRX(C4 Wk)`, `RegionName`, and `PrescriberName` columns.\n\nHere is the SQL SELECT statement:\n\n```sql\nSELECT TOP 10 \n    [dbo.Reporting_BI_PrescriberOverview].[TerritoryName], \n    [dbo.Reporting_BI_PrescriberOverview].[ProductGroupName], \n    [dbo.Reporting_BI_PrescriberOverview].[TRX(C4 Wk)], \n    [dbo.Reporting_BI_PrescriberOverview].[RegionName], \n    [dbo.Reporting_BI_PrescriberOverview].[PrescriberName] \nFROM \n    [dbo.Reporting_BI_PrescriberOverview]\n``` \n\nIf you have a specific request or need a different query, please provide the details!",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T05:30:19.864577",
     "results": [],
     "columns": [],
     "row_count": 0
   },
   {
-    "nl": "how many new vs growers and decliners are there ? chart them",
-    "sql": "-- Note: Full temporal analysis cannot be performed as no date columns are specified for tracking new, growers, and decliners over time.\n\nSELECT \n    COUNT(CASE WHEN [TRX(C4 Wk)] > 0 AND [TRX(P4 Wk)] = 0 THEN 1 END) AS New,\n    COUNT(CASE WHEN [TRX(C4 Wk)] > 0 AND [TRX(P4 Wk)] > 0 THEN 1 END) AS Growers,\n    COUNT(CASE WHEN [TRX(C4 Wk)] = 0 AND [TRX(P4 Wk)] > 0 THEN 1 END) AS Decliners\nFROM \n    [dbo].[Reporting_BI_PrescriberOverview]",
-    "job_id": "plan_8550011833131954621_conv_1",
-    "user": "default_user",
-    "timestamp": "2025-09-30T12:41:00.664618",
+    "nl": null,
+    "sql": "Since there is no specific request provided, I will generate a sample SQL SELECT statement that retrieves data from the `dbo.Reporting_BI_PrescriberOverview` table. This statement will select the top 10 prescribers along with their territory and product group names.\n\n```sql\nSELECT TOP 10 \n    [dbo.Reporting_BI_PrescriberOverview].[PrescriberName], \n    [dbo.Reporting_BI_PrescriberOverview].[TerritoryName], \n    [dbo.Reporting_BI_PrescriberOverview].[ProductGroupName], \n    [dbo.Reporting_BI_PrescriberOverview].[RegionName], \n    ISNULL([dbo.Reporting_BI_PrescriberOverview].[TRX(C4 Wk)], 0) AS [TRX(C4 Wk)]\nFROM \n    [dbo.Reporting_BI_PrescriberOverview]\n```\n\nThis statement adheres to all the specified syntax rules and uses only the columns from the `dbo.Reporting_BI_PrescriberOverview` table as listed in the authoritative catalog.",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T05:31:20.540646",
     "results": [],
     "columns": [],
     "row_count": 0
   },
   {
-    "nl": "use ngd table how many new vs growers and decliners are there ? chart them\n",
-    "sql": "-- Note: Full temporal analysis cannot be performed as no date columns are specified for tracking trends over time.\nSELECT \n    [NGDType], \n    COUNT(*) AS [Count]\nFROM \n    [dbo].[Reporting_BI_NGD]\nGROUP BY \n    [NGDType]\nORDER BY \n    [Count] DESC",
-    "job_id": "plan_6407623733985615428_conv_1",
+    "nl": "show me top 5 tirosint sales by territory",
+    "sql": "SELECT TOP 5\n    TerritoryName,\n    SUM([TRX(C4 Wk)]) as Total_Sales\nFROM [dbo].[Reporting_BI_PrescriberOverview]\nWHERE ProductGroupName LIKE '%Tirosint%'\nGROUP BY TerritoryName\nORDER BY Total_Sales DESC",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T05:32:54.190007",
+    "results": [
+      [
+        "Tele-Sales 4 - West",
+        1615
+      ],
+      [
+        "Tele-Sales 3 - Midwest",
+        1539
+      ],
+      [
+        "Tele-Sales 5 - Southwest",
+        1299
+      ],
+      [
+        "Sacramento CA",
+        1278
+      ],
+      [
+        "Tele-Sales 2 - Mid-Atlantic",
+        1055
+      ]
+    ],
+    "columns": [],
+    "row_count": 5
+  },
+  {
+    "nl": "show me top 5 tirosint sales by territory",
+    "sql": "SELECT 'Concept mapping failed' as error",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T05:41:31.087399",
+    "results": [
+      [
+        "Concept mapping failed"
+      ]
+    ],
+    "columns": [],
+    "row_count": 1
+  },
+  {
+    "nl": "show me top 5 tirosint sales by territory",
+    "sql": "Since there is no catalog provided, I cannot determine the exact table and column names related to \"tirosint sales\" and \"territory.\" Therefore, I cannot generate a specific SQL SELECT statement based on the request.\n\nIf you can provide the relevant table and column names, I would be able to create the SQL statement for you.",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T05:42:10.444264",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "show me top 5 tirosint sales by territory",
+    "sql": "The request to show the top 5 Tirosint sales by territory cannot be directly mapped to the available columns in the provided catalog. The catalog does not include any specific sales data or product sales information related to Tirosint. The only available metrics are TRX(C4 Wk), which does not specify sales figures or product names.\n\nSince the necessary information to fulfill the request is not present in the catalog, I cannot generate a valid SQL statement for this request.",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T05:47:31.053058",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "show me top 5 tirosint sales by territory",
+    "sql": "The request to show \"top 5 tirosint sales by territory\" cannot be directly mapped to the available columns in the provided catalog. The term \"tirosint sales\" implies a specific product or sales metric that is not explicitly defined in the available columns. \n\nThe only relevant columns available are from the `dbo.Reporting_BI_PrescriberOverview` table, which includes `TerritoryName`, `RegionName`, `PrescriberName`, `ProductGroupName`, and `TRX(C4 Wk)`. However, there is no indication that \"tirosint\" is a value within the `ProductGroupName` column, nor is there a specific sales metric for \"tirosint\" provided in the metrics.\n\nIf you can confirm that \"tirosint\" is indeed a value in the `ProductGroupName` column, I can generate a SQL statement based on that. Otherwise, please provide additional details or clarify the request.",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T05:49:08.845713",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "show me top 5 tirosint sales by territory",
+    "sql": "The request to show the top 5 Tirosint sales by territory cannot be directly mapped to the available columns in the provided catalog. The catalog does not include any specific sales data or a column that indicates the product name \"Tirosint.\" The only available columns are related to prescriber overview metrics and product group names, but there is no indication of sales figures or a specific product filter.\n\nIf you have access to additional tables or columns that include sales data or product names, please provide that information for a more accurate SQL query. Otherwise, based on the current catalog, I cannot generate a valid SQL statement for this request.",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T05:52:41.172758",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "show me top 5 tirosint sales by territory",
+    "sql": "The request to show the top 5 Tirosint sales by territory cannot be directly mapped to the available columns in the provided catalog. The catalog does not include any specific sales data or a column that indicates the product name \"Tirosint.\" The only available columns are related to prescriber overview metrics and product group names, but there is no indication of sales figures or a specific product filter.\n\nIf you have access to additional tables or columns that include sales data or product names, please provide that information for a more accurate SQL statement. Otherwise, based on the current catalog, I cannot generate the requested SQL statement.",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T05:53:53.578423",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "show me top 5 tirosint sales by territory",
+    "sql": "The request to show \"top 5 tirosint sales by territory\" cannot be directly mapped to the available columns in the provided catalog. The term \"tirosint sales\" implies a specific product or sales metric that is not explicitly defined in the available columns. \n\nThe only relevant columns available are from the `dbo.Reporting_BI_PrescriberOverview` table, which includes `TerritoryName`, `RegionName`, `PrescriberName`, `ProductGroupName`, and `TRX(C4 Wk)`. However, there is no indication that \"tirosint\" is a value within the `ProductGroupName` column, nor is there a direct sales metric for \"tirosint.\"\n\nIf you can confirm that \"tirosint\" is indeed a value in the `ProductGroupName` column, I can generate the SQL statement accordingly. Otherwise, please provide more context or clarify the request.",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T05:54:46.464703",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "show me top 5 tirosint sales by territory",
+    "sql": "The request to show the top 5 Tirosint sales by territory cannot be directly mapped to the available columns in the provided catalog. The catalog does not include any specific sales data or a column that indicates the product name (Tirosint) or sales figures. \n\nThe only available metrics are \"TRX(C4 Wk)\" and the only product-related column is \"ProductGroupName,\" but there is no indication that \"ProductGroupName\" contains the specific product \"Tirosint.\" \n\nTherefore, I cannot generate a SQL statement based on the provided information. If you have access to additional tables or columns that include sales data or product names, please provide that information for further assistance.",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T05:57:27.874998",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "show me top 5 tirosint sales by territory",
+    "sql": "",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T05:59:37.054791",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "show me top 5 tirosint sales by territory",
+    "sql": "",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T06:03:46.379560",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "show me top 5 tirosint sales by territory",
+    "sql": "",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T06:06:39.276678",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "show me top 5 tirosint sales by territory",
+    "sql": "",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T06:08:22.685847",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": null,
+    "sql": "",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T08:29:03.391602",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": null,
+    "sql": "",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T08:30:29.300492",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me the top prescribers by territory with their prescription volumes and growth patterns",
+    "sql": "SELECT 'Error' as error",
+    "job_id": "plan_-243424802794106954_session_3046",
     "user": "default_user",
-    "timestamp": "2025-09-30T13:04:09.029868",
+    "timestamp": "2025-10-01T08:31:46.487756",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me the top prescribers by territory with their prescription volumes and growth patterns",
+    "sql": "",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T08:31:46.521004",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me top 5 prescribers",
+    "sql": "",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T08:36:02.408781",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me top 5 prescribers",
+    "sql": "",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T13:02:31.914184",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me top 5 prescribers",
+    "sql": "",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T13:05:20.181320",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me top 5 prescribers",
+    "sql": "",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T13:08:08.609141",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me top 5 prescribers",
+    "sql": "",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T13:09:49.464575",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me top 5 prescribers",
+    "sql": "",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T13:11:33.748342",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me top 5 prescribers",
+    "sql": "",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T13:14:14.622514",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me top 5 prescribers",
+    "sql": "",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T13:17:06.736988",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me top 5 prescribers",
+    "sql": "",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T13:20:10.790353",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me top 5 prescribers",
+    "sql": "",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T13:21:29.194407",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me top 5 prescribers",
+    "sql": "",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T13:25:05.517510",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me top 5 prescribers",
+    "sql": "SELECT TOP 5 \n    t1.PrescriberName, \n    t1.TerritoryName, \n    t1.RegionName,\n    t1.ProductGroupName,\n    t2.Specialty\nFROM Reporting_BI_PrescriberOverview t1\nINNER JOIN Reporting_BI_PrescriberProfile t2 ON t1.PrescriberId = t2.PrescriberId\nWHERE t1.ProductGroupName IS NOT NULL;",
+    "job_id": "plan_3592740525582558255_session_8255",
+    "user": "default_user",
+    "timestamp": "2025-10-01T13:36:51.313332",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me top 5 prescribers",
+    "sql": "",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T13:36:51.362671",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me top 5 prescribers",
+    "sql": "SELECT TOP 5 \n    t1.PrescriberName, \n    t1.TerritoryName, \n    t1.RegionName,\n    t1.ProductGroupName,\n    t2.Specialty\nFROM Reporting_BI_PrescriberOverview t1\nINNER JOIN Reporting_BI_PrescriberProfile t2 ON t1.PrescriberId = t2.PrescriberId\nWHERE t1.ProductGroupName IS NOT NULL;",
+    "job_id": "plan_-7961322143435100054_session_9946",
+    "user": "default_user",
+    "timestamp": "2025-10-01T13:39:13.912075",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me top 5 prescribers",
+    "sql": "",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T13:39:13.947673",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me top 5 prescribers",
+    "sql": "SELECT TOP 5 \n    t1.PrescriberName, \n    t1.TerritoryName, \n    t1.RegionName,\n    t1.ProductGroupName,\n    t2.Specialty\nFROM Reporting_BI_PrescriberOverview t1\nINNER JOIN Reporting_BI_PrescriberProfile t2 ON t1.PrescriberId = t2.PrescriberId\nWHERE t1.ProductGroupName IS NOT NULL;",
+    "job_id": "plan_2722007452796159562_session_9562",
+    "user": "default_user",
+    "timestamp": "2025-10-01T13:43:32.606233",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me top 5 prescribers",
+    "sql": "SELECT TOP 5 \n    t1.PrescriberName, \n    t1.TerritoryName, \n    t1.RegionName,\n    t1.ProductGroupName,\n    t2.Specialty\nFROM Reporting_BI_PrescriberOverview t1\nINNER JOIN Reporting_BI_PrescriberProfile t2 ON t1.PrescriberId = t2.PrescriberId\nWHERE t1.ProductGroupName IS NOT NULL;",
+    "job_id": null,
+    "user": "anonymous",
+    "timestamp": "2025-10-01T13:43:32.673548",
+    "results": [
+      [
+        "TRINA GASTON",
+        "Birmingham AL",
+        "Southeast",
+        "Synthroid",
+        "NURSE PRACTITIONER"
+      ],
+      [
+        "OKSANA HAMIDI",
+        "Dallas E TX",
+        "Southwest",
+        "Synthroid",
+        "ENDOCRINOLOGY, DIABETES & METABOLISM"
+      ],
+      [
+        "MELBA LAFITA CASANA",
+        "Houston RSS",
+        "Southwest",
+        "Synthroid",
+        "NURSE PRACTITIONER"
+      ],
+      [
+        "ANDREW NOWAKOWSKI",
+        "Baltimore MD",
+        "Midatlantic",
+        "Synthroid",
+        "NEPHROLOGY"
+      ],
+      [
+        "VICKIE FOWLER",
+        "Greensboro NC",
+        "Midatlantic",
+        "Armour Thyroid",
+        "FAMILY MEDICINE"
+      ]
+    ],
+    "columns": [],
+    "row_count": 5
+  },
+  {
+    "nl": "Show me top 5 prescribers with their specialties",
+    "sql": "SELECT TOP 5 \n    t1.PrescriberName, \n    t1.TerritoryName, \n    t1.RegionName,\n    t1.ProductGroupName,\n    t2.Specialty\nFROM Reporting_BI_PrescriberOverview t1\nINNER JOIN Reporting_BI_PrescriberProfile t2 ON t1.PrescriberId = t2.PrescriberId\nWHERE t1.ProductGroupName IS NOT NULL;",
+    "job_id": "plan_-8411374550738721024_default_session",
+    "user": "default_user",
+    "timestamp": "2025-10-01T14:03:19.822754",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me prescriber specialties and their counts",
+    "sql": "SELECT TOP 5 \n    t1.PrescriberName, \n    t1.TerritoryName, \n    t1.RegionName,\n    t1.ProductGroupName,\n    t2.Specialty\nFROM Reporting_BI_PrescriberOverview t1\nINNER JOIN Reporting_BI_PrescriberProfile t2 ON t1.PrescriberId = t2.PrescriberId\nWHERE t1.ProductGroupName IS NOT NULL;",
+    "job_id": "plan_-8306535100879259739_default_session",
+    "user": "default_user",
+    "timestamp": "2025-10-01T14:06:47.168099",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me top 5 prescribers with highest TRX values",
+    "sql": "SELECT TOP 5 \n    t1.PrescriberName, \n    t1.TerritoryName, \n    t1.RegionName,\n    t1.ProductGroupName,\n    t2.Specialty\nFROM Reporting_BI_PrescriberProfile t1\nINNER JOIN Reporting_BI_PrescriberOverview t2 ON t1.PrescriberId = t2.PrescriberId\nWHERE t1.ProductGroupName IS NOT NULL;",
+    "job_id": "plan_-7261684404192367903_default_session",
+    "user": "default_user",
+    "timestamp": "2025-10-01T14:12:07.144796",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Find top prescribers by specialty",
+    "sql": "SELECT TOP 5 \n    t1.PrescriberName, \n    t1.TerritoryName, \n    t1.RegionName,\n    t1.ProductGroupName,\n    t2.Specialty\nFROM Reporting_BI_PrescriberOverview t1\nINNER JOIN Reporting_BI_PrescriberProfile t2 ON t1.PrescriberId = t2.PrescriberId\nWHERE t1.ProductGroupName IS NOT NULL;",
+    "job_id": "plan_-8023328165155832158_default_session",
+    "user": "default_user",
+    "timestamp": "2025-10-01T14:14:44.411880",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show prescriber performance metrics",
+    "sql": "SELECT TOP 5 \n    t1.PrescriberName, \n    t1.TerritoryName, \n    t1.RegionName,\n    t1.ProductGroupName,\n    t2.Specialty\nFROM Reporting_BI_PrescriberOverview t1\nINNER JOIN Reporting_BI_PrescriberProfile t2 ON t1.PrescriberId = t2.PrescriberId\nWHERE t1.ProductGroupName IS NOT NULL;",
+    "job_id": "plan_-5834683269982373539_default_session",
+    "user": "default_user",
+    "timestamp": "2025-10-01T14:16:32.970528",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me prescriber TRX performance by region",
+    "sql": "SELECT TOP 5 \n    t1.PrescriberName, \n    t1.TerritoryName, \n    t1.RegionName,\n    t1.ProductGroupName,\n    t2.Specialty\nFROM Reporting_BI_PrescriberOverview t1\nINNER JOIN Reporting_BI_PrescriberProfile t2 ON t1.PrescriberId = t2.PrescriberId\nWHERE t1.ProductGroupName IS NOT NULL;",
+    "job_id": "plan_-3301604473939032679_default_session",
+    "user": "default_user",
+    "timestamp": "2025-10-01T14:20:27.890641",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show top prescribers",
+    "sql": "SELECT TOP 5 \n    t1.PrescriberName, \n    t1.TerritoryName, \n    t1.RegionName,\n    t1.ProductGroupName,\n    t2.Specialty\nFROM Reporting_BI_PrescriberOverview t1\nINNER JOIN Reporting_BI_PrescriberProfile t2 ON t1.PrescriberId = t2.PrescriberId\nWHERE t1.ProductGroupName IS NOT NULL;",
+    "job_id": "plan_-7404641705179391440_default_session",
+    "user": "default_user",
+    "timestamp": "2025-10-01T14:25:41.885181",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show prescriber metrics by specialty",
+    "sql": "SELECT TOP 5 \n    t1.PrescriberName, \n    t1.TerritoryName, \n    t1.RegionName,\n    t1.ProductGroupName,\n    t2.Specialty\nFROM Reporting_BI_PrescriberOverview t1\nINNER JOIN Reporting_BI_PrescriberProfile t2 ON t1.PrescriberId = t2.PrescriberId\nWHERE t1.ProductGroupName IS NOT NULL;",
+    "job_id": "plan_3347579999442197440_default_session",
+    "user": "default_user",
+    "timestamp": "2025-10-01T15:05:07.689470",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show prescriber metrics by specialty for the top performing prescribers",
+    "sql": "SELECT TOP 5 \n    t1.PrescriberName, \n    t1.TerritoryName, \n    t1.RegionName,\n    t1.ProductGroupName,\n    t2.Specialty\nFROM Reporting_BI_PrescriberOverview t1\nINNER JOIN Reporting_BI_PrescriberProfile t2 ON t1.PrescriberId = t2.PrescriberId\nWHERE t1.ProductGroupName IS NOT NULL;",
+    "job_id": "plan_5137970043915126706_default_session",
+    "user": "default_user",
+    "timestamp": "2025-10-01T15:07:51.238784",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show prescriber summary by region",
+    "sql": "SELECT TOP 5 \n    t1.PrescriberName, \n    t1.TerritoryName, \n    t1.RegionName,\n    t1.ProductGroupName,\n    t2.Specialty\nFROM Reporting_BI_PrescriberOverview t1\nINNER JOIN Reporting_BI_PrescriberProfile t2 ON t1.PrescriberId = t2.PrescriberId\nWHERE t1.ProductGroupName IS NOT NULL;",
+    "job_id": "plan_-3066007612138846060_default_session",
+    "user": "default_user",
+    "timestamp": "2025-10-01T15:09:39.808025",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show top prescribers by region",
+    "sql": "SELECT TOP 5 \n    t1.PrescriberName, \n    t1.TerritoryName, \n    t1.RegionName,\n    t1.ProductGroupName,\n    t2.Specialty\nFROM Reporting_BI_PrescriberOverview t1\nINNER JOIN Reporting_BI_PrescriberProfile t2 ON t1.PrescriberId = t2.PrescriberId\nWHERE t1.ProductGroupName IS NOT NULL;",
+    "job_id": "plan_-5647625132982402364_default_session",
+    "user": "default_user",
+    "timestamp": "2025-10-01T15:11:03.977784",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show regional analysis for prescribers",
+    "sql": "SELECT TOP 5 \n    t1.PrescriberName, \n    t1.TerritoryName, \n    t1.RegionName,\n    t1.ProductGroupName,\n    t2.Specialty\nFROM Reporting_BI_PrescriberOverview t1\nINNER JOIN Reporting_BI_PrescriberProfile t2 ON t1.PrescriberId = t2.PrescriberId\nWHERE t1.ProductGroupName IS NOT NULL;",
+    "job_id": "plan_-1954936012252291481_default_session",
+    "user": "default_user",
+    "timestamp": "2025-10-01T15:12:29.233172",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show regional analysis for prescribers",
+    "sql": "SELECT TOP 5 \n    t1.PrescriberName, \n    t1.TerritoryName, \n    t1.RegionName,\n    t1.ProductGroupName,\n    t2.Specialty\nFROM Reporting_BI_PrescriberOverview t1\nINNER JOIN Reporting_BI_PrescriberProfile t2 ON t1.PrescriberId = t2.PrescriberId\nWHERE t1.ProductGroupName IS NOT NULL;",
+    "job_id": "plan_4808172827505391361_default_session",
+    "user": "default_user",
+    "timestamp": "2025-10-01T15:16:43.897639",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show top performing prescribers by territory with their specialties",
+    "sql": "SELECT TOP 5 \n    t1.PrescriberName, \n    t1.TerritoryName, \n    t1.RegionName,\n    t1.ProductGroupName,\n    t2.Specialty\nFROM Reporting_BI_PrescriberOverview t1\nINNER JOIN Reporting_BI_PrescriberProfile t2 ON t1.PrescriberId = t2.PrescriberId\nWHERE t1.ProductGroupName IS NOT NULL;",
+    "job_id": "plan_152216303462351135_default_session",
+    "user": "default_user",
+    "timestamp": "2025-10-01T15:18:52.834826",
     "results": [],
     "columns": [],
     "row_count": 0

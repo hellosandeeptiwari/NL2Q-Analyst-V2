@@ -111,7 +111,8 @@ class SchemaSemanticAnalyzer:
             "metric": [
                 "count", "total", "sum", "avg", "average", "min", "max",
                 "rate", "ratio", "percent", "share", "volume", "quantity",
-                "qty", "units", "amount", "value", "score"
+                "qty", "units", "amount", "value", "score", "trx", "nrx",
+                "tqty", "nqty", "calls", "samples"
             ],
             "geographical": [
                 "address", "city", "state", "zip", "zipcode", "country",
@@ -199,18 +200,32 @@ class SchemaSemanticAnalyzer:
         # Infer business purpose from table name
         table_analysis["business_purpose"] = self._infer_table_business_purpose(table_name)
         
-        # Categorize columns by semantic type
-        table_analysis["data_categories"] = self._categorize_columns_semantically(columns)
+        # Categorize columns by semantic type (extract column names from dict objects)
+        column_names = []
+        for column in columns:
+            if isinstance(column, dict):
+                column_name = column.get('name', column.get('column_name', str(column)))
+            else:
+                column_name = str(column)
+            column_names.append(column_name)
+        
+        table_analysis["data_categories"] = self._categorize_columns_semantically(column_names)
         
         # Analyze individual column semantics
         for column in columns:
-            table_analysis["column_semantics"][column] = self._analyze_column_semantics(
-                column, table_name
+            # Extract column name to use as dictionary key (must be hashable)
+            if isinstance(column, dict):
+                column_key = column.get('name', column.get('column_name', str(column)))
+            else:
+                column_key = str(column)
+            
+            table_analysis["column_semantics"][column_key] = self._analyze_column_semantics(
+                column_key, table_name
             )
         
         # Assess relationship potential
         table_analysis["relationship_potential"] = self._assess_relationship_potential(
-            table_name, columns
+            table_name, column_names
         )
         
         # Identify supported query patterns
@@ -277,34 +292,51 @@ class SchemaSemanticAnalyzer:
         }
         
         for column in columns:
-            column_lower = column.lower()
+            # Handle both string and dict column formats
+            if isinstance(column, dict):
+                column_name = column.get('name', '')
+            else:
+                column_name = str(column)
+            column_lower = column_name.lower()
             categorized = False
             
             # Check each pattern type
             for category, patterns in self.column_type_patterns.items():
                 if any(pattern in column_lower for pattern in patterns):
-                    categories[category].append(column)
+                    # Map pattern keys to category keys (handle singular/plural mismatches)
+                    if category == 'identifier':
+                        categories['identifiers'].append(column_name)
+                    elif category == 'metric':
+                        categories['metrics'].append(column_name)  # Fix: metric -> metrics
+                    else:
+                        categories[category].append(column_name)
                     categorized = True
                     break
             
             # Special case for relationship columns (foreign keys)
             if any(word in column_lower for word in ["id", "key"]) and "_" in column_lower:
-                categories["relationship"].append(column)
+                categories["relationship"].append(column_name)
                 categorized = True
             
             # If not categorized, add to descriptive
             if not categorized:
-                categories["descriptive"].append(column)
+                categories["descriptive"].append(column_name)
         
         return categories
     
     def _analyze_column_semantics(self, column: str, table_name: str) -> Dict[str, Any]:
         """Analyze semantic meaning of individual column"""
-        column_lower = column.lower()
+        # Handle both string and dict column formats
+        if isinstance(column, dict):
+            column_name = column.get('name', column.get('column_name', ''))
+        else:
+            column_name = str(column)
+            
+        column_lower = column_name.lower()
         table_lower = table_name.lower()
         
         semantics = {
-            "column_name": column,
+            "column_name": column_name,
             "semantic_type": "unknown",
             "business_meaning": "",
             "data_operations": [],
@@ -461,7 +493,17 @@ class SchemaSemanticAnalyzer:
             potential["hierarchy_indicators"] = ["geographical_hierarchy"]
         
         # Bridge table potential (many-to-many relationships)
-        if len([col for col in columns if "id" in col.lower()]) >= 2:
+        id_columns = []
+        for col in columns:
+            # Handle both string and dict column formats
+            if isinstance(col, dict):
+                col_name = col.get('name', col.get('column_name', ''))
+            else:
+                col_name = str(col)
+            if "id" in col_name.lower():
+                id_columns.append(col_name)
+        
+        if len(id_columns) >= 2:
             potential["bridge_table_potential"] = True
         
         return potential
@@ -577,9 +619,14 @@ class SchemaSemanticAnalyzer:
         joins = []
         
         # Get all columns from both tables
-        cols1 = set(col.lower() for col in analysis1["data_categories"]["identifiers"] + 
+        def extract_column_name(col):
+            if isinstance(col, dict):
+                return col.get('name', str(col))
+            return str(col)
+        
+        cols1 = set(extract_column_name(col).lower() for col in analysis1["data_categories"]["identifiers"] + 
                    analysis1["data_categories"]["relationship"])
-        cols2 = set(col.lower() for col in analysis2["data_categories"]["identifiers"] + 
+        cols2 = set(extract_column_name(col).lower() for col in analysis2["data_categories"]["identifiers"] + 
                    analysis2["data_categories"]["relationship"])
         
         # Find exact matches
@@ -636,8 +683,13 @@ class SchemaSemanticAnalyzer:
         shared = []
         
         # Check for shared categorical dimensions
-        cats1 = set(col.lower() for col in analysis1["data_categories"]["categorical"])
-        cats2 = set(col.lower() for col in analysis2["data_categories"]["categorical"])
+        def extract_column_name(col):
+            if isinstance(col, dict):
+                return col.get('name', str(col))
+            return str(col)
+            
+        cats1 = set(extract_column_name(col).lower() for col in analysis1["data_categories"]["categorical"])
+        cats2 = set(extract_column_name(col).lower() for col in analysis2["data_categories"]["categorical"])
         
         common_cats = cats1.intersection(cats2)
         for cat in common_cats:
@@ -800,3 +852,329 @@ class SchemaSemanticAnalyzer:
             summary["complexity_assessment"] = "Low complexity - simple schema structure"
         
         return summary
+    
+    def analyze_table_semantics(self, table_info: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Synchronous wrapper for table semantic analysis.
+        Used by IntelligentQueryPlanner for compatibility.
+        
+        Args:
+            table_info: Dictionary containing table metadata
+            
+        Returns:
+            Table semantic analysis results
+        """
+        try:
+            table_name = table_info.get('table_name', 'unknown')
+            columns = table_info.get('columns', [])
+            # If columns is a list, convert to the expected format
+            if isinstance(columns, list):
+                columns_dict = {}
+                for col in columns:
+                    # Extract column name to use as dictionary key (must be hashable)
+                    if isinstance(col, dict):
+                        col_key = col.get('name', col.get('column_name', str(col)))
+                    else:
+                        col_key = str(col)
+                    columns_dict[col_key] = 'varchar'
+            else:
+                columns_dict = columns
+            
+            # Create basic semantic analysis (synchronous version)
+            analysis = {
+                "table_name": table_name,
+                "business_purpose": self._infer_table_business_purpose(table_name), 
+                "data_categories": self._categorize_columns_semantically(list(columns_dict.keys())),
+                "domain_entities": self._extract_domain_entities(table_name, list(columns_dict.keys())),
+                "relationship_types": self._identify_relationship_types(table_name),
+                "query_patterns": self._identify_query_patterns(table_name, self._categorize_columns_semantically(list(columns_dict.keys()))),
+                "complexity_score": len(columns_dict) * 0.1  # Simple complexity metric
+            }
+            
+            return analysis
+            
+        except Exception as e:
+            self.logger.error(f"Error in synchronous table semantic analysis: {e}")
+            # Return minimal fallback analysis
+            return {
+                "table_name": table_info.get('table_name', 'unknown'),
+                "business_purpose": "Data storage",
+                "data_categories": {},
+                "domain_entities": [],
+                "relationship_types": [],
+                "query_patterns": [],
+                "complexity_score": 0.5
+            }
+    
+    def _extract_domain_entities(self, table_name: str, columns: List[str]) -> List[str]:
+        """Extract domain entities from table name and columns"""
+        entities = []
+        
+        # Extract from table name
+        table_words = table_name.lower().replace('_', ' ').split()
+        for word in table_words:
+            if word in ['user', 'customer', 'product', 'order', 'sales', 'employee', 'account']:
+                entities.append(word)
+        
+        # Extract from column names
+        for col in columns:
+            # Handle both string and dict column formats
+            if isinstance(col, dict):
+                col_name = col.get('name', col.get('column_name', ''))
+            else:
+                col_name = str(col)
+            
+            col_lower = col_name.lower()
+            if any(entity in col_lower for entity in ['customer', 'product', 'order', 'user', 'account']):
+                entities.extend([entity for entity in ['customer', 'product', 'order', 'user', 'account'] if entity in col_lower])
+        
+        return list(set(entities))
+    
+    def _identify_relationship_types(self, table_name: str) -> List[str]:
+        """Identify potential relationship types for the table"""
+        relationships = []
+        
+        table_lower = table_name.lower()
+        if 'profile' in table_lower or 'prescriber' in table_lower:
+            relationships.extend(['one-to-many', 'joins'])
+        if 'sales' in table_lower or 'order' in table_lower:
+            relationships.extend(['transactional', 'temporal'])
+        if 'product' in table_lower:
+            relationships.extend(['categorical', 'hierarchical'])
+            
+        return relationships if relationships else ['general']
+    
+    def _classify_column_semantic_type(self, column_name: str) -> str:
+        """
+        Classify a column into semantic types for intelligent query planning.
+        
+        Args:
+            column_name: The name of the column to classify
+            
+        Returns:
+            Semantic type classification
+        """
+        column_lower = column_name.lower()
+        
+        # Measure columns (metrics, values, counts)
+        if any(pattern in column_lower for pattern in ['trx', 'nrx', 'qty', 'count', 'amount', 'revenue', 'sales', 'calls', 'samples']):
+            return 'measure'
+        
+        # Key columns (IDs, identifiers)
+        if any(pattern in column_lower for pattern in ['id', '_key', 'number', 'code']) and not any(pattern in column_lower for pattern in ['name', 'description']):
+            return 'key'
+        
+        # Date/Time columns
+        if any(pattern in column_lower for pattern in ['date', 'time', 'period', 'month', 'year', 'quarter']):
+            return 'temporal'
+        
+        # Geographic columns
+        if any(pattern in column_lower for pattern in ['territory', 'region', 'state', 'city', 'zip', 'address', 'location']):
+            return 'geographic'
+        
+        # Product/Entity columns
+        if any(pattern in column_lower for pattern in ['product', 'drug', 'medication', 'brand']):
+            return 'product'
+        
+        # Person/Entity columns
+        if any(pattern in column_lower for pattern in ['prescriber', 'patient', 'doctor', 'physician', 'name', 'provider']):
+            return 'entity'
+        
+        # Boolean/Flag columns
+        if any(pattern in column_lower for pattern in ['flag', 'target', 'active', 'enabled', 'include']):
+            return 'boolean'
+        
+        # Classification/Category columns
+        if any(pattern in column_lower for pattern in ['type', 'category', 'class', 'group', 'tier', 'priority', 'specialty']):
+            return 'categorical'
+        
+        # Default to attribute
+        return 'attribute'
+    
+    def find_potential_joins(self, tables_info: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Public method to find potential joins between multiple tables using table_info structures.
+        This is called by the IntelligentQueryPlanner and handles multi-table scenarios.
+        
+        Args:
+            tables_info: List of dictionaries containing table metadata including columns
+            
+        Returns:
+            List of potential join relationships between all the tables
+        """
+        try:
+            if not tables_info or len(tables_info) < 2:
+                print("🔗 Need at least 2 tables to find joins")
+                return []
+            
+            all_joins = []
+            table_names = [table.get('table_name', f'table_{i}') for i, table in enumerate(tables_info)]
+            
+            print(f"🔗 Finding potential joins between {len(tables_info)} tables: {', '.join(table_names)}")
+            
+            # Create analysis structures for all tables
+            table_analyses = {}
+            for table_info in tables_info:
+                table_name = table_info.get('table_name', 'unknown')
+                columns = table_info.get('columns', [])
+                table_analyses[table_name] = self._create_join_analysis_structure(columns, table_name)
+            
+            # Find joins between every pair of tables
+            for i in range(len(tables_info)):
+                for j in range(i + 1, len(tables_info)):
+                    table1_name = table_names[i]
+                    table2_name = table_names[j]
+                    
+                    analysis1 = table_analyses[table1_name]
+                    analysis2 = table_analyses[table2_name]
+                    
+                    # Use the existing private method to find joins between this pair
+                    pair_joins = self._find_potential_joins(table1_name, analysis1, table2_name, analysis2)
+                    all_joins.extend(pair_joins)
+            
+            # Also look for multi-table joins (3+ tables connected through common keys)
+            multi_joins = self._find_multi_table_joins(table_analyses)
+            all_joins.extend(multi_joins)
+            
+            print(f"🔗 Found {len(all_joins)} total potential joins across all tables")
+            
+            return all_joins
+            
+        except Exception as e:
+            print(f"❌ Error finding potential joins: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return []
+    
+    def _create_join_analysis_structure(self, columns: List[Dict[str, Any]], table_name: str) -> Dict[str, Any]:
+        """
+        Create analysis structure from columns for join detection.
+        Categorizes columns into identifiers and relationships based on naming patterns.
+        """
+        identifiers = []
+        relationships = []
+        
+        for col in columns:
+            column_name = ""
+            
+            # Handle different column formats
+            if isinstance(col, dict):
+                column_name = col.get('column_name', '')
+            elif isinstance(col, str):
+                column_name = col
+            else:
+                continue
+                
+            if not column_name:
+                continue
+                
+            column_lower = column_name.lower()
+            
+            # Classify as identifier (primary/foreign keys)
+            if any(keyword in column_lower for keyword in ['id', 'key', 'code', 'number', 'nbr']):
+                identifiers.append(column_name)
+            # Classify as relationship column
+            elif any(keyword in column_lower for keyword in ['territory', 'region', 'area', 'group', 'type', 'category']):
+                relationships.append(column_name)
+            # Add common pharmaceutical domain patterns
+            elif any(keyword in column_lower for keyword in ['prescriber', 'provider', 'product', 'specialty', 'npi']):
+                relationships.append(column_name)
+        
+        print(f"🔗 {table_name}: {len(identifiers)} identifiers, {len(relationships)} relationships")
+        
+        return {
+            "data_categories": {
+                "identifiers": identifiers,
+                "relationship": relationships
+            }
+        }
+    
+    def _find_multi_table_joins(self, table_analyses: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Find multi-table joins where 3+ tables can be connected through common keys.
+        This identifies chain joins like Table1 -> Table2 -> Table3.
+        
+        Args:
+            table_analyses: Dictionary of table_name -> analysis structure
+            
+        Returns:
+            List of multi-table join relationships
+        """
+        multi_joins = []
+        
+        try:
+            table_names = list(table_analyses.keys())
+            
+            if len(table_names) < 3:
+                return multi_joins
+            
+            # Look for common identifiers across multiple tables
+            identifier_map = {}  # identifier -> list of tables that have it
+            
+            for table_name, analysis in table_analyses.items():
+                identifiers = analysis.get("data_categories", {}).get("identifiers", [])
+                for identifier in identifiers:
+                    identifier_lower = identifier.lower()
+                    # Normalize common patterns
+                    normalized_id = self._normalize_identifier(identifier_lower)
+                    
+                    if normalized_id not in identifier_map:
+                        identifier_map[normalized_id] = []
+                    identifier_map[normalized_id].append({
+                        'table': table_name,
+                        'column': identifier
+                    })
+            
+            # Find identifiers that appear in 3+ tables (potential chain joins)
+            for normalized_id, table_columns in identifier_map.items():
+                if len(table_columns) >= 3:
+                    # Create multi-table join relationship
+                    multi_join = {
+                        "join_type": "multi_table_chain",
+                        "common_key": normalized_id,
+                        "tables": table_columns,
+                        "confidence": 0.8,  # High confidence for multi-table keys
+                        "description": f"Chain join through common key '{normalized_id}' across {len(table_columns)} tables"
+                    }
+                    multi_joins.append(multi_join)
+                    
+                    print(f"🔗 Multi-table join found: {normalized_id} connects {len(table_columns)} tables")
+            
+        except Exception as e:
+            print(f"❌ Error in multi-table join analysis: {e}")
+        
+        return multi_joins
+    
+    def _normalize_identifier(self, identifier: str) -> str:
+        """
+        Normalize identifier names to detect common patterns across tables.
+        
+        Args:
+            identifier: Column name to normalize
+            
+        Returns:
+            Normalized identifier string
+        """
+        # Remove common prefixes/suffixes and patterns
+        patterns_to_remove = ['_id', '_key', '_code', '_nbr', '_number']
+        
+        normalized = identifier.lower().strip()
+        
+        # Remove common patterns
+        for pattern in patterns_to_remove:
+            if normalized.endswith(pattern):
+                normalized = normalized[:-len(pattern)]
+        
+        # Handle common pharmaceutical domain identifiers
+        if 'prescriber' in normalized:
+            return 'prescriber'
+        elif 'provider' in normalized:
+            return 'provider'
+        elif 'territory' in normalized:
+            return 'territory'
+        elif 'product' in normalized:
+            return 'product'
+        elif 'npi' in normalized:
+            return 'npi'
+        
+        return normalized

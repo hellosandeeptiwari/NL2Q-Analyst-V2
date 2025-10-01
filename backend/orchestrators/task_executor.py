@@ -18,6 +18,31 @@ class TaskExecutor:
     
     def __init__(self, orchestrator):
         self.orchestrator = orchestrator
+    
+    async def execute_query_with_orchestration(self, user_query: str, user_id: str, session_id: str, use_deterministic: bool = False) -> Dict[str, Any]:
+        """Enhanced query execution with proper task orchestration"""
+        try:
+            print(f"🎯 Task Executor: Processing query with enhanced orchestration")
+            
+            # Use the orchestrator's process_query but with enhanced error handling and logging
+            result = await self.orchestrator.process_query(
+                user_query=user_query,
+                user_id=user_id,
+                session_id=session_id,
+                use_deterministic=use_deterministic
+            )
+            
+            # Add task execution metadata
+            if isinstance(result, dict):
+                result['task_executor_used'] = True
+                result['execution_method'] = 'enhanced_orchestration'
+                
+            print(f"✅ Task Executor: Query processed successfully")
+            return result
+            
+        except Exception as e:
+            print(f"❌ Task Executor: Query processing failed: {e}")
+            raise e
         
     async def execute_single_task(self, task: AgentTask, previous_results: Dict, user_query: str, user_id: str = "default", conversation_context: Dict = None) -> Dict[str, Any]:
         """Execute a single agent task"""

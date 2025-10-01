@@ -231,6 +231,17 @@ async def startup_tasks():
     # Load table names into cache for fast UI responses
     await populate_table_cache()
     
+    # Load schema cache with column information from Pinecone
+    print("🔄 Loading schema cache from Pinecone...")
+    try:
+        schema_result = await refresh_schema()
+        if schema_result.get("status") == "success":
+            print(f"✅ Schema cache loaded: {schema_result.get('tables_count', 0)} tables")
+        else:
+            print("⚠️ Schema cache refresh failed, will use dynamic fallback")
+    except Exception as e:
+        print(f"⚠️ Schema cache initialization failed: {e}, will use dynamic fallback")
+    
     print("✅ Backend initialization complete")
 
 # Initialize FastAPI app
@@ -279,11 +290,18 @@ async def websocket_endpoint(websocket: WebSocket):
 
 # --- Dynamic Agent Orchestrator Setup ---
 from backend.orchestrators.dynamic_agent_orchestrator import DynamicAgentOrchestrator, set_progress_callback
+from backend.orchestrators.sql_generator import SQLGenerator
+from backend.orchestrators.task_executor import TaskExecutor
 orchestrator = DynamicAgentOrchestrator()
+
+# Initialize enhanced components
+sql_generator = SQLGenerator(orchestrator)
+task_executor = TaskExecutor(orchestrator)
 
 # Register progress callback with orchestrator
 set_progress_callback(broadcast_progress)
 print("✅ Progress callback registered with orchestrator")
+print("✅ Enhanced SQL generator and task executor initialized")
 
 @app.post("/api/agent/detect-intent")
 async def detect_intent(request: Request):
@@ -528,12 +546,23 @@ async def agent_query(request: Request):
         if not user_query:
             return JSONResponse(status_code=400, content={"error": "Query is required"})
 
-        plan = await orchestrator.process_query(
-            user_query=user_query,
-            user_id=user_id,
-            session_id=session_id,
-            use_deterministic=use_deterministic
-        )
+        # Use enhanced task executor for better task coordination
+        try:
+            plan = await task_executor.execute_query_with_orchestration(
+                user_query=user_query,
+                user_id=user_id,
+                session_id=session_id,
+                use_deterministic=use_deterministic
+            )
+            print("✅ Used enhanced task executor for query processing")
+        except Exception as e:
+            print(f"⚠️ Task executor failed: {e}, falling back to direct orchestrator")
+            plan = await orchestrator.process_query(
+                user_query=user_query,
+                user_id=user_id,
+                session_id=session_id,
+                use_deterministic=use_deterministic
+            )
         
         print(f"🔍 Plan object type: {type(plan)}")
         print(f"🔍 Plan has to_dict: {hasattr(plan, 'to_dict')}")
@@ -710,7 +739,7 @@ async def refresh_schema():
         
         print(f"📋 Found {len(table_names)} unique tables in Pinecone")
         
-        # Build schema cache with actual column information from Pinecone
+        # Build enhanced schema cache with both structure and metadata from Pinecone
         schema_cache = {}
         for table_name in table_names:
             try:
@@ -718,18 +747,34 @@ async def refresh_schema():
                 columns = table_details.get('columns', [])
                 
                 if columns:
-                    # Create column dict with placeholder types
-                    column_dict = {col: "varchar" for col in columns}
-                    schema_cache[table_name] = column_dict
-                    print(f"✅ Added {table_name}: {len(columns)} columns")
+                    # Create enhanced schema entry with structure + metadata
+                    schema_cache[table_name] = {
+                        'columns': {col: "varchar" for col in columns},  # Basic structure
+                        'metadata': {
+                            'description': table_details.get('description', ''),
+                            'business_context': table_details.get('business_context', ''),
+                            'semantic_tags': table_details.get('semantic_tags', []),
+                            'relationships': table_details.get('relationships', []),
+                            'key_columns': table_details.get('key_columns', []),
+                            'measure_columns': table_details.get('measure_columns', []),
+                            'dimension_columns': table_details.get('dimension_columns', [])
+                        }
+                    }
+                    print(f"✅ Added {table_name}: {len(columns)} columns with metadata")
                 else:
-                    # Fallback if no columns found
-                    schema_cache[table_name] = {"column1": "varchar"}
+                    # Fallback with minimal structure
+                    schema_cache[table_name] = {
+                        'columns': {"column1": "varchar"},
+                        'metadata': {'description': 'No detailed schema found'}
+                    }
                     print(f"⚠️ Added {table_name}: placeholder columns (no detailed schema found)")
                     
             except Exception as e:
                 print(f"❌ Failed to get schema for {table_name}: {e}")
-                schema_cache[table_name] = {"column1": "varchar"}
+                schema_cache[table_name] = {
+                    'columns': {"column1": "varchar"},
+                    'metadata': {'description': 'Schema loading failed'}
+                }
         
         print(f"✅ Loaded {len(schema_cache)} tables with detailed column information from Pinecone")
         
@@ -1477,7 +1522,7 @@ async def ensure_pinecone_initialized():
 async def query(request: Request):
     log_usage("/query")
     body = await request.json()
-    nl = body.get("natural_language")
+    nl = body.get("nl") or body.get("natural_language")
     job_id = body.get("job_id")
     db_type = body.get("db_type", os.getenv("DB_ENGINE", "sqlite"))
     try:
@@ -1487,8 +1532,13 @@ async def query(request: Request):
             default_limit=100
         )
         
-        # Enhanced: Use intelligent table discovery like the orchestrator
+        # Enhanced: Use intelligent table discovery like the orchestrator  
         relevant_schema = {}  # Start with empty schema
+        
+        # DEBUG: Check schema cache status
+        print(f"🔍 DEBUG: Schema cache has {len(schema_cache)} tables")
+        if len(schema_cache) == 0:
+            print("⚠️ WARNING: Schema cache is empty! Will use database fallback.")
         
         # Ensure Pinecone store is initialized and use vector search to find relevant tables
         await ensure_pinecone_initialized()
@@ -1504,17 +1554,23 @@ async def query(request: Request):
                         print(f"📋 Processing table: {table_name}")
                         
                         if table_name and table_name in schema_cache:
-                            # Use actual schema from cache - don't call get_table_details
-                            cache_columns = schema_cache[table_name]
+                            # Use enhanced schema from cache with both structure and metadata
+                            cache_entry = schema_cache[table_name]
+                            cache_columns = cache_entry.get('columns', {})
+                            cache_metadata = cache_entry.get('metadata', {})
                             
                             # Limit columns to prevent token overflow (max 20 columns per table)
                             if len(cache_columns) > 20:
                                 limited_columns = list(cache_columns.keys())[:20]
                             else:
                                 limited_columns = list(cache_columns.keys())
-                                
-                            relevant_schema[table_name] = limited_columns
-                            print(f"📋 Added {table_name} with {len(limited_columns)} columns from schema cache")
+                            
+                            # Store both structure and metadata for intelligent planning
+                            relevant_schema[table_name] = {
+                                'columns': limited_columns,
+                                'metadata': cache_metadata
+                            }
+                            print(f"📋 Added {table_name} with {len(limited_columns)} columns + metadata from schema cache")
                             
                             # Verify target column
                             if 'Recommended_Msg_Overall' in limited_columns:
@@ -1533,24 +1589,52 @@ async def query(request: Request):
                 import traceback
                 traceback.print_exc()
         
-        # Fallback: if no relevant schema found, use a small subset of schema_cache
+        # Fallback: if no relevant schema found, query database directly for known tables
         if not relevant_schema:
-            print("⚠️ Using fallback: limited schema subset")
-            # Find NBA-related tables from schema cache
-            nba_tables = [name for name in schema_cache.keys() if 'nba' in name.lower() or 'NBA' in name][:3]
-            for table_name in nba_tables:
-                # Limit columns to prevent token overflow
-                cache_columns = list(schema_cache[table_name].keys())[:10]
-                relevant_schema[table_name] = cache_columns
-                print(f"📋 Fallback: Added {table_name} with {len(cache_columns)} columns")
+            print("⚠️ Using database fallback: querying for known Tirosint/prescriber tables")
+            try:
+                # Query database directly for tables that might contain sales/prescriber data
+                global db_adapter
+                if db_adapter:
+                    # Look for tables with prescriber, sales, or territory in the name
+                    all_tables_query = """
+                    SELECT TABLE_NAME 
+                    FROM INFORMATION_SCHEMA.TABLES 
+                    WHERE TABLE_TYPE = 'BASE TABLE' 
+                    AND (TABLE_NAME LIKE '%Prescriber%' OR TABLE_NAME LIKE '%Sales%' OR TABLE_NAME LIKE '%Territory%' OR TABLE_NAME LIKE '%Tirosint%')
+                    ORDER BY TABLE_NAME
+                    """
+                    
+                    result = await db_adapter.execute_query(all_tables_query)
+                    if result.success and result.data:
+                        found_tables = [row[0] for row in result.data[:3]]  # Limit to 3 tables
+                        print(f"📊 Found {len(found_tables)} relevant tables in database: {found_tables}")
+                        
+                        # Get columns for each table
+                        for table_name in found_tables:
+                            columns_query = f"""
+                            SELECT COLUMN_NAME 
+                            FROM INFORMATION_SCHEMA.COLUMNS 
+                            WHERE TABLE_NAME = '{table_name}'
+                            ORDER BY ORDINAL_POSITION
+                            """
+                            col_result = await db_adapter.execute_query(columns_query)
+                            if col_result.success and col_result.data:
+                                columns = [row[0] for row in col_result.data[:15]]  # Limit columns
+                                relevant_schema[table_name] = columns
+                                print(f"📋 Added {table_name} with {len(columns)} columns")
+                    else:
+                        print("❌ No relevant tables found in database")
+                        
+            except Exception as e:
+                print(f"❌ Database fallback failed: {e}")
             
-            # If still no schema, just pick any 2 tables
+            # Ultimate fallback: if still no schema, use known Tirosint tables
             if not relevant_schema:
-                sample_tables = list(schema_cache.keys())[:2]
-                for table_name in sample_tables:
-                    cache_columns = list(schema_cache[table_name].keys())[:5]
-                    relevant_schema[table_name] = cache_columns
-                    print(f"📋 Emergency fallback: Added {table_name} with {len(cache_columns)} columns")
+                print("🔧 Using hardcoded schema as last resort")
+                relevant_schema = {
+                    'Reporting_BI_PrescriberOverview': ['TerritoryName', 'ProductGroupName', 'TRX(C4 Wk)', 'RegionName', 'PrescriberName']
+                }
         
         print(f"🎯 Final schema passed to LLM: {relevant_schema}")
         print(f"🎯 Schema contains {len(relevant_schema)} tables with {sum(len(cols) for cols in relevant_schema.values())} total columns")
@@ -1570,19 +1654,271 @@ async def query(request: Request):
             print(f"Schema cache status: {len(schema_cache)} tables")
             print(f"Sample schema cache tables: {list(schema_cache.keys())[:5]}")
         
-        # Enhanced: Try deterministic generation first if enabled
-        use_deterministic = request_data.get('use_deterministic', False)
+        # Enhanced: Use intelligent query planning and enhanced SQL generation
+        use_deterministic = body.get('use_deterministic', False)
         
-        if use_deterministic:
+        # First, use intelligent query planner for better table selection
+        # Try the most recent implementation first
+        try:
+            # Use the comprehensive implementations (duplicates removed)
+            from backend.query_intelligence.intelligent_query_planner import IntelligentQueryPlanner
+            from backend.query_intelligence.schema_analyzer import SchemaSemanticAnalyzer
+            
+            # Get database adapter and pass it to intelligent planner
+            db_adapter = get_adapter()
+            intelligent_planner = IntelligentQueryPlanner(db_adapter=db_adapter)
+            schema_analyzer = SchemaSemanticAnalyzer()
+            print("✅ Using comprehensive intelligent planner and schema analyzer with database adapter (cleaned up duplicates)")
+            
+            # Convert relevant_schema to format expected by planner
+            available_tables = [
+                {
+                    'table_name': table_name,
+                    'columns': columns if isinstance(columns, list) else list(columns.keys()),
+                    'confidence': 0.8
+                }
+                for table_name, columns in relevant_schema.items()
+            ]
+            
+            # Enhanced: Use schema analyzer to add semantic context to available tables
+            if 'schema_analyzer' in locals():
+                try:
+                    # Analyze schema semantics for better table understanding
+                    # Create proper metadata format for schema analyzer
+                    table_metadata = {}
+                    for table_name, columns in relevant_schema.items():
+                        if isinstance(columns, dict):
+                            # columns is already in proper format
+                            table_metadata[table_name] = {'columns': columns}
+                        elif isinstance(columns, list):
+                            # Convert list to dict format
+                            table_metadata[table_name] = {'columns': {col: 'varchar' for col in columns}}
+                        else:
+                            table_metadata[table_name] = {'columns': {}}
+                    
+                    # Use the correct async method
+                    semantic_analysis = await schema_analyzer.analyze_schema_semantics(table_metadata)
+                    
+                    # Store semantic analysis for later use by planner
+                    for table in available_tables:
+                        table_name = table['table_name']
+                        if table_name in semantic_analysis.get('tables', {}):
+                            table['semantic_analysis'] = semantic_analysis['tables'][table_name]
+                    
+                    print(f"🔍 Enhanced {len(available_tables)} tables with semantic analysis")
+                except Exception as e:
+                    print(f"⚠️ Schema semantic analysis failed: {e}")
+
+            # Get intelligent query plan with enhanced semantic context
+            print(f"🔍 DEBUG: About to call intelligent_planner.analyze_query_requirements")
+            print(f"🔍 DEBUG: Query: {nl[:100]}...")
+            print(f"🔍 DEBUG: Available tables count: {len(available_tables)}")
+            print(f"🔍 DEBUG: Available tables: {[t.get('table_name', t) for t in available_tables]}")
+            
             try:
-                from backend.nl2sql.enhanced_generator import generate_sql
-                # Pass use_deterministic flag to enhanced generator
-                generated = generate_sql(nl, relevant_schema, guardrail_cfg, use_deterministic=True)
-                print(f"🎯 Using deterministic SQL generation")
+                query_plan = intelligent_planner.analyze_query_requirements(nl, available_tables)
+                print(f"🧠 Intelligent planner selected {len(query_plan.selected_tables)} tables with {query_plan.confidence_score:.2f} confidence")
             except Exception as e:
-                print(f"⚠️ Deterministic generation failed: {e}, falling back to standard generation")
-                generated = generate_sql(nl, relevant_schema, guardrail_cfg)
-        else:
+                print(f"❌ Error in intelligent planner call: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                # Create fallback plan
+                query_plan = type('QueryPlan', (), {
+                    'selected_tables': list(relevant_schema.keys())[:3],
+                    'confidence_score': 0.5,
+                    'reasoning': 'Fallback due to planner error'
+                })()
+            
+            # Use planned tables if confidence is high
+            if query_plan.confidence_score > 0.7:
+                # Rebuild schema with selected tables
+                planned_schema = {
+                    table: relevant_schema[table] 
+                    for table in query_plan.selected_tables 
+                    if table in relevant_schema
+                }
+                if planned_schema:
+                    relevant_schema = planned_schema
+                    print(f"✅ Using intelligent planner's table selection: {list(planned_schema.keys())}")
+                    print(f"📋 Planning reasoning: {query_plan.reasoning}")
+            else:
+                print(f"⚠️ Low confidence ({query_plan.confidence_score:.2f}), using original schema selection")
+            
+        except Exception as e:
+            print(f"⚠️ Intelligent planning failed: {e}, using original schema")
+        
+        # Enhanced SQL generation with error handling
+        try:
+            if use_deterministic:
+                # SIMPLE FIX: Create basic schema if empty
+                if not relevant_schema:
+                    print("🔧 No schema found, creating basic sales schema")
+                    relevant_schema = {
+                        'Reporting_BI_PrescriberOverview': {
+                            'TerritoryName': 'varchar',
+                            'ProductGroupName': 'varchar', 
+                            'TRX(C4 Wk)': 'int',
+                            'RegionName': 'varchar',
+                            'PrescriberName': 'varchar'
+                        },
+                        'Reporting_BI_PrescriberProfile': {
+                            'TerritoryName': 'varchar',
+                            'ProductGroupName': 'varchar',
+                            'RegionName': 'varchar',
+                            'PrescriberName': 'varchar'
+                        }
+                    }
+                
+                # Enhanced: Create comprehensive schema with relationships for proper joins
+                # REMOVED HARDCODING: Trust the orchestrator's intelligent components
+                if False:  # Disabled hardcoded schema - let orchestrator handle this
+                    print("� Creating comprehensive schema with relationships")
+                    relevant_schema = {
+                        'Reporting_BI_PrescriberOverview': {
+                            'TerritoryName': 'varchar',
+                            'ProductGroupName': 'varchar', 
+                            'TRX(C4 Wk)': 'int',
+                            'RegionName': 'varchar',
+                            'PrescriberName': 'varchar',
+                            'PrescriberId': 'int',  # JOIN KEY
+                            'RegionId': 'int',     # JOIN KEY  
+                            'TerritoryId': 'int'   # JOIN KEY
+                        },
+                        'Reporting_BI_PrescriberProfile': {
+                            'TerritoryName': 'varchar',
+                            'ProductGroupName': 'varchar',
+                            'RegionName': 'varchar',
+                            'PrescriberName': 'varchar',
+                            'PrescriberId': 'int',    # JOIN KEY - matches PrescriberOverview
+                            'RegionId': 'int',       # JOIN KEY - matches PrescriberOverview
+                            'TerritoryId': 'int',    # JOIN KEY - matches PrescriberOverview
+                            'ProductPriority': 'varchar',
+                            'TimePeriod': 'varchar',
+                            'ProductFamily': 'varchar'
+                        },
+                        # Add relationship metadata
+                        '_relationships': {
+                            'Reporting_BI_PrescriberOverview_to_PrescriberProfile': {
+                                'type': 'INNER JOIN',
+                                'on': ['PrescriberId', 'TerritoryId', 'RegionId'],
+                                'description': 'Join prescriber overview with profile data'
+                            }
+                        }
+                    }
+                
+                print(f"🔍 DEBUG: Query text: '{nl}'")
+                print(f"🔍 DEBUG: Schema discovered: {len(relevant_schema)} tables: {list(relevant_schema.keys())}")
+                
+            # Enhance schema with semantic context combined with Pinecone metadata
+            enhanced_schema = {}
+            for table_name, schema_data in relevant_schema.items():
+                # Handle both old format (just columns) and new format (columns + metadata)
+                if isinstance(schema_data, dict) and 'columns' in schema_data:
+                    columns = schema_data['columns']
+                    metadata = schema_data.get('metadata', {})
+                else:
+                    # Fallback for old format
+                    columns = schema_data if isinstance(schema_data, list) else []
+                    metadata = {}
+                
+                enhanced_columns = {}
+                for col in columns:
+                    # Combine automatic semantic annotations with Pinecone metadata
+                    semantic_annotation = ""
+                    if 'TRX' in col and 'Wk' in col:
+                        semantic_annotation = 'int -- Prescription transactions (sales volume)'
+                    elif 'ProductGroup' in col or 'Product' in col:
+                        semantic_annotation = 'varchar -- Product names like Tirosint, Synthroid, etc.'
+                    elif 'Territory' in col:
+                        semantic_annotation = 'varchar -- Sales territory names'
+                    elif 'Region' in col:
+                        semantic_annotation = 'varchar -- Geographic regions'
+                    elif 'Prescriber' in col:
+                        semantic_annotation = 'varchar -- Healthcare provider information'
+                    else:
+                        semantic_annotation = 'varchar'
+                    
+                    enhanced_columns[col] = semantic_annotation
+                
+                # Include the enhanced columns + original metadata for intelligent planning
+                enhanced_schema[table_name] = {
+                    'columns': enhanced_columns,
+                    'metadata': metadata
+                }
+                
+            print(f"🧠 Enhanced schema with semantic context for intelligent components")
+                
+            # ALWAYS use the orchestrator - it has the intelligent components (schema analyzer + query planner)
+            print(f"🎯 Using orchestrator with intelligent components for proper joins and relationships")
+            
+            # Use orchestrator with intelligent query planner and schema analyzer  
+            print(f"🚀 CALLING ORCHESTRATOR with query: '{nl}'")
+            plan = await orchestrator.process_query(
+                user_query=nl,
+                user_id="default_user",
+                session_id=f"session_{hash(nl) % 10000}",
+                use_deterministic=use_deterministic
+            )
+            print(f"🎯 ORCHESTRATOR RETURNED: Plan status = {plan.get('status') if plan else 'None'}")
+            
+            # Extract SQL result from orchestrator plan
+            if hasattr(plan, 'to_dict'):
+                plan_dict = plan.to_dict()
+            else:
+                plan_dict = plan
+                
+            # Extract SQL from nested results structure
+            sql_query = ""
+            results_data = plan_dict.get('results', {})
+            
+            if isinstance(results_data, dict):
+                # Look for SQL in various possible locations within results
+                if 'sql_query' in results_data:
+                    sql_query = results_data['sql_query']
+                elif 'query_generation' in results_data and isinstance(results_data['query_generation'], dict):
+                    sql_query = results_data['query_generation'].get('sql_query', '')
+                else:
+                    # Search through all task results for SQL
+                    for key, value in results_data.items():
+                        if isinstance(value, dict) and 'sql_query' in value:
+                            sql_query = value['sql_query']
+                            break
+                        elif isinstance(value, dict) and 'sql' in value:
+                            sql_query = value['sql']
+                            break
+            
+            print(f"🔍 DEBUG: Extracted SQL from orchestrator: {bool(sql_query)}")
+            print(f"🔍 DEBUG: SQL content: {sql_query[:100]}..." if sql_query else "🔍 DEBUG: No SQL found")
+                
+            sql_result = {
+                'status': 'success' if sql_query else 'error',
+                'sql': sql_query,
+                'explanation': plan_dict.get('rationale', 'Generated using comprehensive schema semantic analysis'),
+                'added_limit': plan_dict.get('added_limit', False),
+                'suggestions': plan_dict.get('suggestions', []),
+                'confidence': plan_dict.get('confidence_score', 0.8),
+                'error': 'No SQL generated' if not sql_query else None
+            }
+            
+            if sql_result.get('status') == 'success' and sql_result.get('sql'):
+                # Convert to expected format
+                from backend.nl2sql.enhanced_generator import GeneratedSQL
+                generated = GeneratedSQL(
+                    sql=sql_result.get('sql', ''),
+                    rationale=sql_result.get('explanation', 'Generated using comprehensive schema semantic analysis'),
+                    added_limit=sql_result.get('added_limit', False),
+                    suggestions=sql_result.get('suggestions', []),
+                    confidence_score=sql_result.get('confidence', 0.85)
+                )
+                print(f"🔧 Used comprehensive schema semantic analysis SQL generation")
+            else:
+                error_msg = sql_result.get('error', 'No SQL generated by orchestrator')
+                print(f"⚠️ Orchestrator SQL extraction failed: {error_msg}")
+                raise Exception(f"Schema semantic analysis failed: {error_msg}")
+                    
+        except Exception as e:
+            print(f"⚠️ Enhanced generation failed: {e}, falling back to standard generation")
+            from backend.nl2sql.enhanced_generator import generate_sql
             generated = generate_sql(nl, relevant_schema, guardrail_cfg)
         
         print(f"🔧 LLM Generated SQL: {generated.sql}")

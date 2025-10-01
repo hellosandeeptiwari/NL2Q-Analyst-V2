@@ -10,7 +10,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 import json
 
-from .schema_semantic_analyzer import SchemaSemanticAnalyzer
+from .schema_analyzer import SchemaSemanticAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +32,10 @@ class IntelligentQueryPlanner:
     Replaces the old restrictive approach with deep schema understanding.
     """
     
-    def __init__(self):
+    def __init__(self, db_adapter=None):
         self.schema_analyzer = SchemaSemanticAnalyzer()
         self.confidence_threshold = 0.7
+        self.db_adapter = db_adapter
         
     def analyze_query_requirements(
         self, 
@@ -315,26 +316,41 @@ class IntelligentQueryPlanner:
         selected_tables: List[str], 
         table_analysis: Dict[str, Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
-        """Identify potential join relationships between selected tables"""
+        """Identify potential join relationships between selected tables using multi-table analysis"""
         
+        # Prepare table info list for multi-table analysis
+        tables_info = []
+        for table_name in selected_tables:
+            table_info = table_analysis[table_name]['table_info']
+            tables_info.append(table_info)
+        
+        # Use the new multi-table join analysis
+        joins = self.schema_analyzer.find_potential_joins(tables_info)
+        
+        # Convert to the expected format
         join_relationships = []
-        
-        for i, table1 in enumerate(selected_tables):
-            for table2 in selected_tables[i+1:]:
-                # Analyze potential joins between table1 and table2
-                joins = self.schema_analyzer.find_potential_joins(
-                    table_analysis[table1]['table_info'],
-                    table_analysis[table2]['table_info']
-                )
-                
-                for join in joins:
+        for join in joins:
+            if join.get('join_type') == 'multi_table_chain':
+                # Handle multi-table chain joins
+                tables_in_chain = join.get('tables', [])
+                for i in range(len(tables_in_chain) - 1):
                     join_relationships.append({
-                        'table1': table1,
-                        'table2': table2,
-                        'join_type': join['type'],
-                        'join_columns': join['columns'],
-                        'confidence': join['confidence']
+                        'table1': tables_in_chain[i]['table'],
+                        'table2': tables_in_chain[i + 1]['table'],
+                        'join_type': 'chain_join',
+                        'join_columns': [tables_in_chain[i]['column'], tables_in_chain[i + 1]['column']],
+                        'confidence': join.get('confidence', 0.8),
+                        'chain_info': join
                     })
+            else:
+                # Handle regular pairwise joins
+                join_relationships.append({
+                    'table1': join.get('table1', ''),
+                    'table2': join.get('table2', ''),
+                    'join_type': join.get('type', 'inner'),
+                    'join_columns': join.get('columns', []),
+                    'confidence': join.get('confidence', 0.5)
+                })
         
         return join_relationships
     
@@ -457,94 +473,145 @@ class IntelligentQueryPlanner:
     def _extract_table_metadata(self, context: Dict[str, Any], confirmed_tables: List[str]) -> Dict[str, Any]:
         """Extract comprehensive metadata for confirmed tables using REAL database schema"""
         
+        print(f"🔍 _extract_table_metadata called with {len(confirmed_tables)} confirmed tables")
+        print(f"🔍 DB adapter available: {self.db_adapter is not None}")
+        
         table_metadata = {}
         
         # Get database adapter from context if available
-        db_adapter = context.get('db_adapter')
+        db_adapter = self.db_adapter or context.get('db_adapter')
         
         # Start with matched_tables from context (for Pinecone semantics)
+        # Check both matched_tables and pinecone_matches for compatibility
         matched_tables = context.get("matched_tables", [])
+        if not matched_tables:
+            matched_tables = context.get("pinecone_matches", [])
+        
+        print(f"🔍 DEBUG: Found {len(matched_tables)} table matches in context")
+        print(f"🔍 DEBUG: Context keys available: {list(context.keys())}")
+        print(f"🔍 DEBUG: Confirmed tables to process: {confirmed_tables}")
         
         for table_name in confirmed_tables:
             print(f"🔍 DEBUG: Processing metadata for table: {table_name}")
             
-            # Find corresponding table_info from matched_tables
-            table_info = None
-            for match in matched_tables:
-                if match.get('table_name') == table_name:
-                    table_info = match
-                    break
-            
-            if not table_info:
-                print(f"⚠️ No Pinecone match found for {table_name}, creating minimal table_info")
-                table_info = {'table_name': table_name, 'columns': []}
-            
-            # HYBRID APPROACH: Get REAL columns from database + Pinecone intelligence
-            real_columns = []
-            if db_adapter and hasattr(db_adapter, 'get_real_table_columns'):
-                try:
-                    print(f"🔍 DEBUG: Getting REAL columns for {table_name} from database")
-                    real_db_columns = db_adapter.get_real_table_columns(table_name)
-                    print(f"✅ Got {len(real_db_columns)} real columns for {table_name}")
+            try:
+                # Find corresponding table_info from matched_tables
+                table_info = None
+                for match in matched_tables:
+                    if isinstance(match, dict) and match.get('table_name') == table_name:
+                        table_info = match
+                        break
+                    elif isinstance(match, str) and match == table_name:
+                        # Handle case where matched_tables contains just strings
+                        table_info = {'table_name': table_name, 'columns': []}
+                        break
+                
+                if not table_info:
+                    print(f"⚠️ No Pinecone match found for {table_name}, creating minimal table_info")
+                    table_info = {'table_name': table_name, 'columns': []}
+                
+                # HYBRID APPROACH: Get REAL columns from database + Pinecone intelligence
+                real_columns = []
+                if db_adapter and hasattr(db_adapter, 'get_real_table_columns'):
+                    try:
+                        print(f"🔍 DEBUG: Getting REAL columns for {table_name} from database")
+                        real_db_columns = db_adapter.get_real_table_columns(table_name)
+                        print(f"✅ Got {len(real_db_columns)} real columns for {table_name}")
+                        
+                        # Convert to format expected by semantic analyzer
+                        real_columns = []
+                        for col in real_db_columns:
+                            real_columns.append({
+                                'column_name': col['column_name'],
+                                'data_type': col['data_type'],
+                                'is_nullable': col.get('is_nullable', True)
+                            })
+                        
+                    except Exception as e:
+                        print(f"⚠️ Failed to get real columns for {table_name}: {e}")
+                        real_columns = table_info.get('columns', [])
+                else:
+                    print(f"⚠️ No database adapter available, using Pinecone columns for {table_name}")
+                    pinecone_columns_raw = table_info.get('columns', [])
                     
-                    # Convert to format expected by semantic analyzer
+                    # Convert Pinecone columns to proper format expected by mapping function
                     real_columns = []
-                    for col in real_db_columns:
-                        real_columns.append({
-                            'column_name': col['column_name'],
-                            'data_type': col['data_type'],
-                            'is_nullable': col.get('is_nullable', True)
-                        })
+                    for col in pinecone_columns_raw:
+                        if isinstance(col, dict) and 'column_name' in col:
+                            # Already in correct format
+                            real_columns.append(col)
+                        elif isinstance(col, str):
+                            # Convert string to dict format
+                            real_columns.append({
+                                'column_name': col,
+                                'data_type': 'varchar',
+                                'is_nullable': True
+                            })
+                        else:
+                            # Handle other formats
+                            real_columns.append({
+                                'column_name': str(col),
+                                'data_type': 'varchar', 
+                                'is_nullable': True
+                            })
+                
+                # CRITICAL: Preserve Pinecone intelligence while using real column names
+                pinecone_columns = table_info.get('columns', [])
+                
+                # Map Pinecone intelligence to real columns
+                enhanced_columns = self._map_pinecone_intelligence_to_real_columns(
+                    real_columns, pinecone_columns, table_name
+                )
+                
+                # Update table_info with enhanced columns (real names + Pinecone intelligence)
+                table_info_with_real_columns = table_info.copy()
+                table_info_with_real_columns['columns'] = enhanced_columns
+                
+                # Get semantic profile using real columns
+                semantic_profile = self.schema_analyzer.analyze_table_semantics(table_info_with_real_columns)
+                
+                # CRITICAL: Preserve Pinecone business context and relationships
+                business_context = table_info.get('business_context', {})
+                relationships = table_info.get('relationships', [])
+                
+                # Add business intelligence about filtering for products like "Tirosint Sol"
+                if table_name == 'Reporting_BI_PrescriberProfile':
+                    # From your debug output, we know these columns exist
+                    real_col_names = [col['column_name'] for col in enhanced_columns]
                     
-                except Exception as e:
-                    print(f"⚠️ Failed to get real columns for {table_name}: {e}")
-                    real_columns = table_info.get('columns', [])
-            else:
-                print(f"⚠️ No database adapter available, using Pinecone columns for {table_name}")
-                real_columns = table_info.get('columns', [])
-            
-            # CRITICAL: Preserve Pinecone intelligence while using real column names
-            pinecone_columns = table_info.get('columns', [])
-            
-            # Map Pinecone intelligence to real columns
-            enhanced_columns = self._map_pinecone_intelligence_to_real_columns(
-                real_columns, pinecone_columns, table_name
-            )
-            
-            # Update table_info with enhanced columns (real names + Pinecone intelligence)
-            table_info_with_real_columns = table_info.copy()
-            table_info_with_real_columns['columns'] = enhanced_columns
-            
-            # Get semantic profile using real columns
-            semantic_profile = self.schema_analyzer.analyze_table_semantics(table_info_with_real_columns)
-            
-            # CRITICAL: Preserve Pinecone business context and relationships
-            business_context = table_info.get('business_context', {})
-            relationships = table_info.get('relationships', [])
-            
-            # Add business intelligence about filtering for products like "Tirosint Sol"
-            if table_name == 'Reporting_BI_PrescriberProfile':
-                # From your debug output, we know these columns exist
-                real_col_names = [col['column_name'] for col in enhanced_columns]
+                    if 'ProductGroupName' in real_col_names:
+                        business_context['product_filter_column'] = 'ProductGroupName'
+                        business_context['product_filter_guidance'] = 'Use ProductGroupName to filter for specific products like Tirosint'
+                    elif 'ProductFamily' in real_col_names:
+                        business_context['product_filter_column'] = 'ProductFamily'
+                        business_context['product_filter_guidance'] = 'Use ProductFamily to filter for specific products'
+                    
+                    print(f"🧠 Added product filtering guidance for {table_name}: {business_context.get('product_filter_column')}")
                 
-                if 'ProductGroupName' in real_col_names:
-                    business_context['product_filter_column'] = 'ProductGroupName'
-                    business_context['product_filter_guidance'] = 'Use ProductGroupName to filter for specific products like Tirosint'
-                elif 'ProductFamily' in real_col_names:
-                    business_context['product_filter_column'] = 'ProductFamily'
-                    business_context['product_filter_guidance'] = 'Use ProductFamily to filter for specific products'
+                table_metadata[table_name] = {
+                    'table_info': table_info_with_real_columns,
+                    'semantic_profile': semantic_profile,
+                    'columns': enhanced_columns,  # Use enhanced columns (real names + intelligence)
+                    'relationships': relationships,  # Preserve Pinecone relationships
+                    'business_context': business_context  # Enhanced business context
+                }
+            
+                print(f"✅ Metadata for {table_name} ready with {len(enhanced_columns)} enhanced columns")
                 
-                print(f"🧠 Added product filtering guidance for {table_name}: {business_context.get('product_filter_column')}")
-            
-            table_metadata[table_name] = {
-                'table_info': table_info_with_real_columns,
-                'semantic_profile': semantic_profile,
-                'columns': enhanced_columns,  # Use enhanced columns (real names + intelligence)
-                'relationships': relationships,  # Preserve Pinecone relationships
-                'business_context': business_context  # Enhanced business context
-            }
-            
-            print(f"✅ Metadata for {table_name} ready with {len(enhanced_columns)} enhanced columns")
+            except Exception as e:
+                print(f"❌ Error processing metadata for {table_name}: {str(e)}")
+                print(f"❌ Exception type: {type(e).__name__}")
+                import traceback
+                print(f"❌ Full traceback:")
+                traceback.print_exc()
+                # Create minimal fallback metadata
+                table_metadata[table_name] = {
+                    'table_info': {'table_name': table_name, 'columns': []},
+                    'semantic_profile': {'business_purpose': 'Unknown'},
+                    'columns': [],
+                    'relationships': [],
+                    'business_context': {}
+                }
         
         # CRITICAL: Infer relationships between tables based on common columns
         if len(table_metadata) > 1:
@@ -652,7 +719,7 @@ class IntelligentQueryPlanner:
                 'name': column.get('column_name', ''),
                 'data_type': column.get('data_type', ''),
                 'nullable': column.get('is_nullable', True),
-                'semantic_type': self.schema_analyzer._classify_column_semantic_type(column),
+                'semantic_type': self.schema_analyzer._classify_column_semantic_type(column.get('column_name', '')),
                 'aggregatable': self._is_aggregatable(column),
                 'filterable': self._is_filterable(column),
                 'groupable': self._is_groupable(column)
@@ -673,7 +740,7 @@ class IntelligentQueryPlanner:
     
     def _is_groupable(self, column: Dict[str, Any]) -> bool:
         """Check if column is good for grouping"""
-        semantic_type = self.schema_analyzer._classify_column_semantic_type(column)
+        semantic_type = self.schema_analyzer._classify_column_semantic_type(column.get('column_name', ''))
         return semantic_type in ['categorical', 'identifier', 'temporal', 'geographic']
     
     def _identify_primary_keys(self, columns: List[Dict[str, Any]]) -> List[str]:
@@ -699,27 +766,41 @@ class IntelligentQueryPlanner:
         return foreign_keys
     
     def _identify_optimal_join_paths(self, table_metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Identify optimal join paths between tables"""
+        """Identify optimal join paths between tables using multi-table analysis"""
         
+        # Prepare table info list for multi-table analysis
+        tables_info = []
+        for table_name, metadata in table_metadata.items():
+            table_info = metadata['table_info']
+            tables_info.append(table_info)
+        
+        # Use the new multi-table join analysis
+        joins = self.schema_analyzer.find_potential_joins(tables_info)
+        
+        # Convert to the expected format
         join_paths = []
-        table_names = list(table_metadata.keys())
-        
-        for i, table1 in enumerate(table_names):
-            for table2 in table_names[i+1:]:
-                # Use semantic analyzer to find joins
-                joins = self.schema_analyzer.find_potential_joins(
-                    table_metadata[table1]['table_info'],
-                    table_metadata[table2]['table_info']
-                )
-                
-                for join in joins:
+        for join in joins:
+            if join.get('join_type') == 'multi_table_chain':
+                # Handle multi-table chain joins
+                tables_in_chain = join.get('tables', [])
+                for i in range(len(tables_in_chain) - 1):
                     join_paths.append({
-                        'table1': table1,
-                        'table2': table2,
-                        'join_type': join['type'],
-                        'join_columns': join['columns'],
-                        'confidence': join['confidence']
+                        'table1': tables_in_chain[i]['table'],
+                        'table2': tables_in_chain[i + 1]['table'],
+                        'join_type': 'chain_join',
+                        'join_columns': [tables_in_chain[i]['column'], tables_in_chain[i + 1]['column']],
+                        'confidence': join.get('confidence', 0.8),
+                        'chain_info': join
                     })
+            else:
+                # Handle regular pairwise joins
+                join_paths.append({
+                    'table1': join.get('table1', ''),
+                    'table2': join.get('table2', ''),
+                    'join_type': join.get('type', 'inner'),
+                    'join_columns': join.get('columns', []),
+                    'confidence': join.get('confidence', 0.5)
+                })
         
         # Sort by confidence
         join_paths.sort(key=lambda x: x['confidence'], reverse=True)
@@ -789,17 +870,24 @@ class IntelligentQueryPlanner:
             from ..nl2sql.enhanced_generator import generate_sql, GuardrailConfig
             from ..db.enhanced_schema import format_schema_for_llm
             
-            # Build comprehensive prompt for SQL generation
-            print("🔍 DEBUG: Building SQL generation prompt...")
-            generation_prompt = self._build_sql_generation_prompt(
-                query, schema_context, query_semantics, confirmed_tables
-            )
-            print("✅ DEBUG: SQL generation prompt built successfully")
+            # Use SchemaSemanticAnalyzer to get complete schema analysis
+            print("🔍 DEBUG: Getting complete schema analysis from SchemaSemanticAnalyzer...")
             
-            # Create enhanced schema snapshot for SQL generation
-            print("🔍 DEBUG: Creating enhanced schema snapshot...")
-            enhanced_schema = self._create_enhanced_schema_snapshot(schema_context, confirmed_tables)
-            print(f"✅ DEBUG: Enhanced schema created with {len(enhanced_schema.get('tables', {}))} tables")
+            # Prepare table metadata for semantic analysis
+            table_metadata = {}
+            for table_name in confirmed_tables:
+                table_info = schema_context['tables'].get(table_name, {})
+                table_metadata[table_name] = table_info
+            
+            # Get comprehensive semantic analysis
+            semantic_analysis = await self.schema_analyzer.analyze_schema_semantics(table_metadata)
+            
+            # Check if semantic analysis was successful
+            if not semantic_analysis or 'tables' not in semantic_analysis:
+                print("⚠️ DEBUG: Semantic analysis failed or incomplete, using fallback")
+                raise Exception("tables")  # This will trigger fallback
+                
+            print(f"✅ DEBUG: Complete semantic analysis obtained for {len(semantic_analysis['tables'])} tables")
             
             # Configure guardrails for intelligent generation
             guardrails = GuardrailConfig(
@@ -808,33 +896,63 @@ class IntelligentQueryPlanner:
                 default_limit=1000
             )
             
-            # Generate SQL using the enhanced generator with intelligent context
-            logger.info(f"🎯 Generating SQL with enhanced context for {len(confirmed_tables)} tables")
+            # Create comprehensive schema prompt from semantic analysis
+            schema_prompt = self._format_semantic_analysis_for_llm(semantic_analysis, query)
             
-            # SMART APPROACH: Create basic schema for generate_sql but pass semantic intelligence through query enhancement
-            basic_schema = self._create_basic_schema_for_generator(enhanced_schema)
+            # Generate SQL using the enhanced generator with complete semantic context
+            logger.info(f"🎯 Generating SQL with complete semantic analysis for {len(confirmed_tables)} tables")
             
-            # Enhance the query with our intelligent context (this preserves all our semantics!)
-            enhanced_query = self._enhance_query_with_intelligence(query, schema_context, generation_prompt)
+            print(f"🔍 DEBUG: Schema prompt length: {len(schema_prompt)} chars")
+            print(f"🔍 DEBUG: Semantic analysis tables: {list(semantic_analysis['tables'].keys())}")
             
-            print(f"🔍 DEBUG: Enhanced query length: {len(enhanced_query)}")
-            print(f"🔍 DEBUG: Basic schema tables: {list(basic_schema.keys())}")
+            # Create basic schema structure for the generator (it expects this format)
+            basic_schema = {}
+            for table_name, table_analysis in semantic_analysis['tables'].items():
+                columns = table_analysis.get('columns', [])
+                column_names = [col.get('name', '') for col in columns]
+                basic_schema[table_name] = column_names
             
-            sql_result = generate_sql(
-                natural_language=enhanced_query,  # Pass intelligence through enhanced query
-                schema_snapshot=basic_schema,     # Simple schema structure
-                constraints=guardrails
+            # Use retry-enabled SQL generation with error feedback to LLM
+            print("🔄 Using retry-enabled SQL generation with error feedback")
+            retry_result = await self._generate_sql_with_retry_integration(
+                query=query,
+                schema_prompt=schema_prompt,
+                basic_schema=basic_schema,
+                constraints=guardrails,
+                confirmed_tables=confirmed_tables
             )
             
-            # Enhance the result with intelligent planning metadata
+            if retry_result.get('status') == 'success':
+                sql_result = retry_result.get('sql_result')
+                retry_info = retry_result.get('retry_info', {})
+                
+                if retry_info.get('attempts', 1) > 1:
+                    print(f"✅ SQL generation succeeded after {retry_info.get('attempts')} attempts with retry feedback")
+            else:
+                # Fallback to direct generation if retry fails
+                print("⚠️ Retry generation failed, falling back to direct generation")
+                sql_result = generate_sql(
+                    natural_language=schema_prompt,
+                    schema_snapshot=basic_schema,
+                    constraints=guardrails
+                )
+            
+            # Use the SQL as generated by LLM with complete semantic understanding
+            if retry_result.get('status') == 'success' and retry_result.get('sql'):
+                final_sql = retry_result.get('sql', '').strip()
+            else:
+                final_sql = sql_result.sql.strip()
+            print(f"� LLM generated SQL with complete semantic analysis: {len(final_sql)} chars")
+            
+            # Return result with comprehensive semantic analysis confidence
             enhanced_result = {
-                'sql': sql_result.sql,
+                'sql': final_sql,
                 'explanation': sql_result.rationale,
                 'confidence': sql_result.confidence_score or 0.85,
                 'tables_used': confirmed_tables,
-                'business_logic_applied': schema_context.get('business_rules', []),
-                'join_strategy': schema_context.get('join_paths', []),
-                'semantic_matches': sql_result.semantic_matches or [],
+                'semantic_analysis': semantic_analysis['semantic_summary'],
+                'business_domains': semantic_analysis.get('business_domains', {}),
+                'relationships': semantic_analysis.get('cross_table_relationships', {}),
                 'suggestions': sql_result.suggestions or [],
                 'added_limit': sql_result.added_limit,
                 'intelligent_enhancements': {
@@ -863,7 +981,9 @@ class IntelligentQueryPlanner:
         """Build comprehensive prompt for SQL generation with few-shot join examples"""
         
         prompt_parts = [
-            "Generate precise SQL based on comprehensive schema analysis:",
+            "🎯 INTELLIGENT SQL GENERATION with MULTI-TABLE AWARENESS:",
+            f"Generate precise SQL using advanced schema intelligence and multi-table join analysis.",
+            f"IMPORTANT: Use the discovered join relationships below - they represent optimal table connections.",
             f"\nQuery: {query}",
             "\nSchema Context:"
         ]
@@ -883,15 +1003,36 @@ class IntelligentQueryPlanner:
                     col_info += " [groupable]"
                 prompt_parts.append(col_info)
         
-        # CRITICAL: Add comprehensive join information with few-shot examples
+        # CRITICAL: Add comprehensive join information with multi-table intelligence
         if schema_context.get('join_paths'):
-            prompt_parts.append("\n🔗 DISCOVERED JOIN RELATIONSHIPS:")
-            for join in schema_context['join_paths']:
-                confidence_emoji = "🟢" if join['confidence'] >= 0.9 else "🟡" if join['confidence'] >= 0.7 else "🔴"
-                
-                # Handle different join column formats
-                join_col_text = self._format_join_columns(join)
-                prompt_parts.append(f"  {confidence_emoji} {join['table1']} → {join['table2']} ON {join_col_text} (confidence: {join['confidence']:.2f})")
+            prompt_parts.append("\n🔗 INTELLIGENT JOIN RELATIONSHIPS (USE THESE FOR OPTIMAL SQL):")
+            
+            # Separate chain joins from regular joins for better visibility
+            chain_joins = [j for j in schema_context['join_paths'] if j.get('join_type') == 'chain_join']
+            regular_joins = [j for j in schema_context['join_paths'] if j.get('join_type') != 'chain_join']
+            
+            if chain_joins:
+                prompt_parts.append("  🌟 MULTI-TABLE CHAIN JOINS (Optimal for 3+ table queries):")
+                for join in chain_joins:
+                    tables_count = len(join.get('tables', []))
+                    common_key = join.get('common_key', 'unknown')
+                    prompt_parts.append(f"    ⭐ CHAIN: {tables_count} tables connected via '{common_key}' (confidence: {join.get('confidence', 0):.2f})")
+                    for table_info in join.get('tables', []):
+                        prompt_parts.append(f"       - {table_info.get('table', 'unknown')}.{table_info.get('column', 'unknown')}")
+            
+            if regular_joins:
+                prompt_parts.append("  🔗 PAIRWISE JOINS:")
+                for join in regular_joins:
+                    confidence_emoji = "🟢" if join['confidence'] >= 0.9 else "🟡" if join['confidence'] >= 0.7 else "🔴"
+                    # Handle different join column formats
+                    join_col_text = self._format_join_columns(join)
+                    prompt_parts.append(f"    {confidence_emoji} {join['table1']} → {join['table2']} ON {join_col_text} (confidence: {join['confidence']:.2f})")
+            
+            # Add strategic guidance
+            prompt_parts.append("\n  💡 JOIN STRATEGY:")
+            prompt_parts.append("     • For multi-table queries: Use chain joins when available (⭐)")
+            prompt_parts.append("     • Start with highest confidence joins (🟢)")
+            prompt_parts.append("     • Chain joins enable complex multi-table analysis in one query")
             
             # Add few-shot join examples based on discovered relationships
             try:
@@ -1041,18 +1182,99 @@ class IntelligentQueryPlanner:
                 ])
         
         elif len(confirmed_tables) > 2:
-            # Multi-table complex join examples
+            # Multi-table complex join examples using discovered join paths
             examples.extend([
-                f"\n🔹 COMPLEX MULTI-TABLE JOIN PATTERN:",
-                f"-- Use the highest confidence joins first (PrescriberId, RegionId, TerritoryId)",
-                f"-- Then add additional tables with secondary joins",
-                f"SELECT main_table.*, related_data.*",
-                f"FROM {confirmed_tables[0]} main_table",
-                f"INNER JOIN {confirmed_tables[1]} related_data", 
-                f"    ON main_table.PrescriberId = related_data.PrescriberId",
-                f"    AND main_table.RegionId = related_data.RegionId",
-                f"WHERE main_table.ProductGroupName IS NOT NULL",
-                f"LIMIT 100;"
+                f"\n🔹 INTELLIGENT MULTI-TABLE JOIN PATTERN:"
+            ])
+            
+            # Group join paths to show chain joins and multi-table relationships
+            chain_joins = [j for j in join_paths if j.get('join_type') == 'chain_join']
+            regular_joins = [j for j in join_paths if j.get('join_type') != 'chain_join']
+            
+            if chain_joins:
+                # Show chain join example
+                examples.extend([
+                    f"-- CHAIN JOIN detected - multiple tables connected through common keys:",
+                    f"SELECT "
+                ])
+                
+                # Build SELECT clause with columns from all tables
+                for i, table in enumerate(confirmed_tables):
+                    alias = f"t{i+1}"
+                    examples.append(f"    {alias}.*, -- {table}")
+                
+                examples.extend([
+                    f"FROM {confirmed_tables[0]} t1"
+                ])
+                
+                # Build JOIN clauses based on discovered relationships
+                table_aliases = {confirmed_tables[i]: f"t{i+1}" for i in range(len(confirmed_tables))}
+                
+                for join in chain_joins[:len(confirmed_tables)-1]:  # Avoid over-joining
+                    table1_alias = table_aliases.get(join.get('table1'), 'unknown')
+                    table2_alias = table_aliases.get(join.get('table2'), 'unknown')
+                    
+                    if join.get('join_columns') and len(join['join_columns']) >= 2:
+                        col1, col2 = join['join_columns'][0], join['join_columns'][1]
+                        examples.append(f"INNER JOIN {join.get('table2')} {table2_alias}")
+                        examples.append(f"    ON {table1_alias}.{col1} = {table2_alias}.{col2}")
+                
+                examples.extend([
+                    f"WHERE t1.ProductGroupName IS NOT NULL",
+                    f"LIMIT 100;"
+                ])
+            else:
+                # Regular multi-table join
+                examples.extend([
+                    f"-- MULTI-TABLE JOIN using discovered relationships:",
+                    f"SELECT main.*, related.*",
+                    f"FROM {confirmed_tables[0]} main"
+                ])
+                
+                # Add joins based on discovered paths
+                for i, join in enumerate(regular_joins[:len(confirmed_tables)-1]):
+                    table_name = join.get('table2', confirmed_tables[min(i+1, len(confirmed_tables)-1)])
+                    if join.get('join_columns') and len(join['join_columns']) >= 2:
+                        col1, col2 = join['join_columns'][0], join['join_columns'][1]
+                        examples.extend([
+                            f"INNER JOIN {table_name} related{i+1}",
+                            f"    ON main.{col1} = related{i+1}.{col2}"
+                        ])
+                
+                examples.extend([
+                    f"WHERE main.ProductGroupName IS NOT NULL",
+                    f"LIMIT 100;"
+                ])
+            
+            # Add advanced multi-table aggregation example
+            examples.extend([
+                f"\n🔹 ADVANCED MULTI-TABLE AGGREGATION:",
+                f"-- Leveraging discovered relationships for comprehensive analysis",
+                f"SELECT ",
+                f"    main.RegionName,",
+                f"    main.TerritoryName,",
+                f"    COUNT(DISTINCT main.PrescriberId) as unique_prescribers,",
+                f"    SUM(main.TRX) as total_prescriptions,",
+                f"    AVG(profile.AvgTRX) as avg_prescriber_volume",
+                f"FROM {confirmed_tables[0]} main"
+            ])
+            
+            # Add intelligent joins based on the discovered paths
+            if len(confirmed_tables) > 1:
+                best_join = max(join_paths, key=lambda x: x.get('confidence', 0)) if join_paths else None
+                if best_join and best_join.get('join_columns'):
+                    col1, col2 = (best_join['join_columns'][0], best_join['join_columns'][1]) if len(best_join['join_columns']) >= 2 else ('PrescriberId', 'PrescriberId')
+                    examples.extend([
+                        f"INNER JOIN {confirmed_tables[1]} profile",
+                        f"    ON main.{col1} = profile.{col2}"
+                    ])
+            
+            examples.extend([
+                f"WHERE main.ProductGroupName LIKE '%Tirosint%'",
+                f"GROUP BY main.RegionName, main.TerritoryName",
+                f"HAVING COUNT(DISTINCT main.PrescriberId) >= 3",
+                f"ORDER BY total_prescriptions DESC",
+                f"LIMIT 20;"
             ])
         
         # Always add territory-based analysis example (key pattern for pharma)
@@ -1073,14 +1295,120 @@ class IntelligentQueryPlanner:
             f"LIMIT 25;"
         ])
         
-        examples.append("\n💡 KEY JOIN PRINCIPLES:")
-        examples.append("   • Use PrescriberId for prescriber-level analysis")
-        examples.append("   • Use RegionId/TerritoryId for geographic rollups")
-        examples.append("   • ProductGroupName for product filtering")
+        examples.append("\n💡 INTELLIGENT JOIN PRINCIPLES:")
+        examples.append("   • ALWAYS use the discovered join relationships above (🟢 high confidence preferred)")
+        examples.append("   • For MULTI-TABLE queries: leverage chain joins when available")
+        examples.append("   • Use PrescriberId for prescriber-level analysis across tables")
+        examples.append("   • Use RegionId/TerritoryId for geographic rollups and hierarchies")
+        examples.append("   • ProductGroupName for product filtering across joined data")
+        examples.append("   • TRUST the semantic analysis - it identified optimal join paths")
+        examples.append("   • For 3+ tables: start with highest confidence joins, then add others")
         examples.append("   • Always add meaningful WHERE clauses and LIMITs")
-        examples.append("   • Use HAVING for aggregate filtering")
+        examples.append("   • Use HAVING for aggregate filtering on joined results")
         
         return examples
+    
+    def _build_focused_sql_prompt(
+        self, 
+        query: str, 
+        schema_context: Dict[str, Any], 
+        confirmed_tables: List[str]
+    ) -> str:
+        """Build focused, clean SQL-only prompt to avoid LLM confusion with explanatory text"""
+        
+        # Get top 3 most confident joins only
+        join_paths = schema_context.get('join_paths', [])
+        top_joins = sorted(join_paths, key=lambda x: x.get('confidence', 0), reverse=True)[:3]
+        
+        prompt_parts = [
+            f"Generate SQL Server query for: {query}",
+            "",
+            "TABLES:"
+        ]
+        
+        # Add complete table and column information with proper metadata
+        for table_name in confirmed_tables:
+            table_info = schema_context['tables'].get(table_name, {})
+            prompt_parts.append(f"• {table_name}")
+            
+            # Add ALL columns with proper metadata (not just first 10)
+            columns = table_info.get('columns', [])
+            col_details = []
+            for col in columns:
+                col_name = col.get('name', '')
+                col_type = col.get('data_type', 'VARCHAR')
+                semantic_type = col.get('semantic_type', '')
+                
+                # Format column with type and semantic info
+                col_detail = f"{col_name} ({col_type})"
+                if semantic_type:
+                    col_detail += f" [{semantic_type}]"
+                col_details.append(col_detail)
+            
+            # Show all columns, not just first 10
+            prompt_parts.append(f"  Columns: {', '.join(col_details)}")
+        
+        # Add only top joins
+        if top_joins:
+            prompt_parts.append("")
+            prompt_parts.append("KEY JOINS:")
+            for join in top_joins:
+                if join.get('join_type') == 'multi_table_chain':
+                    common_key = join.get('common_key', 'unknown')
+                    table_count = len(join.get('tables', []))
+                    prompt_parts.append(f"• Chain: {table_count} tables via '{common_key}'")
+                else:
+                    table1 = join.get('table1', '')
+                    table2 = join.get('table2', '')
+                    join_text = self._format_join_columns(join)
+                    prompt_parts.append(f"• {table1} → {table2} ON {join_text}")
+        
+        # Simple request with complete schema information
+        prompt_parts.extend([
+            "",
+            f"Generate SQL query for Azure SQL Server: {query}",
+            "Return only executable SQL, no explanations."
+        ])
+        
+        result = "\n".join(prompt_parts)
+        print(f"🎯 Focused prompt: {len(result)} chars (vs previous 15KB)")
+        return result
+    
+    def _extract_and_clean_sql(self, raw_sql: str) -> str:
+        """Extract SQL from LLM response - minimal processing, LLM should generate correct syntax"""
+        if not raw_sql:
+            return "SELECT 'No SQL generated' as error"
+        
+        # Minimal cleanup - just remove markdown if present and extract SQL
+        sql = raw_sql.strip()
+        
+        # Remove markdown code block markers if present
+        sql = sql.replace('```sql', '').replace('```', '').strip()
+        
+        # Extract just the SQL part if there's explanatory text
+        lines = sql.split('\n')
+        sql_lines = []
+        found_sql = False
+        
+        for line in lines:
+            line_upper = line.strip().upper()
+            # Start collecting when we find SQL keywords
+            if any(line_upper.startswith(keyword) for keyword in ['SELECT', 'WITH', 'INSERT', 'UPDATE', 'DELETE']):
+                found_sql = True
+            
+            if found_sql:
+                # Stop collecting if we hit explanation markers
+                if any(marker in line.lower() for marker in ['explanation:', '###', 'note:', 'the query']):
+                    break
+                sql_lines.append(line)
+        
+        # Use extracted SQL if found, otherwise original
+        if sql_lines:
+            sql = '\n'.join(sql_lines).strip()
+        
+        print(f"🧹 SQL extracted (minimal processing): {sql[:200]}...")
+        
+        return sql
     
     def _validate_and_enhance_result(self, sql_result: Dict[str, Any], schema_context: Dict[str, Any]) -> Dict[str, Any]:
         """Validate and enhance the SQL generation result"""
@@ -1367,14 +1695,30 @@ class IntelligentQueryPlanner:
             "INTELLIGENT CONTEXT:"
         ]
         
-        # Add join intelligence
+        # Add intelligent multi-table join analysis
         join_paths = schema_context.get('join_paths', [])
         if join_paths:
-            enhanced_parts.append("JOIN RELATIONSHIPS DISCOVERED:")
-            for join in join_paths[:3]:  # Top 3 most confident joins
-                join_text = self._format_join_columns(join)
-                confidence_emoji = "🟢" if join.get('confidence', 0) >= 0.9 else "🟡"
-                enhanced_parts.append(f"  {confidence_emoji} {join.get('table1')} ↔ {join.get('table2')} ON {join_text}")
+            enhanced_parts.append("🔗 INTELLIGENT JOIN RELATIONSHIPS (PRIORITIZE THESE):")
+            
+            # Show chain joins first (optimal for multi-table)
+            chain_joins = [j for j in join_paths if j.get('join_type') == 'chain_join']
+            regular_joins = [j for j in join_paths if j.get('join_type') != 'chain_join']
+            
+            if chain_joins:
+                enhanced_parts.append("  ⭐ MULTI-TABLE CHAIN JOINS (Use for 3+ tables):")
+                for join in chain_joins[:2]:  # Top 2 chain joins
+                    tables_count = len(join.get('tables', []))
+                    common_key = join.get('common_key', 'unknown')
+                    enhanced_parts.append(f"    🌟 {tables_count} tables connected via '{common_key}' (confidence: {join.get('confidence', 0):.2f})")
+            
+            if regular_joins:
+                enhanced_parts.append("  🔗 PAIRWISE JOINS:")
+                for join in regular_joins[:3]:  # Top 3 most confident joins
+                    join_text = self._format_join_columns(join)
+                    confidence_emoji = "🟢" if join.get('confidence', 0) >= 0.9 else "🟡"
+                    enhanced_parts.append(f"    {confidence_emoji} {join.get('table1')} ↔ {join.get('table2')} ON {join_text}")
+            
+            enhanced_parts.append("  💡 STRATEGY: Use chain joins for complex multi-table analysis!")
         
         # Add business rules
         business_rules = schema_context.get('business_rules', [])
@@ -1490,11 +1834,15 @@ LIMIT 100;"""
             primary_table = tables[0]
             secondary_table = tables[1]
             
-            return f"""-- Fallback multi-table template
-SELECT *
+            return f"""SELECT TOP 5 
+    t1.PrescriberName, 
+    t1.TerritoryName, 
+    t1.RegionName,
+    t1.ProductGroupName,
+    t2.Specialty
 FROM {primary_table} t1
-JOIN {secondary_table} t2 ON t1.id = t2.{primary_table}_id
-LIMIT 100;"""
+INNER JOIN {secondary_table} t2 ON t1.PrescriberId = t2.PrescriberId
+WHERE t1.ProductGroupName IS NOT NULL;"""
     
     def _map_pinecone_intelligence_to_real_columns(
         self, 
@@ -1509,23 +1857,55 @@ LIMIT 100;"""
         print(f"   Pinecone columns: {len(pinecone_columns)}")
         
         enhanced_columns = []
-        real_col_names = [col['column_name'].lower() for col in real_columns]
+        # Safely extract real column names handling different formats
+        real_col_names = []
+        for col in real_columns:
+            if isinstance(col, dict) and 'column_name' in col:
+                real_col_names.append(col['column_name'].lower())
+            elif isinstance(col, str):
+                real_col_names.append(col.lower())
+            else:
+                print(f"   ⚠️ Unknown real column format: {type(col)} - {col}")
         
         # Create mapping of Pinecone intelligence by column name
         pinecone_intelligence = {}
         for pcol in pinecone_columns:
-            pcol_name = pcol.get('column_name', '').lower()
-            pinecone_intelligence[pcol_name] = pcol
+            if isinstance(pcol, dict):
+                pcol_name = pcol.get('column_name', '').lower()
+                pinecone_intelligence[pcol_name] = pcol
+            elif isinstance(pcol, str):
+                # Handle string column names from Pinecone
+                pcol_name = pcol.lower()
+                pinecone_intelligence[pcol_name] = {
+                    'column_name': pcol,
+                    'semantic_role': 'general',
+                    'business_meaning': f'Column {pcol}',
+                    'confidence': 0.7
+                }
+            else:
+                print(f"   ⚠️ Unknown Pinecone column format: {type(pcol)} - {pcol}")
         
         # Enhance real columns with Pinecone intelligence
         for real_col in real_columns:
-            real_name = real_col['column_name']
+            # Handle different formats of real_col
+            if isinstance(real_col, dict) and 'column_name' in real_col:
+                real_name = real_col['column_name']
+                data_type = real_col.get('data_type', 'varchar')
+                is_nullable = real_col.get('is_nullable', True)
+            elif isinstance(real_col, str):
+                real_name = real_col
+                data_type = 'varchar'
+                is_nullable = True
+            else:
+                print(f"   ⚠️ Skipping unknown real column format: {type(real_col)} - {real_col}")
+                continue
+                
             real_name_lower = real_name.lower()
             
             enhanced_col = {
                 'column_name': real_name,  # Use REAL column name
-                'data_type': real_col['data_type'],
-                'is_nullable': real_col.get('is_nullable', True)
+                'data_type': data_type,
+                'is_nullable': is_nullable
             }
             
             # Try to find matching Pinecone intelligence
@@ -1603,3 +1983,115 @@ LIMIT 100;"""
                 'confirmed_tables': confirmed_tables
             }
         }
+    
+    def _format_semantic_analysis_for_llm(self, semantic_analysis: Dict[str, Any], query: str) -> str:
+        """Format complete semantic analysis for LLM prompt"""
+        
+        prompt_parts = []
+        
+        # Add query context
+        prompt_parts.append(f"Generate SQL query for Azure SQL Server: {query}")
+        prompt_parts.append("")
+        
+        # Add complete table information with semantic context
+        tables = semantic_analysis.get('tables', {})
+        for table_name, table_analysis in tables.items():
+            prompt_parts.append(f"Table: {table_name}")
+            
+            # Add table semantic info
+            table_semantics = table_analysis.get('table_semantics', {})
+            domain = table_semantics.get('primary_domain', 'general')
+            entities = table_semantics.get('business_entities', [])
+            if domain != 'general' or entities:
+                prompt_parts.append(f"  Domain: {domain}, Entities: {', '.join(entities)}")
+            
+            # Add all columns with complete metadata
+            columns = table_analysis.get('columns', [])
+            for col in columns:
+                col_name = col.get('name', '')
+                col_type = col.get('data_type', 'VARCHAR')
+                semantic_type = col.get('semantic_type', '')
+                is_key = col.get('is_primary_key', False) or col.get('is_foreign_key', False)
+                
+                col_desc = f"    {col_name} ({col_type})"
+                if semantic_type:
+                    col_desc += f" [{semantic_type}]"
+                if is_key:
+                    col_desc += " [KEY]"
+                prompt_parts.append(col_desc)
+            
+            prompt_parts.append("")
+        
+        # Add relationship information
+        relationships = semantic_analysis.get('cross_table_relationships', {})
+        if relationships:
+            prompt_parts.append("Table Relationships:")
+            for rel_type, rels in relationships.items():
+                if rels:
+                    prompt_parts.append(f"  {rel_type}: {len(rels)} relationships")
+                    for rel in rels[:3]:  # Show top 3 relationships
+                        if isinstance(rel, dict):
+                            table1 = rel.get('table1', '')
+                            table2 = rel.get('table2', '')
+                            columns = rel.get('columns', [])
+                            if table1 and table2:
+                                prompt_parts.append(f"    {table1} ↔ {table2} via {', '.join(columns[:2])}")
+            prompt_parts.append("")
+        
+        # Add business context
+        business_domains = semantic_analysis.get('business_domains', {})
+        if business_domains:
+            prompt_parts.append("Business Context:")
+            for domain, info in business_domains.items():
+                entities = info.get('entities', [])
+                if entities:
+                    prompt_parts.append(f"  {domain}: {', '.join(entities[:5])}")
+            prompt_parts.append("")
+        
+        prompt_parts.append("Return only executable SQL, no explanations.")
+        
+        return "\n".join(prompt_parts)
+    
+    async def _generate_sql_with_retry_integration(
+        self, 
+        query: str, 
+        schema_prompt: str, 
+        basic_schema: Dict[str, Any], 
+        constraints: Any,
+        confirmed_tables: List[str]
+    ) -> Dict[str, Any]:
+        """Integrate retry logic from orchestrator for robust SQL generation"""
+        
+        from ..dynamic_agent_orchestrator import DynamicAgentOrchestrator
+        
+        try:
+            # Initialize orchestrator for retry logic
+            orchestrator = DynamicAgentOrchestrator()
+            
+            # Use orchestrator's retry mechanism for SQL generation
+            print("🔄 Attempting SQL generation with retry logic...")
+            
+            # Execute SQL generation with retry
+            retry_result = await orchestrator._generate_sql_with_retry(
+                query=query,
+                schema_context={'tables': {table: [] for table in confirmed_tables}},
+                max_attempts=3
+            )
+            
+            if retry_result.get('status') == 'success':
+                return {
+                    'status': 'success',
+                    'sql': retry_result.get('sql', ''),
+                    'sql_result': retry_result.get('sql_result'),
+                    'retry_info': {
+                        'attempts': retry_result.get('attempts', 1),
+                        'used_retry': retry_result.get('attempts', 1) > 1
+                    }
+                }
+            else:
+                print(f"⚠️ SQL retry generation failed: {retry_result.get('error', 'Unknown error')}")
+                return {'status': 'failed', 'error': retry_result.get('error', 'Retry generation failed')}
+                
+        except Exception as e:
+            print(f"❌ Error in retry integration: {str(e)}")
+            return {'status': 'failed', 'error': f"Retry integration error: {str(e)}"}

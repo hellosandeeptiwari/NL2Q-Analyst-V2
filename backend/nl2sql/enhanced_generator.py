@@ -42,21 +42,23 @@ HEALTHCARE_EXAMPLES = [
 ]
 
 ENHANCED_SYSTEM_PROMPT = """
-You are an expert SQL analyst specialized in healthcare/life-sciences data analysis. You generate safe, compliant SQL queries for read-only analytics.
+You are an expert AZURE SQL SERVER analyst specialized in healthcare/life-sciences data analysis. You generate safe, compliant SQL queries for read-only analytics.
 
 CORE CAPABILITIES:
-- Generate sophisticated analytical queries for healthcare data
+- Generate sophisticated analytical queries for healthcare data using AZURE SQL SERVER syntax
 - Understand pharmaceutical/medical terminology and metrics  
 - Apply data governance and privacy protection automatically
 - Use semantic understanding of business concepts and KPIs
 - Optimize queries for performance on large datasets
 
-CRITICAL CONSTRAINTS:
+CRITICAL AZURE SQL SERVER CONSTRAINTS:
+- DATABASE ENGINE: Azure SQL Server (NOT MySQL, PostgreSQL, or Snowflake)
 - ONLY SELECT statements - never CREATE, INSERT, UPDATE, DELETE, DROP, ALTER
+- Use TOP N instead of LIMIT N for row limiting
+- Enclose special column names in square brackets [Column Name] if they contain spaces or special characters
 - Always enforce small-cell suppression (>=11 patients/records)
 - Never expose PHI/PII directly - use aggregations and safe geographic levels
 - Respect data governance flags and sensitivity labels
-- Add LIMIT clauses to prevent large result sets
 - Use proper case-sensitive table/column names from schema
 
 HEALTHCARE-SPECIFIC GUIDELINES:
@@ -73,12 +75,22 @@ QUERY OPTIMIZATION:
 - Sample large tables when doing exploratory analysis
 - Use materialized views when available for complex joins
 
-SEMANTIC UNDERSTANDING:
+SEMANTIC UNDERSTANDING & PHARMACEUTICAL DOMAIN INTELLIGENCE:
 - "New patients" = NEW_START prescriptions, COUNT(DISTINCT patient_hash)
 - "Persistence" = Patients with fills spanning 6+ months
 - "Market share" = Product/brand % of total category volume
 - "Writers" = COUNT(DISTINCT hcp_id) with prescriptions
 - "Therapy area" = Therapeutic classification from product master
+- "Sales" or "Prescription volume" = TRX metrics (TRX, TRX(C4 Wk), etc.)
+- Product names like "Tirosint", "Synthroid" = Filter ProductGroupName, Product, or PrimaryProduct columns
+- "Territory" = Geographic sales territories (TerritoryName, Territory columns)
+- "Prescriber" data = Healthcare provider analysis (PrescriberName, HCP columns)
+
+CRITICAL: When a query asks for product-specific data (like "Tirosint sales"), CONFIDENTLY:
+1. Look for product name in ProductGroupName, Product, PrimaryProduct columns using LIKE '%ProductName%'
+2. Use TRX/prescription metrics as the "sales" measure
+3. Group by territory/geographic columns for territory analysis
+4. DO NOT ask for confirmation - make reasonable pharmaceutical domain assumptions
 
 Here are domain-specific examples:
 """ + "\n".join([f"Business Question: {ex['nl']}\nSQL Solution: {ex['sql']}\nContext: {ex['context']}\n" for ex in HEALTHCARE_EXAMPLES])
@@ -244,7 +256,16 @@ Generate the SQL query:"""
         small_cell_threshold=enhanced_schema.get('small_cell_threshold', 11)
     )
     
-    user_prompt = f"Business Question: {natural_language}\n\nGenerate SQL query:"
+    user_prompt = f"""Business Question: {natural_language}
+
+IMPORTANT: 
+- Generate AZURE SQL SERVER compatible syntax ONLY
+- Use TOP N instead of LIMIT N  
+- Use square brackets [Column Name] for columns with spaces/special characters
+- Return ONLY the SQL query - no explanations, no markdown, no comments
+- Query must be executable on Azure SQL Server
+
+Generate Azure SQL Server query:"""
     
     try:
         response = openai.chat.completions.create(
@@ -265,6 +286,30 @@ Generate the SQL query:"""
         if sql.endswith("```"):
             sql = sql[:-3]
         sql = sql.strip()
+        
+        # Extract actual SQL from explanatory text - CRITICAL FIX
+        # Look for SQL keywords to find actual query
+        lines = sql.split('\n')
+        sql_lines = []
+        found_sql = False
+        
+        for line in lines:
+            line_upper = line.strip().upper()
+            # Start collecting when we find SQL keywords
+            if any(line_upper.startswith(keyword) for keyword in ['SELECT', 'WITH', 'INSERT', 'UPDATE', 'DELETE']):
+                found_sql = True
+            
+            if found_sql:
+                # Stop collecting if we hit explanation markers
+                if any(marker in line.lower() for marker in ['explanation:', '###', 'note:', 'the query']):
+                    break
+                sql_lines.append(line)
+        
+        # If we found SQL lines, use them; otherwise use original
+        if sql_lines:
+            sql = '\n'.join(sql_lines).strip()
+        
+        print(f"🔍 DEBUG: Full Cleaned SQL:\n{sql}")  # Debug output
         
         # Apply guardrails
         safe_sql, added_limit = sanitize_sql(sql, constraints)
