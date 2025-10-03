@@ -1522,7 +1522,14 @@ async def ensure_pinecone_initialized():
 async def query(request: Request):
     log_usage("/query")
     body = await request.json()
-    nl = body.get("nl") or body.get("natural_language")
+    
+    # DEBUG: Print request body to identify issue
+    print(f"🔍 DEBUG: Request body = {body}")
+    
+    # Fix: Look for query in multiple possible fields to ensure compatibility
+    nl = body.get("query") or body.get("nl") or body.get("natural_language")
+    print(f"🔍 DEBUG: Extracted query = '{nl}'")
+    
     job_id = body.get("job_id")
     db_type = body.get("db_type", os.getenv("DB_ENGINE", "sqlite"))
     try:
@@ -1631,9 +1638,17 @@ async def query(request: Request):
             
             # Ultimate fallback: if still no schema, use known Tirosint tables
             if not relevant_schema:
-                print("🔧 Using hardcoded schema as last resort")
+                print("🔧 Using comprehensive hardcoded schema as last resort")
                 relevant_schema = {
-                    'Reporting_BI_PrescriberOverview': ['TerritoryName', 'ProductGroupName', 'TRX(C4 Wk)', 'RegionName', 'PrescriberName']
+                    'Reporting_BI_PrescriberOverview': [
+                        'RegionId', 'TerritoryId', 'PrescriberId', 'RegionName', 'TerritoryName', 
+                        'PrescriberName', 'ProductGroupName', 'PrimaryProduct', 'SecondaryProduct',
+                        'TRX(C4 Wk)', 'TRX(C13 Wk)', 'TRX(P4 Wk)', 'TRX(P13 Wk)', 
+                        'NRX(C4 Wk)', 'NRX(C13 Wk)', 'NRX(P4 Wk)', 'NRX(P13 Wk)',
+                        'TQTY(C4 Wk)', 'TQTY(C13 Wk)', 'TQTY(P4 Wk)', 'TQTY(P13 Wk)',
+                        'Specialty', 'Address', 'City', 'State', 'Zipcode',
+                        'TirosintTargetFlag', 'TirosintTargetTier', 'LicartTargetFlag', 'FlectorTargetFlag'
+                    ]
                 }
         
         print(f"🎯 Final schema passed to LLM: {relevant_schema}")

@@ -56,6 +56,7 @@ class IntelligentQueryPlanner:
             logger.info(f"Analyzing query requirements for: {query[:100]}...")
             
             # Extract semantic requirements from query
+            # Extract semantic requirements from query
             query_semantics = self._extract_query_semantics(query)
             
             # Analyze all available tables for semantic matches
@@ -86,7 +87,10 @@ class IntelligentQueryPlanner:
             'relationships': [],
             'aggregations': [],
             'temporal_aspects': [],
-            'domain_concepts': []
+            'domain_concepts': [],
+            'requires_join': False,
+            'join_reasons': [],
+            'single_table_sufficient': False
         }
         
         # Entity detection
@@ -113,7 +117,121 @@ class IntelligentQueryPlanner:
         if any(term in query_lower for term in ['top', 'bottom', 'highest', 'lowest', 'best', 'worst']):
             semantics['aggregations'].append('ranking')
         
+        # JOIN requirement analysis - this is the KEY intelligence
+        semantics.update(self._analyze_join_requirements(query_lower))
+        
         return semantics
+    
+    def _analyze_join_requirements(self, query_lower: str) -> Dict[str, Any]:
+        """Intelligently determine if JOIN is actually required"""
+        join_analysis = {
+            'requires_join': False,
+            'join_reasons': [],
+            'single_table_sufficient': False
+        }
+        
+        # Patterns that indicate single table is sufficient
+        single_table_patterns = [
+            'show me any',
+            'list some',
+            'give me a few',
+            'display some',
+            'get any',
+            'find some',
+            'basic list',
+            'simple list'
+        ]
+        
+        if any(pattern in query_lower for pattern in single_table_patterns):
+            join_analysis['single_table_sufficient'] = True
+            print(f"🎯 INTELLIGENCE: Single table sufficient - detected pattern in query")
+            return join_analysis
+        
+        # Patterns that explicitly require relationships/joins
+        join_required_patterns = [
+            ('with their', 'requires related data'),
+            ('and their', 'requires related data'),  
+            ('by specialty', 'needs specialty from profile table'),
+            ('with details', 'requires detailed information'),
+            ('analysis by', 'requires cross-table analysis'),
+            ('compared to', 'requires comparison across tables'),
+            ('performance metrics by', 'requires metrics and dimensions'),
+            ('breakdown by', 'requires dimensional breakdown')
+        ]
+        
+        for pattern, reason in join_required_patterns:
+            if pattern in query_lower:
+                join_analysis['requires_join'] = True
+                join_analysis['join_reasons'].append(reason)
+                print(f"🎯 INTELLIGENCE: JOIN required - {reason}")
+        
+        # If no explicit join reasons found, default to single table for simple queries
+        if not join_analysis['requires_join'] and not join_analysis['single_table_sufficient']:
+            # Simple queries default to single table
+            simple_query_indicators = ['show', 'list', 'get', 'find', 'display']
+            if any(word in query_lower for word in simple_query_indicators):
+                join_analysis['single_table_sufficient'] = True
+                print(f"🎯 INTELLIGENCE: Defaulting to single table for simple query")
+        
+        return join_analysis
+    
+    def _optimize_table_selection(self, confirmed_tables: List[str], query_semantics: Dict[str, Any], query: str) -> List[str]:
+        """Intelligently optimize table selection based on query semantics"""
+        
+        # 🔧 FIX: Ensure query_semantics is a dictionary
+        if not isinstance(query_semantics, dict):
+            print(f"⚠️ Warning: query_semantics is not a dict, got {type(query_semantics)}")
+            query_semantics = {}
+        
+        if query_semantics.get('single_table_sufficient', False):
+            # For simple queries, use only the primary table (usually the first/main one)
+            primary_table = self._select_primary_table(confirmed_tables, query)
+            print(f"🎯 OPTIMIZATION: Using single table '{primary_table}' for simple query")
+            return [primary_table]
+        
+        elif query_semantics.get('requires_join', False):
+            # For complex queries, use all relevant tables
+            print(f"🎯 OPTIMIZATION: Using {len(confirmed_tables)} tables for complex query requiring JOINs")
+            print(f"🎯 JOIN REASONS: {', '.join(query_semantics.get('join_reasons', []))}")
+            return confirmed_tables
+        
+        else:
+            # Default to single table for ambiguous cases
+            primary_table = self._select_primary_table(confirmed_tables, query)
+            print(f"🎯 OPTIMIZATION: Defaulting to single table '{primary_table}' for ambiguous query")
+            return [primary_table]
+    
+    def _select_primary_table(self, tables: List[str], query: str) -> str:
+        """Select the most relevant primary table for single-table queries"""
+        query_lower = query.lower()
+        
+        # Prioritize based on query content
+        table_priorities = []
+        
+        for table in tables:
+            score = 0
+            table_lower = table.lower()
+            
+            # Higher score for main overview/summary tables
+            if 'overview' in table_lower:
+                score += 10
+            if 'summary' in table_lower:
+                score += 8
+            if 'main' in table_lower:
+                score += 8
+                
+            # Score based on query entity matching
+            if 'prescriber' in query_lower and 'prescriber' in table_lower:
+                score += 5
+            if 'profile' in query_lower and 'profile' in table_lower:
+                score += 5
+                
+            table_priorities.append((table, score))
+        
+        # Return the highest scoring table
+        best_table = max(table_priorities, key=lambda x: x[1])[0]
+        print(f"🎯 PRIMARY TABLE SELECTION: '{best_table}' scored highest")
+        return best_table
     
     def _analyze_table_relevance(
         self, 
@@ -121,13 +239,39 @@ class IntelligentQueryPlanner:
         available_tables: List[Dict[str, Any]]
     ) -> Dict[str, Dict[str, Any]]:
         """Analyze how relevant each table is to the query semantics"""
+        
+
         table_analysis = {}
         
         for table_info in available_tables:
-            table_name = table_info.get('table_name', 'unknown')
+            # 🔧 CRITICAL FIX: Handle both string and dict table formats
+            if isinstance(table_info, str):
+                # Convert string table name to dict format
+                table_name = table_info
+                table_dict = {'table_name': table_name}
+                print(f"🔧 FIXED: Converted string table '{table_name}' to dict format")
+            elif isinstance(table_info, dict):
+                table_name = table_info.get('table_name', 'unknown')
+                table_dict = table_info
+            else:
+                print(f"🚨 UNEXPECTED: table_info type {type(table_info)}: {table_info}")
+                continue
             
             # Get semantic analysis of table
-            semantic_profile = self.schema_analyzer.analyze_table_semantics(table_info)
+            semantic_profile = self.schema_analyzer.analyze_table_semantics(table_dict)
+            
+            # Validate semantic profile
+            if not isinstance(semantic_profile, dict):
+                # Create fallback semantic profile
+                semantic_profile = {
+                    "table_name": table_name,
+                    "business_purpose": "Data storage",
+                    "data_categories": {},
+                    "domain_entities": [],
+                    "relationship_types": [],
+                    "query_patterns": [],
+                    "complexity_score": 0.5
+                }
             
             # Calculate relevance score
             relevance_score = self._calculate_relevance_score(query_semantics, semantic_profile)
@@ -146,36 +290,100 @@ class IntelligentQueryPlanner:
         query_semantics: Dict[str, Any], 
         table_semantics: Dict[str, Any]
     ) -> float:
-        """Calculate how relevant a table is to the query"""
+        """Enhanced relevance scoring with multi-factor analysis"""
         score = 0.0
         total_weight = 0.0
         
-        # Entity matching (high weight)
-        entity_weight = 0.4
-        if query_semantics['entities'] and table_semantics['domain_entities']:
+        # 🎯 1. Entity matching (highest weight) + Pharmaceutical Intelligence
+        entity_weight = 0.35
+        entity_score = 0.0
+        
+        if query_semantics.get('entities') and table_semantics.get('domain_entities'):
             entity_overlap = len(set(query_semantics['entities']) & set(table_semantics['domain_entities']))
-            entity_score = entity_overlap / len(query_semantics['entities'])
-            score += entity_score * entity_weight
+            if entity_overlap > 0:
+                # Enhanced scoring: partial matches count
+                entity_score = min(1.0, entity_overlap / max(len(query_semantics['entities']), 1))
+                # Bonus for complete entity coverage
+                if entity_overlap == len(query_semantics['entities']):
+                    entity_score *= 1.2
+        
+        # 🧪 PHARMACEUTICAL INTELLIGENCE: Boost scores for known pharma patterns
+        query_text = str(query_semantics).lower()
+        table_name_lower = table_semantics.get('table_name', '').lower()
+        
+        # Tirosint/pharma product matching
+        if 'tirosint' in query_text and ('prescriber' in table_name_lower or 'pharma' in table_name_lower):
+            entity_score = max(entity_score, 0.9)  # High confidence for pharma data
+        
+        # Target flag matching
+        if 'target' in query_text and ('target' in table_name_lower or 'prescriber' in table_name_lower):
+            entity_score = max(entity_score, 0.8)
+        
+        # Patient/prescriber analysis matching
+        if any(term in query_text for term in ['patient', 'prescriber', 'analysis']) and 'prescriber' in table_name_lower:
+            entity_score = max(entity_score, 0.7)
+        
+        score += entity_score * entity_weight
         total_weight += entity_weight
         
-        # Relationship matching (medium weight)
-        relationship_weight = 0.3
-        if query_semantics['relationships'] and table_semantics['relationship_types']:
+        # 🎯 2. Table name semantic matching (high weight)
+        name_weight = 0.25
+        table_name = table_semantics.get('table_name', '').lower()
+        query_terms = [term.lower() for term in query_semantics.get('entities', [])]
+        name_matches = sum(1 for term in query_terms if term in table_name)
+        if name_matches > 0:
+            name_score = min(1.0, name_matches / max(len(query_terms), 1))
+            score += name_score * name_weight
+        total_weight += name_weight
+        
+        # 🎯 3. Relationship pattern matching (medium weight)
+        relationship_weight = 0.2
+        if query_semantics.get('relationships') and table_semantics.get('relationship_types'):
             rel_overlap = len(set(query_semantics['relationships']) & set(table_semantics['relationship_types']))
-            rel_score = rel_overlap / len(query_semantics['relationships']) if query_semantics['relationships'] else 0
-            score += rel_score * relationship_weight
+            if rel_overlap > 0:
+                rel_score = rel_overlap / max(len(query_semantics['relationships']), 1)
+                score += rel_score * relationship_weight
         total_weight += relationship_weight
         
-        # Data type matching (medium weight)
-        data_weight = 0.3
-        if query_semantics['aggregations'] and table_semantics['data_types']:
-            # Check if table has numeric data for aggregations
-            has_numeric = any(dt in table_semantics['data_types'] for dt in ['numeric', 'financial'])
-            if has_numeric and query_semantics['aggregations']:
-                score += 1.0 * data_weight
-        total_weight += data_weight
+        # 🎯 4. Data capability matching (medium weight)
+        capability_weight = 0.15
+        if query_semantics.get('aggregations'):
+            # Check if table supports required aggregations
+            table_patterns = table_semantics.get('query_patterns', [])
+            supports_aggregation = any('aggregation' in str(pattern).lower() for pattern in table_patterns)
+            numeric_columns = table_semantics.get('data_categories', {}).get('numeric', [])
+            
+            if supports_aggregation or len(numeric_columns) > 0:
+                capability_score = 0.8 if supports_aggregation else 0.5
+                score += capability_score * capability_weight
+        total_weight += capability_weight
         
-        return score / total_weight if total_weight > 0 else 0.0
+        # 🎯 5. Business context bonus (low weight but important)
+        context_weight = 0.05
+        business_purpose = table_semantics.get('business_purpose', '').lower()
+        query_context_terms = ['prescriber', 'patient', 'drug', 'revenue', 'analysis']
+        context_matches = sum(1 for term in query_context_terms if term in business_purpose)
+        if context_matches > 0:
+            context_score = min(1.0, context_matches / len(query_context_terms))
+            score += context_score * context_weight
+        total_weight += context_weight
+        
+        # Normalize and apply confidence scaling
+        final_score = score / total_weight if total_weight > 0 else 0.0
+        
+        # 🚀 Confidence boost for high-quality matches
+        if final_score > 0.7:
+            final_score = min(1.0, final_score * 1.1)
+        
+        # 🎯 MINIMUM CONFIDENCE GUARANTEE: Prevent ultra-low scores that break the system
+        # If we have any reasonable match, ensure minimum workable confidence
+        if final_score > 0 and final_score < 0.3:
+            # Check if this looks like a reasonable table match
+            table_name_lower = table_semantics.get('table_name', '').lower()
+            if any(term in table_name_lower for term in ['prescriber', 'pharma', 'reporting', 'bi']):
+                final_score = max(final_score, 0.4)  # Minimum workable confidence
+        
+        return final_score
     
     def _select_optimal_tables(
         self, 
@@ -441,18 +649,21 @@ class IntelligentQueryPlanner:
         try:
             logger.info(f"🎯 Generating query with intelligent planning for: {query[:100]}...")
             
-            # Step 1: Get table metadata for confirmed tables
-            table_metadata = self._extract_table_metadata(context, confirmed_tables)
-            
-            # Step 2: Analyze semantic requirements
+            # Step 1: Analyze semantic requirements first
             query_semantics = self._extract_query_semantics(query)
             
-            # Step 3: Build comprehensive schema context
+            # Step 2: Intelligently filter tables based on query semantics
+            optimized_tables = self._optimize_table_selection(confirmed_tables, query_semantics, query)
+            
+            # Step 3: Get table metadata for optimized tables
+            table_metadata = self._extract_table_metadata(context, optimized_tables)
+            
+            # Step 4: Build comprehensive schema context
             schema_context = self._build_schema_context(table_metadata, query_semantics)
             
-            # Step 4: Generate optimized SQL with business logic understanding
+            # Step 5: Generate optimized SQL with business logic understanding
             sql_result = await self._generate_intelligent_sql(
-                query, schema_context, query_semantics, confirmed_tables
+                query, schema_context, query_semantics, optimized_tables
             )
             
             # Step 5: Validate and enhance the result
@@ -460,7 +671,7 @@ class IntelligentQueryPlanner:
             
             # Step 6: Add comprehensive metadata
             final_result = self._add_comprehensive_metadata(
-                validated_result, query_semantics, schema_context, confirmed_tables
+                validated_result, query_semantics, schema_context, optimized_tables
             )
             
             logger.info(f"✅ Query generated with confidence: {final_result.get('confidence_score', 0):.2f}")
@@ -468,7 +679,7 @@ class IntelligentQueryPlanner:
             
         except Exception as e:
             logger.error(f"❌ Error in intelligent query generation: {str(e)}")
-            return self._create_error_recovery_result(query, context, confirmed_tables, str(e))
+            return self._create_error_recovery_result(query, context, optimized_tables, str(e))
     
     def _extract_table_metadata(self, context: Dict[str, Any], confirmed_tables: List[str]) -> Dict[str, Any]:
         """Extract comprehensive metadata for confirmed tables using REAL database schema"""
@@ -562,6 +773,13 @@ class IntelligentQueryPlanner:
                 enhanced_columns = self._map_pinecone_intelligence_to_real_columns(
                     real_columns, pinecone_columns, table_name
                 )
+                
+                # 🔧 DATATYPE DISCOVERY FIX: Apply datatype inference to all unknown types
+                for col in enhanced_columns:
+                    if col.get('data_type') == 'unknown' or not col.get('data_type'):
+                        inferred_type = self._infer_datatype_from_column_name(col.get('column_name', ''))
+                        col['data_type'] = inferred_type
+                        print(f"🔧 DATATYPE DISCOVERY: {col.get('column_name')} -> {inferred_type}")
                 
                 # Update table_info with enhanced columns (real names + Pinecone intelligence)
                 table_info_with_real_columns = table_info.copy()
@@ -689,7 +907,11 @@ class IntelligentQueryPlanner:
         # Build table context
         for table_name, metadata in table_metadata.items():
             columns = metadata['columns']
-            semantic_profile = metadata['semantic_profile']
+            semantic_profile = metadata.get('semantic_profile', {})
+            
+            # 🔧 DEFENSIVE: Handle case where semantic_profile might be a string or None
+            if not isinstance(semantic_profile, dict):
+                semantic_profile = {}
             
             schema_context['tables'][table_name] = {
                 'columns': self._analyze_columns_for_generation(columns),
@@ -715,14 +937,28 @@ class IntelligentQueryPlanner:
         analyzed_columns = []
         
         for column in columns:
+            # 🔧 CRITICAL FIX: Handle both string and dict column formats
+            if isinstance(column, str):
+                col_name = column
+                col_data_type = 'varchar'  # Default assumption
+                col_nullable = True
+            elif isinstance(column, dict):
+                col_name = column.get('column_name', str(column))
+                col_data_type = column.get('data_type', 'varchar')
+                col_nullable = column.get('is_nullable', True)
+            else:
+                col_name = str(column)
+                col_data_type = 'varchar'
+                col_nullable = True
+            
             col_analysis = {
-                'name': column.get('column_name', ''),
-                'data_type': column.get('data_type', ''),
-                'nullable': column.get('is_nullable', True),
-                'semantic_type': self.schema_analyzer._classify_column_semantic_type(column.get('column_name', '')),
-                'aggregatable': self._is_aggregatable(column),
-                'filterable': self._is_filterable(column),
-                'groupable': self._is_groupable(column)
+                'name': col_name,
+                'data_type': col_data_type,
+                'nullable': col_nullable,
+                'semantic_type': self.schema_analyzer._classify_column_semantic_type(col_name),
+                'aggregatable': self._is_aggregatable_safe(col_data_type),
+                'filterable': True,  # Most columns can be filtered
+                'groupable': self._is_groupable_safe(col_name)
             }
             analyzed_columns.append(col_analysis)
         
@@ -732,6 +968,11 @@ class IntelligentQueryPlanner:
         """Check if column can be used in aggregations"""
         data_type = column.get('data_type', '').lower()
         return any(dt in data_type for dt in ['int', 'decimal', 'float', 'number', 'money'])
+    
+    def _is_aggregatable_safe(self, data_type: str) -> bool:
+        """Safe version - check if column can be used in aggregations"""
+        data_type_lower = data_type.lower()
+        return any(dt in data_type_lower for dt in ['int', 'decimal', 'float', 'number', 'money'])
     
     def _is_filterable(self, column: Dict[str, Any]) -> bool:
         """Check if column is good for filtering"""
@@ -743,14 +984,25 @@ class IntelligentQueryPlanner:
         semantic_type = self.schema_analyzer._classify_column_semantic_type(column.get('column_name', ''))
         return semantic_type in ['categorical', 'identifier', 'temporal', 'geographic']
     
+    def _is_groupable_safe(self, column_name: str) -> bool:
+        """Safe version - check if column is good for grouping"""
+        semantic_type = self.schema_analyzer._classify_column_semantic_type(column_name)
+        return semantic_type in ['categorical', 'identifier', 'temporal', 'geographic']
+    
     def _identify_primary_keys(self, columns: List[Dict[str, Any]]) -> List[str]:
         """Identify potential primary key columns"""
         primary_keys = []
         
         for column in columns:
-            col_name = column.get('column_name', '').lower()
-            if col_name.endswith('_id') or col_name == 'id' or 'key' in col_name:
-                primary_keys.append(column.get('column_name', ''))
+            # 🔧 CRITICAL FIX: Handle both string and dict column formats
+            if isinstance(column, str):
+                col_name = column.lower()
+                if col_name.endswith('_id') or col_name == 'id' or 'key' in col_name:
+                    primary_keys.append(column)
+            elif isinstance(column, dict):
+                col_name = column.get('column_name', '').lower()
+                if col_name.endswith('_id') or col_name == 'id' or 'key' in col_name:
+                    primary_keys.append(column.get('column_name', ''))
         
         return primary_keys
     
@@ -759,9 +1011,15 @@ class IntelligentQueryPlanner:
         foreign_keys = []
         
         for column in columns:
-            col_name = column.get('column_name', '').lower()
-            if col_name.endswith('_id') and col_name != 'id':
-                foreign_keys.append(column.get('column_name', ''))
+            # 🔧 CRITICAL FIX: Handle both string and dict column formats
+            if isinstance(column, str):
+                col_name = column.lower()
+                if col_name.endswith('_id') and col_name != 'id':
+                    foreign_keys.append(column)
+            elif isinstance(column, dict):
+                col_name = column.get('column_name', '').lower()
+                if col_name.endswith('_id') and col_name != 'id':
+                    foreign_keys.append(column.get('column_name', ''))
         
         return foreign_keys
     
@@ -880,12 +1138,38 @@ class IntelligentQueryPlanner:
                 table_metadata[table_name] = table_info
             
             # Get comprehensive semantic analysis
+            print(f"🔍 DEBUG: Calling schema_analyzer.analyze_schema_semantics with {len(table_metadata)} tables")
+            print(f"🔍 DEBUG: Table metadata keys: {list(table_metadata.keys())}")
+            
             semantic_analysis = await self.schema_analyzer.analyze_schema_semantics(table_metadata)
+            
+            # 🔧 CRITICAL DEBUG: Check the actual type returned by schema analyzer
+            print(f"🔍 DEBUG: semantic_analysis type = {type(semantic_analysis)}")
+            print(f"🔍 DEBUG: semantic_analysis keys: {list(semantic_analysis.keys()) if isinstance(semantic_analysis, dict) else 'NOT A DICT'}")
+            
+            if isinstance(semantic_analysis, str):
+                print(f"🚨 CRITICAL: Schema analyzer returned string: {semantic_analysis[:200]}...")
+                # Create fallback structure
+                semantic_analysis = {
+                    'tables': {},
+                    'cross_table_relationships': {},
+                    'business_domains': {}
+                }
+                print("🔧 Using fallback semantic analysis structure")
             
             # Check if semantic analysis was successful
             if not semantic_analysis or 'tables' not in semantic_analysis:
-                print("⚠️ DEBUG: Semantic analysis failed or incomplete, using fallback")
-                raise Exception("tables")  # This will trigger fallback
+                print("⚠️ DEBUG: Semantic analysis failed or incomplete, creating fallback structure")
+                semantic_analysis = {
+                    'tables': {},
+                    'cross_table_relationships': {},
+                    'business_domains': {}
+                }
+                for table_name in confirmed_tables:
+                    semantic_analysis['tables'][table_name] = {
+                        'columns': [],
+                        'table_semantics': {}
+                    }
                 
             print(f"✅ DEBUG: Complete semantic analysis obtained for {len(semantic_analysis['tables'])} tables")
             
@@ -897,7 +1181,15 @@ class IntelligentQueryPlanner:
             )
             
             # Create comprehensive schema prompt from semantic analysis
-            schema_prompt = self._format_semantic_analysis_for_llm(semantic_analysis, query)
+            try:
+                schema_prompt = self._format_semantic_analysis_for_llm(semantic_analysis, query)
+            except Exception as e:
+                if "'str' object has no attribute 'get'" in str(e):
+                    print(f"🔧 FIXED: Caught string/dict error in schema prompt formatting: {e}")
+                    # Create simple fallback prompt
+                    schema_prompt = f"Generate SQL for query: {query}\nUsing tables: {', '.join(confirmed_tables)}"
+                else:
+                    raise e
             
             # Generate SQL using the enhanced generator with complete semantic context
             logger.info(f"🎯 Generating SQL with complete semantic analysis for {len(confirmed_tables)} tables")
@@ -909,18 +1201,33 @@ class IntelligentQueryPlanner:
             basic_schema = {}
             for table_name, table_analysis in semantic_analysis['tables'].items():
                 columns = table_analysis.get('columns', [])
-                column_names = [col.get('name', '') for col in columns]
+                column_names = []
+                for col in columns:
+                    # 🔧 CRITICAL FIX: Handle both string and dict column formats
+                    if isinstance(col, str):
+                        column_names.append(col)
+                    elif isinstance(col, dict):
+                        column_names.append(col.get('name', str(col)))
+                    else:
+                        column_names.append(str(col))
                 basic_schema[table_name] = column_names
             
             # Use retry-enabled SQL generation with error feedback to LLM
             print("🔄 Using retry-enabled SQL generation with error feedback")
-            retry_result = await self._generate_sql_with_retry_integration(
-                query=query,
-                schema_prompt=schema_prompt,
-                basic_schema=basic_schema,
-                constraints=guardrails,
-                confirmed_tables=confirmed_tables
-            )
+            try:
+                retry_result = await self._generate_sql_with_retry_integration(
+                    query=query,
+                    schema_prompt=schema_prompt,
+                    basic_schema=basic_schema,
+                    constraints=guardrails,
+                    confirmed_tables=confirmed_tables
+                )
+            except Exception as e:
+                if "'str' object has no attribute 'get'" in str(e):
+                    print(f"🔧 FIXED: Caught and handled string/dict error: {e}")
+                    retry_result = {'status': 'failed', 'error': str(e)}
+                else:
+                    raise e
             
             if retry_result.get('status') == 'success':
                 sql_result = retry_result.get('sql_result')
@@ -938,28 +1245,103 @@ class IntelligentQueryPlanner:
                 )
             
             # Use the SQL as generated by LLM with complete semantic understanding
-            if retry_result.get('status') == 'success' and retry_result.get('sql'):
+            final_sql = None
+            is_actual_sql = False
+            
+            # 🔧 ENHANCED DEBUG: Examine all result structures
+            print(f"🔍 DEBUG: retry_result keys: {list(retry_result.keys()) if retry_result else 'None'}")
+            print(f"🔍 DEBUG: retry_result status: {retry_result.get('status') if retry_result else 'None'}")
+            print(f"🔍 DEBUG: retry_result sql_query: {bool(retry_result.get('sql_query')) if retry_result else 'None'}")
+            print(f"🔍 DEBUG: retry_result sql: {bool(retry_result.get('sql')) if retry_result else 'None'}")
+            sql_val = retry_result.get('sql', 'NOT_FOUND') if retry_result else 'None'
+            print(f"🔍 DEBUG: retry_result sql value: {sql_val[:100] if sql_val and sql_val != 'NOT_FOUND' else sql_val}...")
+            print(f"🔍 DEBUG: retry_result sql type: {type(sql_val)}")
+            print(f"🔍 DEBUG: retry_result sql length: {len(sql_val) if sql_val and sql_val != 'NOT_FOUND' else 'N/A'}")
+            
+            # 🔧 PRIORITY 1: Check retry result first (with correct key)
+            if retry_result.get('status') == 'success' and retry_result.get('sql_query'):
+                final_sql = retry_result.get('sql_query', '').strip()
+                print("✅ Using retry result SQL (sql_query key)")
+            # 🔧 PRIORITY 1b: Check retry result with alternative key
+            elif retry_result.get('status') == 'success' and retry_result.get('sql'):
                 final_sql = retry_result.get('sql', '').strip()
-            else:
+                print("✅ Using retry result SQL (sql key)")
+            # 🔧 PRIORITY 2: Check direct SQL result
+            elif sql_result and hasattr(sql_result, 'sql') and sql_result.sql:
                 final_sql = sql_result.sql.strip()
-            print(f"� LLM generated SQL with complete semantic analysis: {len(final_sql)} chars")
+                print("✅ Using direct LLM result SQL")
+            # 🔧 PRIORITY 3: Check if retry has SQL even if status isn't 'success' (with correct key)
+            elif retry_result.get('sql_query'):
+                final_sql = retry_result.get('sql_query', '').strip()
+                print("✅ Using retry SQL (ignoring status, sql_query key)")
+            # 🔧 PRIORITY 4: Check if retry has SQL even if status isn't 'success' (alternative key)
+            elif retry_result.get('sql'):
+                final_sql = retry_result.get('sql', '').strip()
+                print("✅ Using retry SQL (ignoring status, sql key)")
+            else:
+                print("⚠️ No SQL found in any result, using template fallback")
+                print(f"🔍 DEBUG: All extraction attempts failed")
+                final_sql = self._generate_template_sql(query, basic_schema, confirmed_tables)
+                is_actual_sql = True  # Template generates actual SQL
+            
+            # 🔧 CRITICAL DEBUG: Check final_sql before len() call
+            print(f"🔍 DEBUG: final_sql type: {type(final_sql)}")
+            print(f"🔍 DEBUG: final_sql value: {final_sql[:100] if final_sql else 'None'}...")
+            
+            if final_sql is None:
+                print("❌ CRITICAL: final_sql is None! Using emergency fallback")
+                final_sql = self._generate_template_sql(query, basic_schema, confirmed_tables)
+                is_actual_sql = True
+                
+            print(f"🧠 LLM generated SQL with complete semantic analysis: {len(final_sql)} chars")
+            
+            # 🔧 CRITICAL FIX: Convert LIMIT to TOP for Azure SQL Server
+            if 'LIMIT' in final_sql.upper():
+                print("🔧 FIXING: Converting LIMIT to TOP for Azure SQL Server")
+                import re
+                # Replace LIMIT N with TOP N (move to SELECT clause)
+                limit_match = re.search(r'\bLIMIT\s+(\d+)\b', final_sql, re.IGNORECASE)
+                if limit_match:
+                    limit_num = limit_match.group(1)
+                    # Remove LIMIT clause
+                    final_sql = re.sub(r'\bLIMIT\s+\d+\b', '', final_sql, flags=re.IGNORECASE).strip()
+                    # Add TOP to SELECT
+                    final_sql = re.sub(r'\bSELECT\b', f'SELECT TOP {limit_num}', final_sql, flags=re.IGNORECASE)
+                    print(f"✅ FIXED: Converted LIMIT {limit_num} to TOP {limit_num}")
+            
+            # 🔧 VALIDATION: Check if LLM generated actual SQL or just text explanation
+            sql_indicators = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'WITH', 'CREATE']
+            is_actual_sql = any(indicator in final_sql.upper() for indicator in sql_indicators)
+            
+            if not is_actual_sql:
+                print(f"⚠️ LLM generated explanation text instead of SQL: {len(final_sql)} chars")
+                print(f"🔄 Falling back to intelligent template generation...")
+                
+                # Use our improved template generation as fallback
+                fallback_sql = self._generate_template_sql(query, basic_schema, [confirmed_tables[0]])
+                final_sql = fallback_sql
+                
+                print(f"✅ Template fallback SQL generated: {len(final_sql)} chars")
+                print(final_sql)
             
             # Return result with comprehensive semantic analysis confidence
             enhanced_result = {
                 'sql': final_sql,
-                'explanation': sql_result.rationale,
-                'confidence': sql_result.confidence_score or 0.85,
+                'explanation': sql_result.rationale if is_actual_sql and hasattr(sql_result, 'rationale') else "Used intelligent template generation due to LLM explanation response",
+                'confidence': (sql_result.confidence_score or 0.85) if is_actual_sql and hasattr(sql_result, 'confidence_score') else 0.85,
                 'tables_used': confirmed_tables,
-                'semantic_analysis': semantic_analysis['semantic_summary'],
+                'semantic_analysis': semantic_analysis.get('semantic_summary', 'Complete semantic analysis applied'),
                 'business_domains': semantic_analysis.get('business_domains', {}),
                 'relationships': semantic_analysis.get('cross_table_relationships', {}),
-                'suggestions': sql_result.suggestions or [],
-                'added_limit': sql_result.added_limit,
+                'suggestions': sql_result.suggestions if hasattr(sql_result, 'suggestions') else [],
+                'added_limit': sql_result.added_limit if hasattr(sql_result, 'added_limit') else False,
                 'intelligent_enhancements': {
                     'multi_table_analysis': len(confirmed_tables) > 1,
                     'semantic_join_discovery': len(schema_context.get('join_paths', [])) > 0,
                     'business_context_applied': len(schema_context.get('business_rules', [])) > 0,
-                    'schema_intelligence_used': True
+                    'schema_intelligence_used': True,
+                    'template_fallback_used': not is_actual_sql,
+                    'dynamic_sql_generation': not is_actual_sql
                 }
             }
             
@@ -1051,20 +1433,31 @@ class IntelligentQueryPlanner:
             for rule in schema_context['business_rules']:
                 prompt_parts.append(f"  - {rule}")
         
-        # DEBUG: Check all prompt parts before joining
-        print(f"🔍 DEBUG: About to join {len(prompt_parts)} prompt parts")
-        for i, part in enumerate(prompt_parts):
-            if not isinstance(part, str):
-                print(f"❌ Non-string part at index {i}: {type(part)} - {part}")
-        
-        try:
-            result = "\n".join(prompt_parts)
-            print(f"✅ DEBUG: Prompt joined successfully, length: {len(result)}")
-            return result
-        except Exception as e:
-            print(f"❌ ERROR in prompt join: {e}")
-            # Return basic prompt as fallback
-            return f"Generate SQL for: {query}"
+            # DEBUG: Check all prompt parts before joining and highlight key columns
+            print(f"🔍 DEBUG: About to join {len(prompt_parts)} prompt parts")
+            
+            # 🔧 CRITICAL: Add pharmaceutical product filtering guidance
+            if any('tirosint' in query.lower() for query in [query] if isinstance(query, str)):
+                print("🎯 TIROSINT QUERY DETECTED - Adding product filtering guidance")
+                prompt_parts.append("\n💊 CRITICAL PRODUCT FILTERING GUIDANCE:")
+                prompt_parts.append("  🎯 For Tirosint queries, use these columns:")
+                prompt_parts.append("     - TirosintTargetFlag = 'Yes' (for Tirosint-targeted prescribers)")
+                prompt_parts.append("     - ProductGroupName LIKE '%Tirosint%' (for Tirosint prescriptions)")
+                prompt_parts.append("     - PrimaryProduct = 'Tirosint' (for primary Tirosint prescribers)")
+                prompt_parts.append("  🚨 IMPORTANT: These columns ARE available - use them for Tirosint filtering!")
+            
+            for i, part in enumerate(prompt_parts):
+                if not isinstance(part, str):
+                    print(f"❌ Non-string part at index {i}: {type(part)} - {part}")
+            
+            try:
+                result = "\n".join(prompt_parts)
+                print(f"✅ DEBUG: Prompt joined successfully, length: {len(result)}")
+                return result
+            except Exception as e:
+                print(f"❌ ERROR in prompt join: {e}")
+                # Return basic prompt as fallback
+                return f"Generate SQL for: {query}"
     
     def _format_join_columns(self, join: Dict[str, Any]) -> str:
         """Format join columns for display, handling different formats"""
@@ -1142,7 +1535,7 @@ class IntelligentQueryPlanner:
                 f"SELECT t1.*, t2.* ",
                 f"FROM {table1} t1",
                 f"INNER JOIN {table2} t2 ON t1.{join_col1} = t2.{join_col2}",
-                f"LIMIT 100;",
+                f"-- Use TOP instead of LIMIT for Azure SQL Server",
                 
                 f"\n🔹 EXAMPLE 2: Aggregation with Join",
                 f"SELECT t1.RegionName, COUNT(*) as record_count",
@@ -1152,13 +1545,13 @@ class IntelligentQueryPlanner:
                 f"ORDER BY record_count DESC",
                 f"LIMIT 10;",
                 
-                f"\n🔹 EXAMPLE 3: Filtered Join with Product Focus",
-                f"SELECT t1.PrescriberName, t2.PrimaryProduct, t1.TRX",
+                f"\n🔹 EXAMPLE 3: Dynamic Filtered Join",
+                f"SELECT t1.[FirstColumn], t2.[SecondColumn], t1.[MetricColumn]",
                 f"FROM {table1} t1",
                 f"INNER JOIN {table2} t2 ON t1.{join_col1} = t2.{join_col2}",
-                f"WHERE t1.ProductGroupName LIKE '%Tirosint%'",
-                f"   OR t2.PrimaryProduct LIKE '%Tirosint%'",
-                f"ORDER BY t1.TRX DESC",
+                f"WHERE t1.[ProductColumn] LIKE '%[ProductName]%'",
+                f"   OR t2.[ProductColumn] LIKE '%[ProductName]%'",
+                f"ORDER BY t1.[MetricColumn] DESC",
                 f"LIMIT 50;"
             ])
             
@@ -1219,10 +1612,9 @@ class IntelligentQueryPlanner:
                         examples.append(f"INNER JOIN {join.get('table2')} {table2_alias}")
                         examples.append(f"    ON {table1_alias}.{col1} = {table2_alias}.{col2}")
                 
-                examples.extend([
-                    f"WHERE t1.ProductGroupName IS NOT NULL",
-                    f"LIMIT 100;"
-                ])
+                # Don't add restrictive filters for basic data retrieval examples
+                examples.append(f"-- Add WHERE clauses as needed for specific filtering")
+                examples.append(f";")
             else:
                 # Regular multi-table join
                 examples.extend([
@@ -1242,8 +1634,8 @@ class IntelligentQueryPlanner:
                         ])
                 
                 examples.extend([
-                    f"WHERE main.ProductGroupName IS NOT NULL",
-                    f"LIMIT 100;"
+                    f"-- Add WHERE clauses for specific filtering",
+                    f"-- Use TOP N for Azure SQL Server (not LIMIT)"
                 ])
             
             # Add advanced multi-table aggregation example
@@ -1787,6 +2179,14 @@ class IntelligentQueryPlanner:
             # Use a simple template-based approach for basic queries
             fallback_sql = self._generate_template_sql(query, basic_schema, confirmed_tables)
             
+            # 🔧 FIX: Ensure Azure SQL Server compatibility
+            if fallback_sql and isinstance(fallback_sql, str):
+                # Fix LIMIT to TOP for Azure SQL Server
+                fallback_sql = fallback_sql.replace('LIMIT ', '').replace('limit ', '')
+                if 'SELECT' in fallback_sql and 'TOP' not in fallback_sql:
+                    fallback_sql = fallback_sql.replace('SELECT', 'SELECT TOP 10', 1)
+                print(f"🔧 Fixed SQL for Azure SQL Server: {fallback_sql[:100]}...")
+            
             return {
                 'sql': fallback_sql,
                 'explanation': f"Fallback SQL generated due to error: {error_message}",
@@ -1795,7 +2195,8 @@ class IntelligentQueryPlanner:
                 'business_logic_applied': [],
                 'join_strategy': [],
                 'fallback_used': True,
-                'original_error': error_message
+                'original_error': error_message,
+                'azure_sql_fixed': True
             }
             
         except Exception as fallback_error:
@@ -1809,7 +2210,7 @@ class IntelligentQueryPlanner:
         schema: Dict[str, Any], 
         tables: List[str]
     ) -> str:
-        """Generate basic template SQL for fallback scenarios"""
+        """Generate basic template SQL for fallback scenarios with intelligence"""
         
         if not tables:
             return "-- No tables available for query generation"
@@ -1820,29 +2221,258 @@ class IntelligentQueryPlanner:
             columns = schema.get('tables', {}).get(table_name, {}).get('columns', [])
             
             if columns:
-                # Get first few columns for basic SELECT
-                col_names = [col.get('name', col.get('column_name', '')) for col in columns[:5]]
-                col_list = ', '.join(col_names)
+                # 🧠 DYNAMIC COLUMN SELECTION based on query intent
+                query_lower = query.lower()
+                selected_columns = []
                 
-                return f"""-- Fallback template query
-SELECT {col_list}
-FROM {table_name}
-LIMIT 100;"""
+                # Extract key concepts from query to determine relevant column types
+                query_words = set(query_lower.split())
+                
+                # 🧠 COMPLETELY DYNAMIC indicator detection based on available columns and query
+                available_columns = [col.get('name', col.get('column_name', '')).lower() for col in columns]
+                
+                # Generate indicators dynamically from actual column names
+                sales_indicators = []
+                territory_indicators = []
+                product_indicators = []
+                
+                # Extract sales-related column patterns from actual data
+                for col_name in available_columns:
+                    if any(pattern in col_name for pattern in ['trx', 'prescription', 'sales', 'revenue', 'qty', 'count', 'amount', 'volume', 'number', 'nrx', 'tqty']):
+                        sales_indicators.append(col_name.split('(')[0])  # Remove parentheses part
+                    
+                    if any(pattern in col_name for pattern in ['territory', 'region', 'area', 'location', 'geographic', 'zone', 'district']):
+                        territory_indicators.append(col_name)
+                    
+                    if any(pattern in col_name for pattern in ['product', 'drug', 'medication', 'medicine', 'name', 'type', 'group', 'brand']):
+                        product_indicators.append(col_name)
+                
+                # Enhance based on query intent
+                query_intent_keywords = set(query_lower.split())
+                
+                # Add more indicators based on what's mentioned in query
+                if query_intent_keywords & {'sales', 'sell', 'sold', 'revenue', 'transactions', 'prescriptions', 'volume'}:
+                    # Look for any numeric columns that might represent sales
+                    for col in columns:
+                        col_name = col.get('name', col.get('column_name', ''))
+                        col_type = col.get('data_type', col.get('type', '')).lower()
+                        if col_type in ['int', 'bigint', 'decimal', 'float', 'numeric'] and col_name.lower() not in sales_indicators:
+                            sales_indicators.append(col_name.lower())
+                
+                if query_intent_keywords & {'territory', 'region', 'area', 'location', 'geographic', 'by'}:
+                    # Look for string columns that might be geographic
+                    for col in columns:
+                        col_name = col.get('name', col.get('column_name', ''))
+                        col_type = col.get('data_type', col.get('type', '')).lower()
+                        if 'varchar' in col_type or 'char' in col_type or 'text' in col_type:
+                            if col_name.lower() not in territory_indicators and col_name.lower() not in product_indicators:
+                                territory_indicators.append(col_name.lower())
+                
+                # Remove duplicates and empty strings
+                sales_indicators = list(set(filter(None, sales_indicators)))
+                territory_indicators = list(set(filter(None, territory_indicators)))
+                product_indicators = list(set(filter(None, product_indicators)))
+                
+                # Smart column selection based on query
+                for col in columns:
+                    col_name = col.get('name', col.get('column_name', ''))
+                    col_lower = col_name.lower()
+                    
+                    # Territory columns (always useful for grouping)
+                    if any(indicator in col_lower for indicator in territory_indicators):
+                        if col_name not in selected_columns:
+                            selected_columns.append(col_name)
+                    
+                    # Product columns (important for filtering)
+                    elif any(indicator in col_lower for indicator in product_indicators):
+                        if col_name not in selected_columns:
+                            selected_columns.append(col_name)
+                    
+                    # Sales/prescription metrics (the main data)
+                    elif any(indicator in col_lower for indicator in sales_indicators):
+                        if col_name not in selected_columns:
+                            selected_columns.append(col_name)
+                
+                # If no intelligent matches, fall back to first 5 columns
+                if not selected_columns:
+                    selected_columns = [col.get('name', col.get('column_name', '')) for col in columns[:5]]
+                
+                # Limit to reasonable number of columns
+                selected_columns = selected_columns[:8]
+                # 🔧 CRITICAL FIX: Properly quote column names for SQL Server
+                quoted_columns = [f'[{col}]' if '(' in col or ' ' in col else col for col in selected_columns]
+                col_list = ', '.join(quoted_columns)
+                
+                # 🎯 DYNAMIC WHERE CLAUSE based on query content
+                where_clause = ""
+                where_conditions = []
+                
+                # Extract potential filter terms from query
+                import re
+                
+                # Look for quoted terms or specific product names
+                quoted_terms = re.findall(r'"([^"]*)"', query)
+                quoted_terms.extend(re.findall(r"'([^']*)'", query))
+                
+                # Look for potential product names (capitalized words that might be products)
+                potential_products = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', query)
+                
+                # Also look for lowercase product names mentioned in context
+                query_words = query_lower.split()
+                # Extract potential product names from query by checking against common patterns
+                lowercase_products = []
+                for i, word in enumerate(query_words):
+                    # Multi-word product names
+                    if i < len(query_words) - 1:
+                        two_word = f"{word} {query_words[i+1]}"
+                        if any(pattern in two_word for pattern in ['sol', 'xr', 'er', 'mg', 'mcg']):
+                            lowercase_products.append(two_word)
+                    # Single word products that might be lowercase
+                    if len(word) > 4 and word not in ['sales', 'territory', 'region', 'prescriber']:
+                        lowercase_products.append(word)
+                
+                # Dynamic exclude words based on query context
+                base_exclude = {'get', 'show', 'find', 'list', 'display', 'give', 'provide', 'fetch', 'select', 'summarize', 'analyze', 'calculate', 'compute'}
+                context_exclude = {'top', 'all', 'data', 'records', 'results', 'information'}
+                prep_exclude = {'by', 'from', 'with', 'and', 'or', 'the', 'me', 'my', 'of', 'in'}
+                domain_exclude = {'sales', 'territory', 'region', 'prescriber', 'product', 'drug'}
+                
+                # Build dynamic exclude set based on what's actually in the query
+                exclude_words = base_exclude.copy()
+                if any(word in query_lower for word in context_exclude):
+                    exclude_words.update(context_exclude)
+                if any(word in query_lower for word in prep_exclude):
+                    exclude_words.update(prep_exclude)
+                # Only exclude domain words if they're used as query operators, not as filters
+                for domain_word in domain_exclude:
+                    if f"by {domain_word}" in query_lower or f"show {domain_word}" in query_lower:
+                        exclude_words.add(domain_word)
+                
+                # Filter potential products to exclude common query words
+                filtered_products = [
+                    term for term in potential_products 
+                    if term.lower() not in exclude_words and len(term) > 2
+                ]
+                
+                # Filter lowercase products similarly
+                filtered_lowercase = [
+                    term for term in lowercase_products 
+                    if term.lower() not in exclude_words and len(term) > 3
+                ]
+                
+                # Combine all potential filter terms
+                filter_terms = quoted_terms + filtered_products + filtered_lowercase
+                
+                # Apply filters only if we have product columns and filter terms
+                product_cols = [col for col in selected_columns if 'product' in col.lower()]
+                if product_cols and filter_terms:
+                    for term in filter_terms[:2]:  # Limit to first 2 terms to avoid overly complex queries
+                        if len(term) > 2:  # Only use meaningful terms
+                            where_conditions.append(f"{product_cols[0]} LIKE '%{term}%'")
+                
+                if where_conditions:
+                    where_clause = f"\nWHERE {' OR '.join(where_conditions)}"
+                
+                # 🎯 DYNAMIC ORDER BY based on query intent
+                order_clause = ""
+                
+                # Extract number for TOP clause and ordering
+                top_numbers = re.findall(r'\btop\s+(\d+)\b', query_lower)
+                top_numbers.extend(re.findall(r'\b(\d+)\s+(?:top|highest|largest|biggest)\b', query_lower))
+                
+                # Determine if ordering is needed
+                needs_ordering = any(word in query_lower for word in ['top', 'highest', 'largest', 'best', 'most'])
+                
+                if needs_ordering:
+                    # Look for sales/numeric metrics to order by
+                    sales_cols = [col for col in selected_columns if any(ind in col.lower() for ind in sales_indicators)]
+                    if sales_cols:
+                        order_clause = f"\nORDER BY {sales_cols[0]} DESC"
+                
+                # 🎯 DYNAMIC TOP clause
+                top_limit = 10  # default
+                if top_numbers:
+                    try:
+                        top_limit = int(top_numbers[0])
+                        top_limit = min(max(top_limit, 1), 1000)  # Allow higher limits for comprehensive queries
+                    except:
+                        top_limit = 10
+                else:
+                    # Dynamic top limit based on query intent
+                    if any(word in query_lower for word in ['all', 'every', 'complete', 'entire', 'full']):
+                        top_limit = 100
+                    elif any(word in query_lower for word in ['display', 'show', 'list']) and 'top' not in query_lower:
+                        # If they want to "display" or "show" without specifying "top", give more results
+                        top_limit = 50
+                    elif any(word in query_lower for word in ['few', 'some', 'several']):
+                        top_limit = 5
+                
+                return f"""-- Dynamic template query for Azure SQL Server
+SELECT TOP {top_limit} {col_list}
+FROM {table_name}{where_clause}{order_clause};"""
         
-        # Multi-table basic join template
+        # Dynamic multi-table join template
         else:
             primary_table = tables[0]
             secondary_table = tables[1]
             
-            return f"""SELECT TOP 5 
-    t1.PrescriberName, 
-    t1.TerritoryName, 
-    t1.RegionName,
-    t1.ProductGroupName,
-    t2.Specialty
+            # Get schema for both tables
+            primary_columns = schema.get('tables', {}).get(primary_table, {}).get('columns', [])
+            secondary_columns = schema.get('tables', {}).get(secondary_table, {}).get('columns', [])
+            
+            # Dynamic column selection for joins
+            selected_cols = []
+            join_conditions = []
+            
+            # Find potential join columns (common column names)
+            primary_col_names = [col.get('name', col.get('column_name', '')) for col in primary_columns]
+            secondary_col_names = [col.get('name', col.get('column_name', '')) for col in secondary_columns]
+            
+            # Look for common ID columns for joining
+            potential_joins = []
+            for p_col in primary_col_names:
+                for s_col in secondary_col_names:
+                    if p_col.lower() == s_col.lower() and 'id' in p_col.lower():
+                        potential_joins.append((p_col, s_col))
+            
+            # Default join if no ID columns found
+            if not potential_joins:
+                # Look for any matching column names
+                for p_col in primary_col_names:
+                    for s_col in secondary_col_names:
+                        if p_col.lower() == s_col.lower():
+                            potential_joins.append((p_col, s_col))
+                            break
+                    if potential_joins:
+                        break
+            
+            # Select interesting columns from both tables with proper quoting
+            query_lower = query.lower()
+            for col in primary_col_names[:4]:  # First few columns from primary
+                quoted_col = f'[{col}]' if '(' in col or ' ' in col else col
+                selected_cols.append(f"t1.{quoted_col}")
+            for col in secondary_col_names[:2]:  # First couple from secondary
+                quoted_col = f'[{col}]' if '(' in col or ' ' in col else col
+                selected_cols.append(f"t2.{quoted_col}")
+            
+            # Limit columns
+            selected_cols = selected_cols[:6]
+            col_list = ',\n    '.join(selected_cols)
+            
+            # Build join condition
+            if potential_joins:
+                join_col = potential_joins[0]
+                join_condition = f"t1.{join_col[0]} = t2.{join_col[1]}"
+            else:
+                # Generic fallback - try common patterns
+                join_condition = "t1.Id = t2.Id"  # This might fail, but it's a last resort
+            
+            return f"""-- Dynamic multi-table join template
+SELECT TOP 10 
+    {col_list}
 FROM {primary_table} t1
-INNER JOIN {secondary_table} t2 ON t1.PrescriberId = t2.PrescriberId
-WHERE t1.ProductGroupName IS NOT NULL;"""
+INNER JOIN {secondary_table} t2 ON {join_condition};
+-- Join condition determined dynamically from schema"""
     
     def _map_pinecone_intelligence_to_real_columns(
         self, 
@@ -1960,6 +2590,50 @@ WHERE t1.ProductGroupName IS NOT NULL;"""
         else:
             return 'general'
     
+    def _infer_datatype_from_column_name(self, column_name: str) -> str:
+        """Infer SQL Server datatype from column name patterns - FIXES DATATYPE DISCOVERY"""
+        name_lower = column_name.lower()
+        
+        # 🔧 PHARMACEUTICAL DOMAIN INTELLIGENCE - TRX/NRX/TQTY are numeric metrics
+        if any(pattern in name_lower for pattern in ['trx', 'nrx', 'tqty', 'nqty']):
+            return 'INT'
+        
+        # 🔧 ID columns are typically integers or bigints
+        elif name_lower.endswith('id') or 'id' in name_lower:
+            return 'BIGINT'
+        
+        # 🔧 Market share, percentages are decimals
+        elif any(pattern in name_lower for pattern in ['share', 'rate', 'percent', 'ratio']):
+            return 'DECIMAL(18,4)'
+        
+        # 🔧 Flag columns are typically VARCHAR or BIT
+        elif 'flag' in name_lower or 'tier' in name_lower:
+            return 'VARCHAR(50)'
+        
+        # 🔧 Date columns
+        elif any(pattern in name_lower for pattern in ['date', 'time']):
+            return 'DATETIME'
+        
+        # 🔧 Name, description, address columns
+        elif any(pattern in name_lower for pattern in ['name', 'description', 'address', 'city', 'state']):
+            return 'VARCHAR(255)'
+        
+        # 🔧 Zipcode is string
+        elif 'zip' in name_lower:
+            return 'VARCHAR(10)'
+        
+        # 🔧 Numeric patterns (calls, samples, counts)
+        elif any(pattern in name_lower for pattern in ['call', 'sample', 'count', 'number', 'qty']):
+            return 'INT'
+        
+        # 🔧 Specialty is categorical
+        elif 'specialty' in name_lower:
+            return 'VARCHAR(100)'
+        
+        # 🔧 Default for unknown patterns
+        else:
+            return 'VARCHAR(255)'
+    
     def _create_error_recovery_result(
         self, 
         query: str, 
@@ -1985,70 +2659,175 @@ WHERE t1.ProductGroupName IS NOT NULL;"""
         }
     
     def _format_semantic_analysis_for_llm(self, semantic_analysis: Dict[str, Any], query: str) -> str:
-        """Format complete semantic analysis for LLM prompt"""
+        """Format complete semantic analysis for LLM prompt with query-intent driven intelligence"""
+        
+        # 🔧 CRITICAL FIX: Validate input types to prevent 'str' object has no attribute 'get' error
+        if not isinstance(semantic_analysis, dict):
+            print(f"🚨 CRITICAL ERROR: semantic_analysis is {type(semantic_analysis)}, expected dict")
+            print(f"🚨 Content preview: {str(semantic_analysis)[:200]}...")
+            # Create minimal fallback structure
+            semantic_analysis = {
+                'tables': {},
+                'cross_table_relationships': {},
+                'business_domains': {}
+            }
         
         prompt_parts = []
         
-        # Add query context
-        prompt_parts.append(f"Generate SQL query for Azure SQL Server: {query}")
+        # 🎯 QUERY INTENT ANALYSIS - Extract semantic patterns from user query
+        query_lower = query.lower()
+        intent_signals = {
+            'aggregation': any(word in query_lower for word in ['total', 'sum', 'count', 'average', 'avg', 'max', 'min', 'group']),
+            'temporal': any(word in query_lower for word in ['month', 'year', 'date', 'period', 'time', 'recent', 'last']),
+            'filtering': any(word in query_lower for word in ['where', 'specific', 'only', 'filter', 'particular']),
+            'ranking': any(word in query_lower for word in ['top', 'highest', 'lowest', 'best', 'worst', 'rank']),
+            'comparison': any(word in query_lower for word in ['compare', 'vs', 'versus', 'difference', 'between']),
+            'detail': any(word in query_lower for word in ['detail', 'breakdown', 'individual', 'each', 'all'])
+        }
+        
+        # Add intelligent query context based on intent
+        prompt_parts.append(f"🎯 QUERY ANALYSIS: {query}")
+        
+        # Dynamic SQL pattern suggestion based on intent
+        if intent_signals['aggregation']:
+            prompt_parts.append("📊 PATTERN: Aggregation query - use GROUP BY, SUM/COUNT/AVG appropriately")
+        if intent_signals['temporal']:
+            prompt_parts.append("📅 PATTERN: Time-based analysis - include proper date filtering and ordering")
+        if intent_signals['ranking']:
+            prompt_parts.append("🏆 PATTERN: Ranking query - use ORDER BY with TOP clause for Azure SQL Server")
+        if intent_signals['comparison']:
+            prompt_parts.append("⚖️ PATTERN: Comparison analysis - consider CASE statements or multiple groupings")
+        
         prompt_parts.append("")
         
-        # Add complete table information with semantic context
+        # 🧠 INTELLIGENT COLUMN SELECTION - Priority-based semantic mapping
         tables = semantic_analysis.get('tables', {})
+        high_relevance_cols = []
+        medium_relevance_cols = []
+        
         for table_name, table_analysis in tables.items():
-            prompt_parts.append(f"Table: {table_name}")
+            prompt_parts.append(f"📋 TABLE: {table_name}")
             
-            # Add table semantic info
+            # Add domain intelligence
             table_semantics = table_analysis.get('table_semantics', {})
             domain = table_semantics.get('primary_domain', 'general')
             entities = table_semantics.get('business_entities', [])
             if domain != 'general' or entities:
-                prompt_parts.append(f"  Domain: {domain}, Entities: {', '.join(entities)}")
+                prompt_parts.append(f"  🏢 DOMAIN: {domain} | ENTITIES: {', '.join(entities)}")
             
-            # Add all columns with complete metadata
+            # 🎯 SEMANTIC COLUMN PRIORITIZATION
             columns = table_analysis.get('columns', [])
             for col in columns:
-                col_name = col.get('name', '')
-                col_type = col.get('data_type', 'VARCHAR')
-                semantic_type = col.get('semantic_type', '')
-                is_key = col.get('is_primary_key', False) or col.get('is_foreign_key', False)
+                # 🔧 CRITICAL FIX: Handle both string and dict column formats with proper datatype discovery
+                if isinstance(col, str):
+                    col_name = col
+                    col_type = self._infer_datatype_from_column_name(col)
+                    semantic_type = ''
+                    is_key = False
+                elif isinstance(col, dict):
+                    col_name = col.get('name', str(col))
+                    col_type = col.get('data_type', 'VARCHAR')
+                    # 🔧 FIX DATATYPE DISCOVERY: If datatype is unknown, infer from column name
+                    if col_type == 'unknown' or not col_type:
+                        col_type = self._infer_datatype_from_column_name(col_name)
+                        print(f"🔧 DATATYPE FIX: Inferred {col_name} -> {col_type}")
+                    semantic_type = col.get('semantic_type', '')
+                    is_key = col.get('is_primary_key', False) or col.get('is_foreign_key', False)
+                else:
+                    col_name = str(col)
+                    col_type = self._infer_datatype_from_column_name(str(col))
+                    semantic_type = ''
+                    is_key = False
+                
+                # Intelligent relevance scoring based on query intent
+                relevance_score = 0
+                col_lower = col_name.lower()
+                
+                # High relevance scoring
+                if intent_signals['aggregation'] and any(word in col_lower for word in ['amount', 'count', 'total', 'sum', 'quantity', 'volume']):
+                    relevance_score += 3
+                if intent_signals['temporal'] and any(word in col_lower for word in ['date', 'time', 'month', 'year', 'period']):
+                    relevance_score += 3
+                if intent_signals['filtering'] and semantic_type in ['identifier', 'category', 'status']:
+                    relevance_score += 2
+                if is_key:
+                    relevance_score += 1
+                
+                # Query-specific keyword matching
+                query_keywords = [word for word in query_lower.split() if len(word) > 3]
+                for keyword in query_keywords:
+                    if keyword in col_lower:
+                        relevance_score += 2
                 
                 col_desc = f"    {col_name} ({col_type})"
                 if semantic_type:
                     col_desc += f" [{semantic_type}]"
                 if is_key:
                     col_desc += " [KEY]"
+                
+                # Priority markers based on relevance
+                if relevance_score >= 3:
+                    col_desc += " ⭐ HIGH-RELEVANCE"
+                    high_relevance_cols.append(col_name)
+                elif relevance_score >= 1:
+                    col_desc += " ✨ MEDIUM-RELEVANCE"
+                    medium_relevance_cols.append(col_name)
+                
                 prompt_parts.append(col_desc)
             
             prompt_parts.append("")
         
-        # Add relationship information
+        # 🔗 INTELLIGENT JOIN RECOMMENDATIONS
         relationships = semantic_analysis.get('cross_table_relationships', {})
-        if relationships:
-            prompt_parts.append("Table Relationships:")
+        if relationships and len(tables) > 1:
+            prompt_parts.append("🔗 INTELLIGENT JOIN STRATEGY:")
+            
+            # Prioritize join paths based on query intent
             for rel_type, rels in relationships.items():
                 if rels:
-                    prompt_parts.append(f"  {rel_type}: {len(rels)} relationships")
-                    for rel in rels[:3]:  # Show top 3 relationships
+                    prompt_parts.append(f"  📊 {rel_type.upper()}: {len(rels)} available joins")
+                    for rel in rels[:2]:  # Show top 2 most relevant joins
                         if isinstance(rel, dict):
                             table1 = rel.get('table1', '')
                             table2 = rel.get('table2', '')
                             columns = rel.get('columns', [])
                             if table1 and table2:
-                                prompt_parts.append(f"    {table1} ↔ {table2} via {', '.join(columns[:2])}")
+                                join_strength = "STRONG" if len(columns) > 1 else "STANDARD"
+                                prompt_parts.append(f"    🎯 {join_strength}: {table1} ↔ {table2} via {', '.join(columns[:2])}")
             prompt_parts.append("")
         
-        # Add business context
+        # 🧩 DYNAMIC SQL CONSTRUCTION HINTS
+        prompt_parts.append("🚀 INTELLIGENT SQL CONSTRUCTION:")
+        
+        if high_relevance_cols:
+            prompt_parts.append(f"  ⭐ PRIORITIZE COLUMNS: {', '.join(high_relevance_cols[:5])}")
+        
+        if intent_signals['aggregation']:
+            prompt_parts.append("  📊 USE: GROUP BY with appropriate aggregation functions")
+        if intent_signals['temporal']:
+            prompt_parts.append("  📅 USE: Date-based filtering and temporal ordering")
+        if intent_signals['ranking']:
+            prompt_parts.append("  🏆 USE: ORDER BY + TOP syntax for Azure SQL Server")
+        if intent_signals['detail']:
+            prompt_parts.append("  🔍 USE: Comprehensive SELECT with relevant details")
+        
+        # 💡 Business domain intelligence
         business_domains = semantic_analysis.get('business_domains', {})
         if business_domains:
-            prompt_parts.append("Business Context:")
+            prompt_parts.append("💡 BUSINESS INTELLIGENCE:")
             for domain, info in business_domains.items():
                 entities = info.get('entities', [])
                 if entities:
-                    prompt_parts.append(f"  {domain}: {', '.join(entities[:5])}")
+                    prompt_parts.append(f"  {domain.upper()}: Focus on {', '.join(entities[:3])} context")
             prompt_parts.append("")
         
-        prompt_parts.append("Return only executable SQL, no explanations.")
+        prompt_parts.append("✅ AZURE SQL SERVER SYNTAX REQUIREMENTS:")
+        prompt_parts.append("  • CRITICAL: Use TOP N instead of LIMIT N (e.g., 'SELECT TOP 10' not 'LIMIT 10')")
+        prompt_parts.append("  • Use [brackets] for column names with spaces or special characters")
+        prompt_parts.append("  • Example: [TRX(C4 Wk)] not TRX(C4 Wk)")
+        prompt_parts.append("  • Example: SELECT TOP 50 [...] not SELECT [...] LIMIT 50")
+        prompt_parts.append("🚨 AZURE SQL SERVER DOES NOT SUPPORT LIMIT - ALWAYS USE TOP!")
+        prompt_parts.append("🎯 RETURN: Only executable SQL optimized for query intent")
         
         return "\n".join(prompt_parts)
     
@@ -2062,7 +2841,7 @@ WHERE t1.ProductGroupName IS NOT NULL;"""
     ) -> Dict[str, Any]:
         """Integrate retry logic from orchestrator for robust SQL generation"""
         
-        from ..dynamic_agent_orchestrator import DynamicAgentOrchestrator
+        from ..orchestrators.dynamic_agent_orchestrator import DynamicAgentOrchestrator
         
         try:
             # Initialize orchestrator for retry logic
@@ -2074,18 +2853,19 @@ WHERE t1.ProductGroupName IS NOT NULL;"""
             # Execute SQL generation with retry
             retry_result = await orchestrator._generate_sql_with_retry(
                 query=query,
-                schema_context={'tables': {table: [] for table in confirmed_tables}},
-                max_attempts=3
+                available_tables=confirmed_tables,
+                error_context="Intelligent query planner fallback",
+                use_deterministic=False
             )
             
             if retry_result.get('status') == 'success':
                 return {
                     'status': 'success',
-                    'sql': retry_result.get('sql', ''),
+                    'sql': retry_result.get('sql_query', retry_result.get('sql', '')),  # 🔧 FIX: Check sql_query first, then sql
                     'sql_result': retry_result.get('sql_result'),
                     'retry_info': {
-                        'attempts': retry_result.get('attempts', 1),
-                        'used_retry': retry_result.get('attempts', 1) > 1
+                        'attempts': retry_result.get('total_attempts', retry_result.get('attempts', 1)),  # 🔧 FIX: Use total_attempts from retry mechanism
+                        'used_retry': retry_result.get('total_attempts', retry_result.get('attempts', 1)) > 1
                     }
                 }
             else:

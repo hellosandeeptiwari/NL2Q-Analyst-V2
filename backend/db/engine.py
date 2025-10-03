@@ -572,6 +572,15 @@ class AzureSQLAdapter:
                 start = time.time()
                 cur = self.conn.cursor()
                 cur.execute(sql)
+                
+                # 🔧 CRITICAL FIX: Extract column names from cursor.description
+                columns = None
+                if cur.description:
+                    columns = [column[0] for column in cur.description]
+                    print(f"✅ Extracted {len(columns)} column names: {columns}")
+                else:
+                    print("⚠️ No cursor.description available")
+                
                 if not dry_run:
                     rows = cur.fetchall()
                     # Convert pyodbc Row objects to regular tuples
@@ -580,7 +589,7 @@ class AzureSQLAdapter:
                     rows = []
                 execution_time = time.time() - start
                 self.conn.commit()
-                return RunResult(rows, execution_time)
+                return RunResult(rows, execution_time, columns=columns)
             except Exception as e:
                 return RunResult([], 0, str(e))
 

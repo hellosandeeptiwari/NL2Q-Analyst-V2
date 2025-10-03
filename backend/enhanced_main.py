@@ -313,7 +313,7 @@ def create_enhanced_app() -> FastAPI:
         """Get available therapeutic areas"""
         return {
             "therapeutic_areas": [
-                "Oncology", "Diabetes", "Cardiovascular", "Immunology", 
+                "Thyroid", "Pain", "Cardiovascular", "Inflammation", 
                 "Neurology", "Infectious Disease", "Respiratory", "Dermatology",
                 "Gastroenterology", "Ophthalmology", "Rheumatology", "Psychiatry"
             ]

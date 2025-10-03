@@ -8,8 +8,8 @@
     "access_level": "advanced",
     "department": "Commercial Analytics",
     "therapeutic_areas": [
-      "Oncology",
-      "Diabetes"
+      "Thyroid",
+      "Pain"
     ],
     "data_access_permissions": [
       "ENHANCED_NBA.*"
@@ -44,8 +44,8 @@
     "access_level": "basic",
     "department": "Medical Affairs",
     "therapeutic_areas": [
-      "Oncology",
-      "Immunology"
+      "Inflammation",
+      "Pain"
     ],
     "data_access_permissions": [
       "ENHANCED_NBA.*",
@@ -117,8 +117,8 @@
     "access_level": "advanced",
     "department": "Test Department",
     "therapeutic_areas": [
-      "Oncology",
-      "Diabetes"
+      "Thyroid",
+      "Pain"
     ],
     "data_access_permissions": [
       "ENHANCED_NBA.*"
@@ -153,8 +153,8 @@
     "access_level": "advanced",
     "department": "Test Department",
     "therapeutic_areas": [
-      "Oncology",
-      "Diabetes"
+      "Thyroid",
+      "Pain"
     ],
     "data_access_permissions": [
       "ENHANCED_NBA.*"
@@ -189,8 +189,8 @@
     "access_level": "advanced",
     "department": "Test Department",
     "therapeutic_areas": [
-      "Oncology",
-      "Diabetes"
+      "Thyroid",
+      "Pain"
     ],
     "data_access_permissions": [
       "ENHANCED_NBA.*"
@@ -225,8 +225,8 @@
     "access_level": "advanced",
     "department": "Test Department",
     "therapeutic_areas": [
-      "Oncology",
-      "Diabetes"
+      "Thyroid",
+      "Pain"
     ],
     "data_access_permissions": [
       "ENHANCED_NBA.*"

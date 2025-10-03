@@ -75,12 +75,63 @@ class SQLRunner:
                     execution_time=execution_time
                 )
             
-            # Convert rows to list of dictionaries
+            # 🔧 CRITICAL DEBUG: Check what we're actually getting from the database
+            print(f"🔍 DEBUG SQL Result:")
+            print(f"  - result.error: {result.error}")
+            print(f"  - result.rows type: {type(result.rows)}")
+            print(f"  - result.rows length: {len(result.rows) if result.rows else 0}")
+            print(f"  - result.columns type: {type(result.columns)}")
+            print(f"  - result.columns length: {len(result.columns) if result.columns else 0}")
+            if result.rows:
+                print(f"  - First row: {result.rows[0] if len(result.rows) > 0 else 'None'}")
+            if result.columns:
+                print(f"  - Columns: {result.columns}")
+            
+            # 🔧 ENHANCED: Convert rows to list of dictionaries with intelligent column handling
             data = []
-            if result.rows and result.columns:
-                for row in result.rows:
-                    row_dict = dict(zip(result.columns, row))
-                    data.append(row_dict)
+            if result.rows:
+                if result.columns:
+                    # Ideal case: we have column names
+                    for row in result.rows:
+                        row_dict = dict(zip(result.columns, row))
+                        data.append(row_dict)
+                else:
+                    # 🔧 INTELLIGENT FALLBACK: Try to extract column names from SQL query
+                    print("⚠️ WARNING: Column names missing, attempting intelligent extraction")
+                    try:
+                        extracted_columns = self._extract_column_names_from_sql(sql)
+                    except Exception as e:
+                        print(f"⚠️ Column extraction failed: {e}")
+                        extracted_columns = None
+                    
+                    if extracted_columns and result.rows:
+                        num_data_columns = len(result.rows[0]) if result.rows[0] else 0
+                        if len(extracted_columns) == num_data_columns:
+                            print(f"✅ Successfully extracted {len(extracted_columns)} column names from SQL")
+                            print(f"🔧 Extracted columns: {extracted_columns}")
+                            result.columns = extracted_columns
+                        else:
+                            print(f"⚠️ Column count mismatch: extracted {len(extracted_columns)}, data has {num_data_columns}")
+                            extracted_columns = None
+                    
+                    if not extracted_columns:
+                        # Ultimate fallback: generate generic names
+                        if result.rows:
+                            num_columns = len(result.rows[0]) if result.rows[0] else 0
+                            extracted_columns = [f"column_{i+1}" for i in range(num_columns)]
+                            print(f"🔧 Generated fallback column names: {extracted_columns}")
+                        
+                    if extracted_columns:
+                        for row in result.rows:
+                            row_dict = dict(zip(extracted_columns, row))
+                            data.append(row_dict)
+                        
+                        # Update result.columns for return value
+                        result.columns = extracted_columns
+            
+            print(f"🔍 DEBUG Final Data: {len(data)} rows converted")
+            if data:
+                print(f"  - First converted row: {data[0]}")
             
             return QueryExecutionResult(
                 success=True,
@@ -97,6 +148,61 @@ class SQLRunner:
                 error_message=str(e),
                 execution_time=execution_time
             )
+    
+    def _extract_column_names_from_sql(self, sql: str) -> List[str]:
+        """Intelligently extract column names from SQL SELECT statement"""
+        try:
+            # Clean up the SQL
+            sql_cleaned = sql.strip().upper()
+            if not sql_cleaned.startswith('SELECT'):
+                return []
+            
+            # Find the SELECT clause
+            select_start = sql_cleaned.find('SELECT') + 6
+            from_pos = sql_cleaned.find('FROM')
+            if from_pos == -1:
+                return []
+            
+            # Extract the column part
+            columns_part = sql[select_start:from_pos].strip()
+            
+            # Handle TOP clause
+            if columns_part.upper().startswith('TOP '):
+                # Skip TOP N clause
+                parts = columns_part.split(' ', 2)
+                if len(parts) >= 3:
+                    columns_part = parts[2]
+            
+            # Split by comma and clean up
+            column_names = []
+            for col in columns_part.split(','):
+                col = col.strip()
+                
+                # Handle aliases (AS keyword or space-separated)
+                if ' AS ' in col.upper():
+                    col = col.split(' AS ')[-1].strip()
+                elif ' ' in col and not any(func in col.upper() for func in ['TOP', 'DISTINCT', 'COUNT', 'SUM', 'AVG', 'MAX', 'MIN']):
+                    # Check if it's an alias (column alias)
+                    parts = col.split()
+                    if len(parts) >= 2:
+                        col = parts[-1]  # Take the last part as alias
+                
+                # Remove brackets and clean
+                col = col.replace('[', '').replace(']', '').replace('"', '').replace("'", "")
+                
+                # Skip empty or problematic columns
+                if col and col != '*' and not col.upper() in ['DISTINCT', 'TOP']:
+                    column_names.append(col)
+            
+            # If we have SELECT *, return empty (can't determine columns)
+            if '*' in columns_part:
+                return []
+            
+            return column_names[:10]  # Limit to reasonable number
+            
+        except Exception as e:
+            print(f"🚨 Error extracting column names: {e}")
+            return []
 
     async def validate_query(self, sql: str, user_id: str = "default_user") -> QueryValidationResult:
         """

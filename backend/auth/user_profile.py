@@ -256,7 +256,7 @@ def create_demo_users():
             "full_name": "Sarah Chen",
             "role": UserRole.ANALYST,
             "department": "Commercial Analytics",
-            "therapeutic_areas": ["Oncology", "Diabetes"]
+            "therapeutic_areas": ["Thyroid", "Pain"]
         },
         {
             "username": "medaffairs1",
@@ -264,7 +264,7 @@ def create_demo_users():
             "full_name": "Dr. Michael Roberts",
             "role": UserRole.MEDICAL_AFFAIRS,
             "department": "Medical Affairs",
-            "therapeutic_areas": ["Oncology", "Immunology"]
+            "therapeutic_areas": ["Inflammation", "Pain"]
         },
         {
             "username": "datascientist1",

@@ -19,7 +19,7 @@ try:
         'SchemaSemanticAnalyzer'
     ]
     
-    print("✅ Query Intelligence module loaded with comprehensive implementations (duplicates cleaned up)")
+    print("Query Intelligence module loaded with comprehensive implementations (duplicates cleaned up)")
     
 except ImportError as e:
     print(f"⚠️ Query intelligence components failed to import: {e}")

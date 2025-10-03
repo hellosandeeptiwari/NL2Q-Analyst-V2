@@ -6,7 +6,8 @@ import {
   FiBarChart2, FiTable, FiAlertTriangle, FiInfo, 
   FiChevronDown, FiChevronUp, FiLoader, FiUser,
   FiMessageSquare, FiClock, FiArchive, FiSearch,
-  FiPlus, FiMoreHorizontal, FiDownload, FiShare2, FiZap
+  FiPlus, FiMoreHorizontal, FiDownload, FiShare2, FiZap,
+  FiEdit2, FiX
 } from 'react-icons/fi';
 import Plot from 'react-plotly.js';
 import EnhancedTable from './EnhancedTable';
@@ -240,16 +241,16 @@ const api = {
     email: "sarah.chen@pharma.com",
     role: "Senior Data Analyst",
     department: "Commercial Analytics",
-    therapeutic_areas: ["Oncology", "Diabetes", "Immunology"]
+    therapeutic_areas: ["Thyroid", "Pain", "Inflammation"]
   }),
 
   mockGetConversations: (): Conversation[] => [
     {
       conversation_id: "conv_1",
-      title: "Q4 Oncology Market Analysis",
+      title: "Levothyroxine Adoption Analysis",
       created_at: "2024-01-15T10:30:00Z",
       last_activity: "2024-01-15T15:45:00Z",
-      therapeutic_area: "Oncology",
+      therapeutic_area: "Thyroid",
       total_cost: 2.45,
       total_tokens: 1250,
       last_activity_timestamp: Date.now() - 60000, // 1 minute ago
@@ -258,10 +259,10 @@ const api = {
     },
     {
       conversation_id: "conv_2", 
-      title: "Physician Prescribing Patterns",
+      title: "IBSA Pharma Prescribing Analytics",
       created_at: "2024-01-14T09:15:00Z",
       last_activity: "2024-01-14T11:30:00Z",
-      therapeutic_area: "Diabetes",
+      therapeutic_area: "Pain",
       total_cost: 1.85,
       total_tokens: 980,
       last_activity_timestamp: Date.now() - 3600000, // 1 hour ago
@@ -364,6 +365,10 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
   
   // Code display state
   const [expandedCodeStep, setExpandedCodeStep] = useState<string | null>(null);
+  
+  // Chat rename functionality
+  const [editingConversationId, setEditingConversationId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState<string>('');
 
   // Progress tracking state
   const [progressSteps, setProgressSteps] = useState<ProgressStep[]>([]);
@@ -1351,6 +1356,56 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
     setCurrentProgressStep(null);
     setIncrementalResults([]);
     setShowProgress(false);
+  };
+
+  // Chat rename functionality
+  const handleStartRename = (conversation: Conversation, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent conversation selection
+    setEditingConversationId(conversation.conversation_id);
+    setEditingTitle(conversation.title);
+  };
+
+  const handleCancelRename = () => {
+    setEditingConversationId(null);
+    setEditingTitle('');
+  };
+
+  const handleSaveRename = async (conversationId: string) => {
+    if (!editingTitle.trim()) {
+      handleCancelRename();
+      return;
+    }
+
+    try {
+      // Update local state immediately for responsive UI
+      setConversations(prev => prev.map(conv => 
+        conv.conversation_id === conversationId 
+          ? { ...conv, title: editingTitle.trim() }
+          : conv
+      ));
+
+      // Update active conversation if it's being renamed
+      if (activeConversation?.conversation_id === conversationId) {
+        setActiveConversation(prev => prev ? { ...prev, title: editingTitle.trim() } : null);
+      }
+
+      // Here you would typically make an API call to save the new title
+      // await api.updateConversationTitle(conversationId, editingTitle.trim());
+
+      setEditingConversationId(null);
+      setEditingTitle('');
+    } catch (error) {
+      console.error('Error updating conversation title:', error);
+      // You could show a toast notification here
+    }
+  };
+
+  const handleRenameKeyPress = (e: React.KeyboardEvent, conversationId: string) => {
+    if (e.key === 'Enter') {
+      handleSaveRename(conversationId);
+    } else if (e.key === 'Escape') {
+      handleCancelRename();
+    }
   };
 
   // Clear current chat
@@ -3066,7 +3121,7 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
       <div className="chat-sidebar">
         {/* Header */}
         <div className="sidebar-header">
-          <h1>Pharma Analytics AI</h1>
+          <h1>Azure AI Analyst</h1>
           <p className="subtitle">Natural Language to Insights</p>
         </div>
 
@@ -3143,28 +3198,80 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                   className={`conversation-item ${activeConversation?.conversation_id === conversation.conversation_id ? 'active' : ''}`}
                   onClick={() => handleConversationSelect(conversation)}
                 >
-                  <div className="conversation-title">
-                    {(() => {
-                      const activity = formatRecentActivity(conversation.last_activity_timestamp || Date.now() - 86400000);
-                      return activity.text && (
-                        <span 
-                          className="activity-indicator" 
-                          style={{ color: activity.color }}
-                        >
-                          <FiZap size={10} />
+                  <div className="conversation-header">
+                    <div className="conversation-title">
+                      {(() => {
+                        const activity = formatRecentActivity(conversation.last_activity_timestamp || Date.now() - 86400000);
+                        return activity.text && (
+                          <span 
+                            className="activity-indicator" 
+                            style={{ color: activity.color }}
+                          >
+                            <FiZap size={10} />
+                          </span>
+                        );
+                      })()}
+                      
+                      {editingConversationId === conversation.conversation_id ? (
+                        <input
+                          type="text"
+                          value={editingTitle}
+                          onChange={(e) => setEditingTitle(e.target.value)}
+                          onKeyDown={(e) => handleRenameKeyPress(e, conversation.conversation_id)}
+                          onBlur={() => handleSaveRename(conversation.conversation_id)}
+                          className="conversation-title-input"
+                          autoFocus
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      ) : (
+                        <span className="conversation-title-text">
+                          {conversation.title}
                         </span>
-                      );
-                    })()}
-                    {conversation.title}
+                      )}
+                    </div>
+                    
+                    <div className="conversation-actions">
+                      {editingConversationId === conversation.conversation_id ? (
+                        <div className="rename-actions">
+                          <button
+                            className="action-btn save-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSaveRename(conversation.conversation_id);
+                            }}
+                            title="Save"
+                          >
+                            <FiCheck size={12} />
+                          </button>
+                          <button
+                            className="action-btn cancel-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCancelRename();
+                            }}
+                            title="Cancel"
+                          >
+                            <FiX size={12} />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          className="action-btn edit-btn"
+                          onClick={(e) => handleStartRename(conversation, e)}
+                          title="Rename chat"
+                        >
+                          <FiEdit2 size={12} />
+                        </button>
+                      )}
+                    </div>
                   </div>
+                  
                   <div className="conversation-meta">
                     <span className="conversation-date">
                       {formatTimestamp(conversation.last_activity)}
                     </span>
-                    <span className="conversation-cost">
-                      ${conversation.total_cost.toFixed(2)}
-                    </span>
                   </div>
+                  
                   {conversation.therapeutic_area && (
                     <div className="therapeutic-tags">
                       <span className="therapeutic-tag">

@@ -499,15 +499,23 @@ AUTHORITATIVE CATALOG:
 
 CRITICAL RULES:
 1. Use ONLY columns/tables present in catalog above
-2. If needed concept can't be mapped, explain why
-3. Generate SINGLE SELECT statement only (no semicolons, no multiple statements)
+2. Generate SQL using intelligent interpretation of available columns
+3. Generate SINGLE SELECT statement only (no semicolons, no multiple statements) 
 4. For Azure SQL Server: Use TOP N instead of LIMIT N
-5. Use exact table/column names from catalog
+5. Use exact table/column names from catalog with proper bracketing
 6. Follow database-specific syntax rules above
+7. For flag columns (like TirosintTargetFlag): Use 'Y'/'N' values, not 0/1
+8. Be creative with column interpretation - TirosintTargetFlag means Tirosint targeting
+
+COMMON PATTERNS:
+- Flag columns (TargetFlag, IncludeFlag): Use 'Y' for Yes, 'N' for No
+- TirosintTargetFlag = 'Y' means prescribers targeted for Tirosint
+- TRX columns: Transaction counts (prescription metrics)
+- NRX columns: New prescription counts
 
 REQUEST: {natural_language}
 
-Generate a single SQL SELECT statement or explain if concepts cannot be mapped:"""
+Generate a single SQL SELECT statement using intelligent column interpretation:"""
     
     try:
         response = openai.chat.completions.create(
@@ -520,7 +528,7 @@ Generate a single SQL SELECT statement or explain if concepts cannot be mapped:"
         sql = response.choices[0].message.content.strip()
         
         # Check if response is an explanation rather than SQL
-        if "cannot be mapped" in sql.lower() or "not found" in sql.lower():
+        if ("cannot be mapped" in sql.lower() and "SELECT" not in sql.upper()) or ("not found" in sql.lower() and "SELECT" not in sql.upper()):
             return GeneratedSQL(
                 sql="SELECT 'Concept mapping failed' as error",
                 rationale=sql,

@@ -783,8 +783,14 @@ JOIN Data Type Compatibility:
                         for col in table_metadata.get('columns', []):
                             col_name = col.get('name')
                             if col_name:
+                                data_type = col.get('data_type', 'unknown')
+                                
+                                # Apply datatype inference if unknown
+                                if data_type == 'unknown':
+                                    data_type = self._infer_datatype_from_column_name(col_name, table_name)
+                                
                                 columns[col_name] = {
-                                    "data_type": col.get('data_type', 'unknown'),
+                                    "data_type": data_type,
                                     "nullable": col.get('nullable', True),
                                     "description": col.get('description'),
                                     "is_primary_key": col.get('is_primary_key', False),
@@ -958,3 +964,36 @@ JOIN Data Type Compatibility:
         # print(f"✅ Total columns found for {table_name}: {len(all_columns)} - {all_columns}")
         
         return table_details
+
+    def _infer_datatype_from_column_name(self, column_name: str, table_name: str = "") -> str:
+        """
+        Infer likely datatype from column name patterns, especially for pharmaceutical data
+        """
+        col_lower = column_name.lower()
+        
+        # Boolean/Flag columns (very common in pharma data)
+        if any(keyword in col_lower for keyword in ['flag', 'target', 'include', 'active', 'enabled']):
+            return 'varchar'  # Most flags are 'Y'/'N' not 0/1
+        
+        # ID columns  
+        if col_lower.endswith('id') or col_lower.startswith('id'):
+            return 'bigint'
+            
+        # Date columns
+        if any(keyword in col_lower for keyword in ['date', 'time', 'created', 'updated', 'modified']):
+            return 'datetime'
+            
+        # Name/Description columns
+        if any(keyword in col_lower for keyword in ['name', 'description', 'address', 'city', 'state', 'specialty']):
+            return 'varchar'
+            
+        # Numeric columns (TRX, NRX, quantities, percentages)
+        if any(keyword in col_lower for keyword in ['trx', 'nrx', 'qty', 'share', 'count', 'calls', 'samples']):
+            return 'decimal'
+            
+        # Market share percentages
+        if 'share' in col_lower or 'pct' in col_lower or col_lower.endswith('%'):
+            return 'decimal'
+            
+        # Default fallback
+        return 'varchar'

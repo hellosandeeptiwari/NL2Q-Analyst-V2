@@ -72,6 +72,7 @@ PyYAML==6.0.1
 toml==0.10.2
 python-dateutil==2.8.2
 pytz==2024.1
+sqlparse==0.4.4
 
 # Pharmaceutical & Scientific Computing (Optional)
 # Uncomment if needed for pharma-specific features
