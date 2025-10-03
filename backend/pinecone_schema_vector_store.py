@@ -828,38 +828,41 @@ JOIN Data Type Compatibility:
             # Check if we should include row counts from environment settings
             skip_row_counts = self.SKIP_ROW_COUNTS
             
-            # Always get column information with proper Snowflake quoting
-            # Use current schema context instead of hardcoded values
-            qualified_table_name = f'"{table_name}"'
+            # FIXED: Use database adapter's get_table_schema method instead of hardcoded Snowflake DESCRIBE
+            # This works for all database types (Snowflake, Azure SQL, PostgreSQL, etc.)
+            print(f"🔍 Getting table schema for {table_name} using database adapter")
             columns_task = asyncio.create_task(
-                asyncio.to_thread(db_adapter.run, f"DESCRIBE TABLE {qualified_table_name}", False)
+                db_adapter.get_table_schema(table_name)
             )
             
-            # Conditionally get row count based on settings
+            # Conditionally get row count based on settings using database adapter
             count_task = None
             if not skip_row_counts:
                 count_task = asyncio.create_task(
-                    asyncio.to_thread(db_adapter.run, f"SELECT COUNT(*) FROM {qualified_table_name}", False)
+                    asyncio.to_thread(db_adapter.run, f"SELECT COUNT(*) FROM [{table_name}]", False)
                 )
             
-            columns_result = await columns_task
+            # get_table_schema returns a list of column names directly
+            columns_list = await columns_task
             count_result = None
             if count_task:
                 count_result = await count_task
             
             columns = {}
-            if not columns_result.error:
-                for row in columns_result.rows:
-                    col_name = row[0]
-                    col_type = row[1]
-                    nullable = row[2] == 'Y' if len(row) > 2 else False
+            if columns_list:  # columns_list is a simple list of column names
+                print(f"✅ Got {len(columns_list)} columns for {table_name}: {columns_list[:5]}...")
+                for col_name in columns_list:
+                    # Infer datatype from column name since we don't have detailed type info
+                    inferred_type = self._infer_datatype_from_column_name(col_name, table_name)
                     columns[col_name] = {
-                        "data_type": col_type, 
-                        "nullable": nullable, 
+                        "data_type": inferred_type, 
+                        "nullable": True,  # Default assumption
                         "description": None,
                         "is_primary_key": False,  # Unknown in basic mode
                         "foreign_key_ref": None   # Unknown in basic mode
                     }
+            else:
+                print(f"❌ No columns returned for {table_name}")
             
             # Get row count if enabled and query succeeded
             row_count = None

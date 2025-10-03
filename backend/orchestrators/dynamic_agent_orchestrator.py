@@ -308,7 +308,7 @@ class DynamicAgentOrchestrator:
             # Ensure db_connector is initialized
             if not self.db_connector:
                 from backend.main import get_adapter
-                self.db_connector = get_adapter("snowflake")
+                self.db_connector = get_adapter()  # ✅ Use DB_ENGINE from environment
                 
                 # Set database adapter in intelligent planner if available
                 if self.db_connector and self.intelligent_planner:
@@ -2320,9 +2320,18 @@ Be intelligent but concise. Focus on actionable database insights."""
                 print(f"🔄 Execution attempt {attempt}/{max_attempts}")
                 
                 try:
-                    result = await sql_runner.execute_query(sql_query, user_id=user_id)
+                    # 🔧 CRITICAL FIX: Add timeout to prevent hanging on complex JOINs
+                    print(f"⏰ Executing SQL with 30 second timeout...")
+                    result = await asyncio.wait_for(
+                        sql_runner.execute_query(sql_query, user_id=user_id),
+                        timeout=30.0
+                    )
                     
-                    if result and hasattr(result, 'success') and result.success:
+                    # Check for both success flag and actual execution errors
+                    execution_success = result and hasattr(result, 'success') and result.success
+                    has_error = hasattr(result, 'error') and result.error
+                    
+                    if execution_success and not has_error:
                         data = result.data if hasattr(result, 'data') and result.data is not None else []
                         
                         # 🎯 INTELLIGENT DATA RETRIEVAL STRATEGIES - Progressive optimization for 8/10 score
@@ -2441,14 +2450,50 @@ Be intelligent but concise. Focus on actionable database insights."""
                         }
                         
                     else:
-                        print(f"❌ SQL execution failed: {getattr(result, 'error', 'Unknown error')}")
-                        error_msg = str(getattr(result, 'error', 'Unknown SQL execution error'))
+                        # Handle both explicit errors and failed success status
+                        # Try multiple error attributes to get the actual error message
+                        error_msg = None
+                        if hasattr(result, 'error_message') and result.error_message:
+                            error_msg = str(result.error_message)
+                        elif hasattr(result, 'error') and result.error:
+                            error_msg = str(result.error)
+                        else:
+                            error_msg = 'Unknown SQL execution error'
                         
-                        if attempt < max_attempts:
-                            # Try LLM-based SQL error correction
+                        print(f"❌ SQL execution failed: {error_msg}")
+                        print(f"🔍 DEBUG: result.success = {getattr(result, 'success', None)}")
+                        print(f"🔍 DEBUG: result.error_message = {getattr(result, 'error_message', None)}")
+                        print(f"🔍 DEBUG: result.error = {getattr(result, 'error', None)}")
+                        
+                        # Check for specific schema-related errors
+                        is_schema_error = any(phrase in error_msg.lower() for phrase in [
+                            'invalid object name',
+                            'object does not exist', 
+                            'table not found',
+                            'schema error'
+                        ])
+                        
+                        # Check for column-related errors that need intelligent correction
+                        is_column_error = any(phrase in error_msg.lower() for phrase in [
+                            'invalid column name',
+                            'column does not exist',
+                            'unknown column'
+                        ])
+                        
+                        if attempt < max_attempts and (is_schema_error or not execution_success):
+                            # Try LLM-based SQL error correction with enhanced error context
                             print(f"🔧 Attempting SQL error correction with LLM...")
                             try:
-                                corrected_sql = self._correct_sql_with_llm(sql_query, error_msg, inputs)
+                                # Extract full error details including stack trace
+                                full_error_details = {
+                                    "error_message": error_msg,
+                                    "error_type": type(getattr(result, 'error', Exception())).__name__ if hasattr(result, 'error') else "SQLExecutionError",
+                                    "sql_query": sql_query,
+                                    "attempt_number": attempt,
+                                    "stack_trace": str(getattr(result, 'error', '')) if hasattr(result, 'error') else error_msg
+                                }
+                                
+                                corrected_sql = await self._correct_sql_with_llm(sql_query, full_error_details, inputs)
                                 if corrected_sql and corrected_sql != sql_query:
                                     print(f"🎯 LLM provided corrected SQL: {corrected_sql[:100]}...")
                                     sql_query = corrected_sql  # Use corrected SQL for next attempt
@@ -2466,6 +2511,32 @@ Be intelligent but concise. Focus on actionable database insights."""
                                 "status": "failed"
                             }
                             
+                except asyncio.TimeoutError:
+                    print(f"⏰ SQL execution timed out after 30 seconds (attempt {attempt}/{max_attempts})")
+                    print(f"🔍 Likely cause: Complex JOINs creating performance issues")
+                    if attempt < max_attempts:
+                        print(f"🔄 Trying simplified fallback on next attempt...")
+                        # For next attempt, try to use a simpler query without complex JOINs
+                        if 'JOIN' in sql_query.upper():
+                            # Extract first table and try single table query
+                            tables = []
+                            for line in sql_query.split('\n'):
+                                if 'FROM' in line.upper():
+                                    table_match = line.split('FROM')[-1].strip().split()[0]
+                                    if table_match:
+                                        tables.append(table_match.replace('[', '').replace(']', ''))
+                                        break
+                            if tables:
+                                simple_sql = f"SELECT TOP 10 * FROM [{tables[0]}]"
+                                print(f"🔧 Fallback to simple query: {simple_sql}")
+                                sql_query = simple_sql
+                        continue
+                    else:
+                        return {
+                            "error": f"Query execution timed out after 30 seconds. Complex JOINs may be causing performance issues.",
+                            "sql_query": sql_query,
+                            "status": "failed"
+                        }
                 except Exception as e:
                     print(f"⚠️ Attempt {attempt} exception: {e}")
                     if attempt < max_attempts:
@@ -2483,14 +2554,34 @@ Be intelligent but concise. Focus on actionable database insights."""
     
     def _find_sql_query(self, inputs: Dict) -> str:
         """Find SQL query from any previous task result"""
+        print(f"🔍 DEBUG: Searching for SQL in {len(inputs)} inputs")
+        print(f"🔍 DEBUG: Input keys: {list(inputs.keys())}")
+        
         # Look through all previous results for SQL
         for key, value in inputs.items():
+            print(f"🔍 DEBUG: Checking key '{key}', type: {type(value)}")
             if isinstance(value, dict):
+                print(f"🔍 DEBUG: Dict keys in '{key}': {list(value.keys())}")
+                
                 # Direct SQL query field
                 if "sql_query" in value:
                     sql = value["sql_query"]
                     if sql and isinstance(sql, str):
                         print(f"🎯 Found SQL in task {key}: {sql[:50]}...")
+                        return sql
+                
+                # Look for 'sql' field as well
+                if "sql" in value:
+                    sql = value["sql"]
+                    if sql and isinstance(sql, str):
+                        print(f"🎯 Found SQL field in task {key}: {sql[:50]}...")
+                        return sql
+                
+                # Look for 'sql_attempted' field (query generation stores here)
+                if "sql_attempted" in value:
+                    sql = value["sql_attempted"]
+                    if sql and isinstance(sql, str):
+                        print(f"🎯 Found SQL in sql_attempted field of {key}: {sql[:50]}...")
                         return sql
                 
                 # Could also be in nested results
@@ -2500,116 +2591,299 @@ Be intelligent but concise. Focus on actionable database insights."""
                         if sql and isinstance(sql, str):
                             print(f"🎯 Found SQL in nested results of {key}")
                             return sql
+                    if "sql" in value["results"]:
+                        sql = value["results"]["sql"]
+                        if sql and isinstance(sql, str):
+                            print(f"🎯 Found SQL in nested results of {key}")
+                            return sql
         
         # Check if SQL was passed directly in inputs
         if "sql_query" in inputs:
             return inputs["sql_query"]
+        if "sql" in inputs:
+            return inputs["sql"]
         
         print(f"❌ No SQL query found in previous tasks")
         return ""
 
-    def _correct_sql_with_llm(self, sql_query: str, error_message: str, inputs: Dict) -> str:
-        """Use LLM to correct SQL syntax errors"""
+    async def _correct_sql_with_llm(self, sql_query: str, error_details: Dict, inputs: Dict) -> str:
+        """Use LLM to correct SQL syntax errors with enhanced error context and schema metadata"""
         try:
-            print(f"🔧 Attempting SQL correction with LLM for error: {error_message}")
+            error_message = error_details.get("error_message", "Unknown error")
+            error_type = error_details.get("error_type", "SQLError")
+            stack_trace = error_details.get("stack_trace", error_message)
+            attempt_number = error_details.get("attempt_number", 1)
+            
+            print(f"🔧 Attempting SQL correction with LLM for {error_type}: {error_message}")
+            print(f"🔧 Attempt #{attempt_number} - Full error context: {stack_trace}")
+            
+            # Quick fix for schema prefix errors before going to LLM
+            if "invalid object name" in error_message.lower() and "dbo." in sql_query:
+                print(f"🎯 QUICK FIX: Detected schema prefix error - removing 'dbo.' prefix")
+                corrected_sql = sql_query.replace('[dbo.', '[').replace('dbo.', '')
+                print(f"✅ Quick corrected SQL: {corrected_sql[:200]}...")
+                return corrected_sql
             
             # Get the original query context
-            original_query = inputs.get("query", "")
+            original_query = inputs.get("original_query", inputs.get("query", ""))
             
             # Detect database type dynamically
-            db_type = os.getenv("DB_ENGINE", "snowflake").lower()
+            db_type = os.getenv("DB_ENGINE", "azure").lower()  # Default to azure based on current setup
             if "snowflake" in db_type:
                 db_engine = "snowflake"
                 db_name = os.getenv("SNOWFLAKE_DATABASE", "HEALTHCARE_PRICING_ANALYTICS_SAMPLE")
                 schema_name = os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES")
                 table_format = f'"{db_name}"."{schema_name}"."TABLE_NAME"'
+                syntax_rules = "Use LIMIT for row limiting, STRING functions, and standard SQL syntax"
             elif "postgres" in db_type:
                 db_engine = "postgresql" 
                 schema_name = os.getenv("POSTGRES_SCHEMA", "public")
                 table_format = f'"{schema_name}"."table_name"'
                 db_name = os.getenv("POSTGRES_DATABASE", "analytics")
+                syntax_rules = "Use LIMIT for row limiting, standard PostgreSQL functions"
             elif "azure" in db_type or "sql" in db_type:
                 db_engine = "azure-sql"
                 schema_name = os.getenv("AZURE_SCHEMA", "dbo")
                 table_format = f'[{schema_name}].[table_name]'
                 db_name = os.getenv("AZURE_DATABASE", "analytics")
+                syntax_rules = "CRITICAL: Use TOP N instead of LIMIT, [brackets] for column names, no LIMIT clause supported!"
             else:
-                # Default to snowflake
-                db_engine = "snowflake"
-                db_name = os.getenv("SNOWFLAKE_DATABASE", "HEALTHCARE_PRICING_ANALYTICS_SAMPLE")
-                schema_name = os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES")
-                table_format = f'"{db_name}"."{schema_name}"."TABLE_NAME"'
+                # Default to azure based on current system
+                db_engine = "azure-sql"
+                schema_name = "dbo"
+                table_format = f'[dbo].[table_name]'
+                db_name = "analytics"
+                syntax_rules = "CRITICAL: Use TOP N instead of LIMIT, [brackets] for column names, no LIMIT clause supported!"
             
-            # Extract schema information from previous steps for context
+            # Enhanced error context extraction - get full stack trace if available
+            full_error_context = error_message
+            error_type = "Unknown Error"
+            
+            # Extract detailed error information from the SQL result
+            if "ambiguous" in error_message.lower():
+                error_type = "Column Ambiguity Error"
+                full_error_context += "\n\n� COLUMN AMBIGUITY DETECTED: Multiple tables contain the same column name. You MUST use table aliases!"
+            elif "invalid column" in error_message.lower() or "column" in error_message.lower() and "not" in error_message.lower():
+                error_type = "Invalid Column Error"
+                full_error_context += "\n\n🚨 COLUMN NOT FOUND: Column doesn't exist in the specified table. Check spelling and table structure!"
+            elif "syntax" in error_message.lower():
+                error_type = "SQL Syntax Error"
+                full_error_context += "\n\n🚨 SYNTAX ERROR: SQL syntax is incorrect for Azure SQL Server!"
+            elif "join" in error_message.lower():
+                error_type = "JOIN Error"
+                full_error_context += "\n\n� JOIN ERROR: Problem with table relationships or JOIN syntax!"
+            elif "limit" in error_message.lower():
+                error_type = "LIMIT Syntax Error"
+                full_error_context += "\n\n🚨 AZURE SQL LIMIT ERROR: Use TOP N instead of LIMIT N!"
+            
+            # Extract comprehensive schema information from previous steps
             schema_info = ""
+            schema_metadata = {}
             print(f"🔍 DEBUG - Available input keys: {list(inputs.keys())}")
             
-            # Try multiple possible schema locations
+            # Try multiple possible schema locations with enhanced extraction
             schema_data = None
-            if "2_schema_analysis" in inputs:
-                schema_data = inputs["2_schema_analysis"]
-                print(f"🔍 DEBUG - Found 2_schema_analysis")
-            elif "results" in inputs and "2_schema_analysis" in inputs["results"]:
-                schema_data = inputs["results"]["2_schema_analysis"]
-                print(f"🔍 DEBUG - Found schema in results.2_schema_analysis")
-            elif "2_semantic_understanding" in inputs:
-                schema_data = inputs["2_semantic_understanding"]
-                print(f"🔍 DEBUG - Found 2_semantic_understanding")
-            elif "results" in inputs and "2_semantic_understanding" in inputs["results"]:
-                schema_data = inputs["results"]["2_semantic_understanding"]
-                print(f"🔍 DEBUG - Found schema in results.2_semantic_understanding")
+            for schema_key in ["2_schema_analysis", "2_semantic_understanding", "1_schema_discovery", "semantic_understanding", "schema_discovery"]:
+                if schema_key in inputs:
+                    schema_data = inputs[schema_key]
+                    print(f"🔍 DEBUG - Found {schema_key}")
+                    break
+                elif "results" in inputs and schema_key in inputs["results"]:
+                    schema_data = inputs["results"][schema_key]
+                    print(f"🔍 DEBUG - Found schema in results.{schema_key}")
+                    break
             
             if schema_data and "schema_intelligence" in schema_data:
                 intelligence = schema_data["schema_intelligence"]
                 print(f"🔍 DEBUG - Found schema intelligence with keys: {list(intelligence.keys())}")
                 
-                # Add table schemas
+                # Add comprehensive table schemas with enhanced metadata
                 if "tables" in intelligence:
-                    schema_info += "\n**Available Tables and Columns:**\n"
+                    schema_info += "\n**📊 COMPLETE TABLE SCHEMAS (Use for accurate SQL generation):**\n"
+                    schema_info += "=" * 80 + "\n"
+                    
+                    # Track column ambiguities for better error correction
+                    column_to_tables = {}
+                    
                     for table_name, table_info in intelligence["tables"].items():
-                        schema_info += f"\n{table_name}:\n"
+                        schema_info += f"\n🔹 **{table_name}** ({table_info.get('row_count', 'Unknown')} rows)\n"
+                        schema_info += f"   Description: {table_info.get('description', 'N/A')}\n"
+                        
                         if "columns" in table_info:
+                            schema_info += "   📋 **COLUMNS (ONLY use these exact names!):**\n"
                             for col in table_info["columns"]:
                                 col_name = col.get("name", "")
                                 col_type = col.get("data_type", "")
                                 description = col.get("description", "")
-                                # Highlight data types prominently for join compatibility
-                                type_warning = ""
-                                if col_type.upper() in ["NUMBER", "DECIMAL", "INTEGER", "BIGINT", "FLOAT"]:
-                                    type_warning = " 🔢 [NUMERIC - only join with other numeric fields]"
-                                elif col_type.upper() in ["VARCHAR", "TEXT", "STRING", "CHAR"]:
-                                    type_warning = " 📝 [TEXT - only join with other text fields]"
                                 
-                                schema_info += f"  - {col_name} 🏷️ {col_type.upper()}{type_warning}"
+                                # Track column ambiguities
+                                if col_name not in column_to_tables:
+                                    column_to_tables[col_name] = []
+                                column_to_tables[col_name].append(table_name)
+                                
+                                # Enhanced type information with JOIN guidance
+                                type_info = ""
+                                if col_type.upper() in ["NUMBER", "DECIMAL", "INTEGER", "BIGINT", "FLOAT", "INT"]:
+                                    type_info = f" 🔢 [{col_type.upper()}] (NUMERIC - can JOIN with other numeric)"
+                                elif col_type.upper() in ["VARCHAR", "TEXT", "STRING", "CHAR", "NVARCHAR"]:
+                                    type_info = f" 📝 [{col_type.upper()}] (TEXT - can JOIN with other text)"
+                                elif col_type.upper() in ["DATE", "DATETIME", "TIMESTAMP"]:
+                                    type_info = f" 📅 [{col_type.upper()}] (DATE - can JOIN with other dates)"
+                                else:
+                                    type_info = f" ❓ [{col_type.upper()}]"
+                                
+                                schema_info += f"      • {col_name}{type_info}"
                                 if description:
                                     schema_info += f" - {description}"
                                 schema_info += "\n"
-                    print(f"🔍 DEBUG - Generated schema info: {len(schema_info)} chars")
+                        
+                        # Add sample values if available
+                        if "sample_data" in table_info:
+                            schema_info += f"   📈 **SAMPLE VALUES:**\n"
+                            samples = table_info["sample_data"][:3]  # Show first 3 samples
+                            for sample in samples:
+                                schema_info += f"      Example: {str(sample)[:100]}...\n"
+                        
+                        schema_info += "\n"
+                    
+                    # Add critical ambiguity warnings
+                    ambiguous_columns = {col: tables for col, tables in column_to_tables.items() if len(tables) > 1}
+                    if ambiguous_columns:
+                        schema_info += "\n🚨 **CRITICAL: AMBIGUOUS COLUMNS (MUST use table aliases!):**\n"
+                        schema_info += "-" * 60 + "\n"
+                        for col_name, table_list in list(ambiguous_columns.items())[:10]:  # Show top 10
+                            schema_info += f"   ⚠️  '{col_name}' appears in: {', '.join(table_list)}\n"
+                            schema_info += f"      ✅ CORRECT: SELECT t1.[{col_name}], t2.[OtherColumn] FROM {table_list[0]} t1 JOIN {table_list[1]} t2...\n"
+                            schema_info += f"      ❌ WRONG:   SELECT [{col_name}] FROM {table_list[0]} JOIN {table_list[1]}...\n\n"
+                    
+                    # Add join relationship hints if available
+                    if "potential_joins" in intelligence:
+                        schema_info += "\n🔗 **RECOMMENDED JOIN RELATIONSHIPS:**\n"
+                        joins = intelligence["potential_joins"][:5]  # Show top 5 joins
+                        for join in joins:
+                            schema_info += f"   {join.get('table1', '')} ⟷ {join.get('table2', '')} ON {join.get('columns', [])}\n"
+                    
+                    schema_metadata = {
+                        "table_count": len(intelligence["tables"]),
+                        "ambiguous_columns": len(ambiguous_columns),
+                        "total_columns": sum(len(t.get("columns", [])) for t in intelligence["tables"].values())
+                    }
+                    
+                    print(f"🔍 DEBUG - Enhanced schema info: {len(schema_info)} chars, {schema_metadata}")
                 else:
                     print(f"🔍 DEBUG - No 'tables' key found in intelligence")
             else:
                 print(f"🔍 DEBUG - No schema intelligence found")
-                # Fallback: Look for any available context about tables/columns
-                for key, value in inputs.items():
-                    if isinstance(value, dict) and any(table_key in str(value).lower() for table_key in ['metrics', 'provider', 'overall_pct']):
-                        schema_info += f"\n**Context from {key}:**\n{str(value)[:300]}...\n"
+                # CRITICAL FALLBACK: Get real column names from database adapter
+                print(f"🔍 DEBUG - Attempting direct database schema query as fallback")
+                try:
+                    # Extract table names from the failed SQL to get their real columns
+                    failed_tables = []
+                    sql_lower = sql_query.lower()
+                    if 'from' in sql_lower:
+                        # Extract table names from SQL
+                        import re
+                        # Match table names after FROM and JOIN
+                        table_patterns = [
+                            r'from\s+\[?(\w+)\]?',
+                            r'join\s+\[?(\w+)\]?',
+                            r'reporting_bi_\w+'
+                        ]
+                        for pattern in table_patterns:
+                            matches = re.findall(pattern, sql_query, re.IGNORECASE)
+                            failed_tables.extend(matches)
+                    
+                    # Default to the common tables if extraction fails
+                    if not failed_tables:
+                        failed_tables = ['Reporting_BI_NGD', 'Reporting_BI_PrescriberOverview', 'Reporting_BI_PrescriberProfile']
+                    
+                    # Get database adapter and query real columns
+                    from backend.db.engine import get_adapter
+                    db_adapter = get_adapter()
+                    print(f"🔍 DEBUG - Querying real columns for tables: {failed_tables}")
+                    
+                    schema_info += "\n**🆘 EMERGENCY SCHEMA FALLBACK (Real Database Columns):**\n"
+                    schema_info += "=" * 80 + "\n"
+                    
+                    for table_name in failed_tables[:3]:  # Limit to 3 tables
+                        try:
+                            real_columns = await db_adapter.get_table_schema(table_name)
+                            if real_columns:
+                                schema_info += f"\n🔹 **{table_name}** - REAL COLUMNS FROM DATABASE:\n"
+                                schema_info += "   📋 **EXACT COLUMN NAMES (use these!):**\n"
+                                for i, col in enumerate(real_columns[:20]):  # Show first 20 columns
+                                    schema_info += f"      • {col}\n"
+                                if len(real_columns) > 20:
+                                    schema_info += f"      ... and {len(real_columns) - 20} more columns\n"
+                                
+                                # 🔧 INTELLIGENT COLUMN SUGGESTIONS for common business terms
+                                schema_info += "\n   💡 **SMART COLUMN SUGGESTIONS:**\n"
+                                performance_cols = [col for col in real_columns if any(term in str(col).get('name', '').lower() if isinstance(col, dict) else str(col).lower() 
+                                                   for term in ['trx', 'nrx', 'transaction', 'prescription', 'calls', 'volume', 'count', 'qty'])]
+                                if performance_cols:
+                                    schema_info += f"      🎯 For 'performance': Use {performance_cols[:3]}\n"
+                                
+                                territory_cols = [col for col in real_columns if any(term in str(col).get('name', '').lower() if isinstance(col, dict) else str(col).lower() 
+                                                 for term in ['territory', 'region', 'area'])]
+                                if territory_cols:
+                                    schema_info += f"      🌍 For 'territory': Use {territory_cols[:2]}\n"
+                                
+                                rep_cols = [col for col in real_columns if any(term in str(col).get('name', '').lower() if isinstance(col, dict) else str(col).lower() 
+                                           for term in ['rep', 'prescriber', 'representative', 'name'])]
+                                if rep_cols:
+                                    schema_info += f"      👤 For 'rep names': Use {rep_cols[:2]}\n"
+                                
+                                schema_info += "\n"
+                                print(f"✅ DEBUG - Got {len(real_columns)} real columns for {table_name}")
+                            else:
+                                print(f"❌ DEBUG - No columns found for {table_name}")
+                        except Exception as e:
+                            print(f"❌ DEBUG - Error getting columns for {table_name}: {e}")
+                            continue
+                
+                except Exception as e:
+                    print(f"❌ DEBUG - Direct database schema query failed: {e}")
+                    # Enhanced fallback: Extract any available schema context
+                    for key, value in inputs.items():
+                        if isinstance(value, dict):
+                            # Look for any table/column information
+                            value_str = str(value).lower()
+                            if any(indicator in value_str for indicator in ['table', 'column', 'schema', 'metadata']):
+                                schema_info += f"\n**Available Context from {key}:**\n{str(value)[:500]}...\n\n"
             
-            # Create enhanced correction prompt with schema context
-            correction_prompt = f"""Fix this SQL query error.
+            # Create comprehensive correction prompt with full error context and schema metadata
+            correction_prompt = f"""🔧 **SQL ERROR CORRECTION TASK**
 
-**User Query:** {original_query}
+**🎯 ORIGINAL USER REQUEST:**
+{original_query}
 
-**Broken SQL:**
+**❌ FAILED SQL QUERY:**
 ```sql
 {sql_query}
 ```
 
-**Error:** {error_message}
+**🚨 ERROR DETAILS:**
+Type: {error_type}
+Message: {full_error_context}
 
-**Database:** {db_engine.title()}, tables use {table_format} format
+**💾 DATABASE SYSTEM:** {db_engine.title()}
+**📋 SYNTAX RULES:** {syntax_rules}
+**🏷️  TABLE FORMAT:** {table_format}
+
 {schema_info}
 
-Return only the corrected SQL query."""
+**🎯 CORRECTION REQUIREMENTS:**
+1. Fix the specific error identified above
+2. Use ONLY the exact column names listed in the schema
+3. For ambiguous columns, ALWAYS use table aliases (e.g., t1.[ColumnName])
+4. Follow {db_engine.title()} syntax rules strictly
+5. Ensure the query will execute without errors
+6. Maintain the original intent of the user's request
+7. 🚨 CRITICAL: If looking for 'performance' data, use actual metrics like TRX, NRX, calls, etc.
+8. 🚨 CRITICAL: Column 'PerformanceMetric' does NOT exist - use suggested performance columns above
+
+**📤 RESPONSE FORMAT:**
+Return ONLY the corrected SQL query - no explanations, no markdown, just executable SQL."""
 
             print(f"🔍 DEBUG - Final schema info length: {len(schema_info)} chars")
             if schema_info:
@@ -2632,14 +2906,38 @@ Return only the corrected SQL query."""
                 print(correction_prompt)
                 print("=" * 80)
                 
+                system_prompt = f"""You are a senior SQL database expert specializing in {db_engine.title()} error correction and optimization.
+
+**CRITICAL EXPERTISE AREAS:**
+- {db_engine.title()} syntax rules and limitations
+- Column ambiguity resolution using table aliases
+- JOIN optimization and relationship analysis  
+- Database-specific function usage and constraints
+
+**ERROR CORRECTION PROTOCOL:**
+1. Analyze the specific error type and root cause
+2. Use the provided schema metadata to identify correct column names and types
+3. Apply proper table aliasing for ambiguous columns
+4. Ensure {db_engine.title()} syntax compliance (e.g., TOP vs LIMIT)
+5. Verify all columns exist in their specified tables
+6. Maintain query performance and logical correctness
+
+**RESPONSE REQUIREMENTS:**
+- Return ONLY executable SQL - no explanations or markdown
+- Use exact column names from the schema
+- Apply consistent table aliases for multi-table queries
+- Ensure error-free execution on {db_engine.title()}
+
+You have access to complete schema metadata and error context. Use this information to generate a perfect correction."""
+
                 response = client.chat.completions.create(
                     model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
                     messages=[
-                        {"role": "system", "content": f"You are an expert SQL developer for {db_engine.title()} databases. You MUST strictly adhere to {db_engine.title()} syntax rules and limitations. Fix the SQL error by generating compliant {db_engine.title()} SQL that will execute without errors. Return only the corrected SQL."},
+                        {"role": "system", "content": system_prompt},
                         {"role": "user", "content": correction_prompt}
                     ],
-                    max_completion_tokens=1000,
-                    temperature=0.1
+                    max_completion_tokens=1500,  # Increased for complex corrections
+                    temperature=0.0  # Deterministic for error correction
                 )
                 
                 corrected_sql = response.choices[0].message.content.strip()

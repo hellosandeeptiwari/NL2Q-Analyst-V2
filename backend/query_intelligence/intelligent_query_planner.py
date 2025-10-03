@@ -57,7 +57,7 @@ class IntelligentQueryPlanner:
             
             # Extract semantic requirements from query
             # Extract semantic requirements from query
-            query_semantics = self._extract_query_semantics(query)
+            query_semantics = self._extract_query_semantics(query, available_tables)
             
             # Analyze all available tables for semantic matches
             table_analysis = self._analyze_table_relevance(query_semantics, available_tables)
@@ -77,7 +77,7 @@ class IntelligentQueryPlanner:
             # Fallback to conservative approach
             return self._create_fallback_plan(available_tables)
     
-    def _extract_query_semantics(self, query: str) -> Dict[str, Any]:
+    def _extract_query_semantics(self, query: str, available_tables: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Extract semantic meaning from natural language query"""
         query_lower = query.lower()
         
@@ -118,11 +118,11 @@ class IntelligentQueryPlanner:
             semantics['aggregations'].append('ranking')
         
         # JOIN requirement analysis - this is the KEY intelligence
-        semantics.update(self._analyze_join_requirements(query_lower))
+        semantics.update(self._analyze_join_requirements(query_lower, available_tables))
         
         return semantics
     
-    def _analyze_join_requirements(self, query_lower: str) -> Dict[str, Any]:
+    def _analyze_join_requirements(self, query_lower: str, available_tables: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Intelligently determine if JOIN is actually required"""
         join_analysis = {
             'requires_join': False,
@@ -147,33 +147,258 @@ class IntelligentQueryPlanner:
             print(f"🎯 INTELLIGENCE: Single table sufficient - detected pattern in query")
             return join_analysis
         
-        # Patterns that explicitly require relationships/joins
-        join_required_patterns = [
-            ('with their', 'requires related data'),
-            ('and their', 'requires related data'),  
-            ('by specialty', 'needs specialty from profile table'),
-            ('with details', 'requires detailed information'),
-            ('analysis by', 'requires cross-table analysis'),
-            ('compared to', 'requires comparison across tables'),
-            ('performance metrics by', 'requires metrics and dimensions'),
-            ('breakdown by', 'requires dimensional breakdown')
-        ]
-        
-        for pattern, reason in join_required_patterns:
-            if pattern in query_lower:
-                join_analysis['requires_join'] = True
-                join_analysis['join_reasons'].append(reason)
-                print(f"🎯 INTELLIGENCE: JOIN required - {reason}")
-        
-        # If no explicit join reasons found, default to single table for simple queries
-        if not join_analysis['requires_join'] and not join_analysis['single_table_sufficient']:
-            # Simple queries default to single table
-            simple_query_indicators = ['show', 'list', 'get', 'find', 'display']
-            if any(word in query_lower for word in simple_query_indicators):
-                join_analysis['single_table_sufficient'] = True
-                print(f"🎯 INTELLIGENCE: Defaulting to single table for simple query")
+        # Dynamic analysis: Check if query requests data that spans multiple tables
+        join_analysis.update(self._analyze_cross_table_requirements(query_lower, available_tables))
         
         return join_analysis
+    
+    def _analyze_cross_table_requirements(self, query_lower: str, available_tables: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Schema-driven analysis: Check if requested data can be satisfied by a single table
+        or requires JOINs based on actual column availability across tables
+        """
+        cross_table_analysis = {
+            'requires_join': False,
+            'join_reasons': [],
+            'single_table_sufficient': False,
+            'missing_columns': [],
+            'table_coverage': {}
+        }
+        
+        if not available_tables:
+            return cross_table_analysis
+            
+        # Extract all query terms that could be column names or data requests
+        query_terms = self._extract_data_requirements(query_lower)
+        
+        # Build column-to-table mapping from available schema
+        column_mapping = self._build_column_mapping(available_tables)
+        
+        # Check if all requested data can be found in any single table
+        table_coverage = {}
+        for table_info in available_tables:
+            table_name = table_info.get('table_name', table_info.get('name', 'unknown'))
+            columns = table_info.get('columns', [])
+            
+            # Count how many query requirements this table can satisfy
+            satisfied_requirements = []
+            for term in query_terms:
+                if self._can_table_satisfy_requirement(term, columns, table_name):
+                    satisfied_requirements.append(term)
+            
+            table_coverage[table_name] = {
+                'satisfied_count': len(satisfied_requirements),
+                'satisfied_requirements': satisfied_requirements,
+                'coverage_percentage': len(satisfied_requirements) / len(query_terms) if query_terms else 0
+            }
+        
+        # Determine if JOIN is needed based on coverage analysis
+        best_single_table_coverage = max(table_coverage.values(), key=lambda x: x['coverage_percentage'])['coverage_percentage'] if table_coverage else 0
+        
+        if best_single_table_coverage >= 0.8:  # 80% of requirements can be met by single table
+            cross_table_analysis['single_table_sufficient'] = True
+            cross_table_analysis['join_reasons'].append(f"Single table can satisfy {best_single_table_coverage:.0%} of data requirements")
+        else:
+            cross_table_analysis['requires_join'] = True
+            cross_table_analysis['join_reasons'].append(f"No single table satisfies requirements (best coverage: {best_single_table_coverage:.0%})")
+            
+            # Find which requirements are missing from best table
+            best_table = max(table_coverage.items(), key=lambda x: x[1]['coverage_percentage'])
+            all_satisfied = set()
+            for table_name, coverage in table_coverage.items():
+                all_satisfied.update(coverage['satisfied_requirements'])
+            
+            missing_requirements = set(query_terms) - all_satisfied
+            cross_table_analysis['missing_columns'] = list(missing_requirements)
+        
+        cross_table_analysis['table_coverage'] = table_coverage
+        return cross_table_analysis
+    
+    def _extract_data_requirements(self, query_lower: str) -> List[str]:
+        """Extract potential data requirements from natural language query"""
+        import re
+        
+        # Extract meaningful terms that could indicate data needs
+        data_terms = []
+        
+        # Extract noun phrases and keywords
+        words = query_lower.split()
+        
+        # Look for specific data mentions
+        data_indicators = [
+            r'rep\s+name[s]?', r'representative\s+name[s]?', 
+            r'account\s+name[s]?', r'territory\s+name[s]?',
+            r'prescriber\s+name[s]?', r'specialty', r'region',
+            r'performance', r'activity', r'prescription[s]?',
+            r'call[s]?', r'visit[s]?', r'sample[s]?'
+        ]
+        
+        for pattern in data_indicators:
+            matches = re.findall(pattern, query_lower)
+            data_terms.extend(matches)
+        
+        # Add individual meaningful words
+        meaningful_words = [w for w in words if len(w) > 3 and w not in ['show', 'list', 'get', 'find', 'display', 'where', 'with', 'have', 'good', 'lots', 'many', 'include']]
+        data_terms.extend(meaningful_words)
+        
+        return list(set(data_terms))  # Remove duplicates
+    
+    def _build_column_mapping(self, available_tables: List[Dict[str, Any]]) -> Dict[str, List[str]]:
+        """Build mapping of column concepts to tables that contain them"""
+        column_mapping = {}
+        
+        for table_info in available_tables:
+            table_name = table_info.get('table_name', table_info.get('name', 'unknown'))
+            columns = table_info.get('columns', [])
+            
+            # Create concept mappings for each column
+            for column in columns:
+                # Extract semantic concepts from column names
+                concepts = self._extract_column_concepts(column)
+                for concept in concepts:
+                    if concept not in column_mapping:
+                        column_mapping[concept] = []
+                    column_mapping[concept].append(table_name)
+        
+        return column_mapping
+    
+    def _extract_column_concepts(self, column_name: str) -> List[str]:
+        """Extract semantic concepts from a column name using NLP techniques"""
+        import re
+        from difflib import SequenceMatcher
+        
+        concepts = []
+        column_lower = column_name.lower().strip()
+        
+        # Direct matches
+        concepts.append(column_lower)
+        
+        # Break down compound column names
+        parts = re.split(r'[_\s\(\)]+', column_lower)
+        concepts.extend([part for part in parts if len(part) > 1])
+        
+        # Extract root words and semantic variants
+        concepts.extend(self._generate_semantic_variants(column_lower))
+        
+        return list(set([c for c in concepts if c]))  # Remove empty strings
+    
+    def _generate_semantic_variants(self, term: str) -> List[str]:
+        """Generate semantic variants of a term using linguistic rules"""
+        variants = []
+        
+        # Common business/medical abbreviations and expansions
+        abbreviation_expansions = {
+            'trx': ['transaction', 'prescription', 'rx'],
+            'nrx': ['new_prescription', 'new_rx'],
+            'tqty': ['total_quantity', 'quantity'],
+            'nqty': ['new_quantity'],
+            'pdrp': ['patient_direct_response_program'],
+            'qtd': ['quarter_to_date'],
+            'stly': ['same_time_last_year'],
+            'bi': ['business_intelligence'],
+            'ngd': ['new_growth_data']
+        }
+        
+        # Check if term contains known abbreviations
+        for abbrev, expansions in abbreviation_expansions.items():
+            if abbrev in term:
+                variants.extend(expansions)
+                # Also add the term with abbreviation replaced
+                for expansion in expansions:
+                    variants.append(term.replace(abbrev, expansion))
+        
+        # Generate linguistic variants
+        variants.extend(self._generate_linguistic_variants(term))
+        
+        return variants
+    
+    def _generate_linguistic_variants(self, term: str) -> List[str]:
+        """Generate linguistic variants (plurals, related forms)"""
+        variants = []
+        
+        # Plural/singular forms
+        if term.endswith('s') and len(term) > 3:
+            variants.append(term[:-1])  # Remove 's'
+        elif not term.endswith('s'):
+            variants.append(term + 's')  # Add 's'
+        
+        # Common word transformations
+        transformations = {
+            'name': ['id', 'identifier', 'description'],
+            'id': ['name', 'identifier', 'description'],
+            'flag': ['status', 'indicator', 'type'],
+            'date': ['time', 'timestamp', 'period'],
+            'count': ['number', 'quantity', 'total'],
+            'description': ['name', 'type', 'category']
+        }
+        
+        for root, related in transformations.items():
+            if root in term:
+                variants.extend(related)
+                # Also add variants with root replaced
+                for related_word in related:
+                    variants.append(term.replace(root, related_word))
+        
+        return variants
+    
+    def _can_table_satisfy_requirement(self, requirement: str, table_columns: List[str], table_name: str) -> bool:
+        """Check if a table can satisfy a specific data requirement using semantic matching"""
+        requirement_lower = requirement.lower().strip()
+        
+        # Generate semantic variants of the requirement
+        requirement_variants = self._generate_semantic_variants(requirement_lower)
+        requirement_variants.append(requirement_lower)
+        
+        for column in table_columns:
+            # Extract all semantic concepts from the column
+            column_concepts = self._extract_column_concepts(column)
+            
+            # Check for semantic matches
+            for req_variant in requirement_variants:
+                for concept in column_concepts:
+                    # Exact match
+                    if req_variant == concept:
+                        return True
+                    
+                    # Fuzzy semantic matching
+                    if self._semantic_similarity(req_variant, concept) > 0.8:
+                        return True
+                    
+                    # Substring matching with context
+                    if len(req_variant) > 3 and req_variant in concept:
+                        return True
+                    if len(concept) > 3 and concept in req_variant:
+                        return True
+        
+        return False
+    
+    def _semantic_similarity(self, term1: str, term2: str) -> float:
+        """Calculate semantic similarity between two terms"""
+        from difflib import SequenceMatcher
+        
+        if not term1 or not term2:
+            return 0.0
+        
+        # Basic string similarity
+        base_similarity = SequenceMatcher(None, term1, term2).ratio()
+        
+        # Boost similarity for known semantic relationships
+        semantic_relationships = [
+            (['rep', 'representative', 'sales'], 0.9),
+            (['prescriber', 'doctor', 'physician', 'provider'], 0.9),
+            (['prescription', 'trx', 'rx'], 0.9),
+            (['territory', 'region', 'area'], 0.85),
+            (['account', 'practice', 'hospital', 'clinic'], 0.85),
+            (['activity', 'call', 'visit', 'interaction'], 0.85),
+            (['specialty', 'specialization', 'discipline'], 0.85),
+            (['name', 'identifier', 'id', 'description'], 0.7)
+        ]
+        
+        for related_terms, boost_factor in semantic_relationships:
+            if term1 in related_terms and term2 in related_terms:
+                return boost_factor
+        
+        return base_similarity
     
     def _optimize_table_selection(self, confirmed_tables: List[str], query_semantics: Dict[str, Any], query: str) -> List[str]:
         """Intelligently optimize table selection based on query semantics"""
@@ -650,7 +875,9 @@ class IntelligentQueryPlanner:
             logger.info(f"🎯 Generating query with intelligent planning for: {query[:100]}...")
             
             # Step 1: Analyze semantic requirements first
-            query_semantics = self._extract_query_semantics(query)
+            # Get available tables from context for semantic analysis
+            available_tables = context.get('matched_tables', []) if isinstance(context, dict) else []
+            query_semantics = self._extract_query_semantics(query, available_tables)
             
             # Step 2: Intelligently filter tables based on query semantics
             optimized_tables = self._optimize_table_selection(confirmed_tables, query_semantics, query)
@@ -1141,6 +1368,11 @@ class IntelligentQueryPlanner:
             print(f"🔍 DEBUG: Calling schema_analyzer.analyze_schema_semantics with {len(table_metadata)} tables")
             print(f"🔍 DEBUG: Table metadata keys: {list(table_metadata.keys())}")
             
+            # 🔍 DEBUG: Check what columns are being passed to semantic analyzer
+            for table_name, metadata in table_metadata.items():
+                columns = metadata.get('columns', [])
+                print(f"🔍 DEBUG: {table_name} has {len(columns)} columns in table_metadata: {[col if isinstance(col, str) else col.get('name', str(col)) for col in columns[:3]]}")
+            
             semantic_analysis = await self.schema_analyzer.analyze_schema_semantics(table_metadata)
             
             # 🔧 CRITICAL DEBUG: Check the actual type returned by schema analyzer
@@ -1197,6 +1429,11 @@ class IntelligentQueryPlanner:
             print(f"🔍 DEBUG: Schema prompt length: {len(schema_prompt)} chars")
             print(f"🔍 DEBUG: Semantic analysis tables: {list(semantic_analysis['tables'].keys())}")
             
+            # 🔍 DEBUG: Check what columns are actually being sent to LLM
+            for table_name, table_analysis in semantic_analysis['tables'].items():
+                columns = table_analysis.get('columns', [])
+                print(f"🔍 DEBUG: {table_name} columns going to LLM: {[col.get('name') if isinstance(col, dict) else str(col) for col in columns[:5]]}")
+            
             # Create basic schema structure for the generator (it expects this format)
             basic_schema = {}
             for table_name, table_analysis in semantic_analysis['tables'].items():
@@ -1236,8 +1473,11 @@ class IntelligentQueryPlanner:
                 if retry_info.get('attempts', 1) > 1:
                     print(f"✅ SQL generation succeeded after {retry_info.get('attempts')} attempts with retry feedback")
             else:
-                # Fallback to direct generation if retry fails
-                print("⚠️ Retry generation failed, falling back to direct generation")
+                # Query planner retry is intentionally disabled - orchestrator handles all retries
+                if retry_result.get('let_orchestrator_retry'):
+                    print("💡 Query planner retry disabled - orchestrator will handle any needed corrections")
+                else:
+                    print("⚠️ Retry generation failed, falling back to direct generation")
                 sql_result = generate_sql(
                     natural_language=schema_prompt,
                     schema_snapshot=basic_schema,
@@ -2705,6 +2945,12 @@ INNER JOIN {secondary_table} t2 ON {join_condition};
         high_relevance_cols = []
         medium_relevance_cols = []
         
+        # 🔧 CRITICAL FIX: Add explicit table-column constraints for LLM
+        prompt_parts.append("🚨 CRITICAL TABLE-COLUMN CONSTRAINTS:")
+        prompt_parts.append("   ⚠️  ONLY use columns that exist in the specified table!")
+        prompt_parts.append("   ⚠️  Do NOT assume columns exist in tables where they don't!")
+        prompt_parts.append("")
+        
         for table_name, table_analysis in tables.items():
             prompt_parts.append(f"📋 TABLE: {table_name}")
             
@@ -2717,6 +2963,10 @@ INNER JOIN {secondary_table} t2 ON {join_condition};
             
             # 🎯 SEMANTIC COLUMN PRIORITIZATION
             columns = table_analysis.get('columns', [])
+            
+            # 🔧 CRITICAL: Show exactly which columns are available in this table
+            prompt_parts.append(f"  🔍 AVAILABLE COLUMNS IN {table_name} (ONLY use these!):")
+            
             for col in columns:
                 # 🔧 CRITICAL FIX: Handle both string and dict column formats with proper datatype discovery
                 if isinstance(col, str):
@@ -2821,6 +3071,94 @@ INNER JOIN {secondary_table} t2 ON {join_condition};
                     prompt_parts.append(f"  {domain.upper()}: Focus on {', '.join(entities[:3])} context")
             prompt_parts.append("")
         
+        # 🔧 CRITICAL: Add explicit column-table mapping for LLM constraint
+        prompt_parts.append("🚨 COLUMN-TABLE MAPPING (MUST FOLLOW EXACTLY):")
+        for table_name, table_analysis in tables.items():
+            columns = table_analysis.get('columns', [])
+            column_names = []
+            for col in columns:
+                if isinstance(col, str):
+                    column_names.append(col)
+                elif isinstance(col, dict):
+                    column_names.append(col.get('name', str(col)))
+                else:
+                    column_names.append(str(col))
+            
+            # Show only first 20 columns to avoid prompt overflow
+            if len(column_names) > 20:
+                shown_cols = column_names[:20]
+                prompt_parts.append(f"   {table_name}: {', '.join(shown_cols)}, ... ({len(column_names)} total)")
+            else:
+                prompt_parts.append(f"   {table_name}: {', '.join(column_names)}")
+        
+        prompt_parts.append("")
+        prompt_parts.append("🚨 CRITICAL SQL RULES - MUST FOLLOW:")
+        prompt_parts.append("   1. Use ONLY the columns listed above for each table!")
+        prompt_parts.append("   2. If a column doesn't exist in a table, use a JOIN to get it from the correct table!")
+        prompt_parts.append("   3. ALWAYS use table aliases (po, pp, ngd) for ALL columns in SELECT, GROUP BY, and ORDER BY!")
+        prompt_parts.append("   4. Example: SELECT t1.[TerritoryName], t2.[PrescriberName], t3.[TRX(C4 Wk)] FROM table1 t1 JOIN table2 t2...")
+        prompt_parts.append("   5. NEVER use bare column names like [TerritoryName] - ALWAYS qualify: po.[TerritoryName]!")
+        prompt_parts.append("   6. In GROUP BY and ORDER BY, use the same table-qualified names as in SELECT!")
+        prompt_parts.append("")
+        
+        # Add explicit ambiguous column mapping
+        prompt_parts.append("🔍 AMBIGUOUS COLUMNS - MUST QUALIFY:")
+        ambiguous_columns = {}
+        all_columns = {}
+        
+        # Build mapping of columns to tables
+        for table_name, table_analysis in tables.items():
+            columns = table_analysis.get('columns', [])
+            for col in columns:
+                col_name = col if isinstance(col, str) else col.get('name', str(col))
+                if col_name not in all_columns:
+                    all_columns[col_name] = []
+                all_columns[col_name].append(table_name)
+        
+        # Identify ambiguous columns (appear in multiple tables)
+        for col_name, table_list in all_columns.items():
+            if len(table_list) > 1:
+                ambiguous_columns[col_name] = table_list
+        
+        if ambiguous_columns:
+            for col_name, table_list in list(ambiguous_columns.items())[:10]:  # Show first 10
+                prompt_parts.append(f"   {col_name}: appears in {', '.join(table_list)} - MUST use table alias!")
+        
+        prompt_parts.append("")
+        
+        # Add practical examples with ACTUAL columns from schema (NO FAKE COLUMNS!)
+        prompt_parts.append("💡 EXAMPLE PATTERNS (ALWAYS QUALIFY COLUMNS):")
+        
+        # 🔧 CRITICAL FIX: Use ACTUAL columns from the schema, not fake examples
+        sample_columns = []
+        first_table = list(tables.keys())[0] if tables else None
+        if first_table:
+            first_table_columns = tables[first_table].get('columns', [])
+            for col in first_table_columns[:3]:  # Use first 3 real columns
+                col_name = col if isinstance(col, str) else col.get('name', str(col))
+                sample_columns.append(col_name)
+        
+        if sample_columns:
+            # Use REAL columns from the actual schema
+            col1, col2 = sample_columns[0], sample_columns[1] if len(sample_columns) > 1 else sample_columns[0]
+            prompt_parts.append(f"   • Single table: SELECT t1.[{col1}], t1.[{col2}] FROM {first_table} t1 WHERE t1.[{col1}] IS NOT NULL")
+            if len(sample_columns) > 2:
+                col3 = sample_columns[2]
+                prompt_parts.append(f"   • Multi-table: SELECT t1.[{col1}], t2.[{col2}] FROM table1 t1 JOIN table2 t2 ON t1.[{col1}] = t2.[{col1}]")
+                prompt_parts.append(f"   • Group by: SELECT t1.[{col1}], COUNT(*) FROM {first_table} t1 GROUP BY t1.[{col1}] ORDER BY t1.[{col1}]")
+            else:
+                prompt_parts.append(f"   • Multi-table: SELECT t1.[{col1}], t2.[{col2}] FROM table1 t1 JOIN table2 t2 ON t1.[{col1}] = t2.[{col1}]")
+                prompt_parts.append(f"   • Group by: SELECT t1.[{col1}], COUNT(*) FROM {first_table} t1 GROUP BY t1.[{col1}] ORDER BY t1.[{col1}]")
+        else:
+            # Fallback to generic examples if no columns available
+            prompt_parts.append("   • Single table: SELECT t1.[Column1], t1.[Column2] FROM table t1 WHERE t1.[Column1] IS NOT NULL")
+            prompt_parts.append("   • Multi-table: SELECT t1.[Column1], t2.[Column2] FROM table1 t1 JOIN table2 t2 ON t1.[Key] = t2.[Key]")
+            prompt_parts.append("   • Group by: SELECT t1.[Column1], COUNT(*) FROM table t1 GROUP BY t1.[Column1] ORDER BY t1.[Column1]")
+        
+        prompt_parts.append("   • ❌ WRONG: SELECT TerritoryName FROM... (ambiguous!)")
+        prompt_parts.append("   • ✅ RIGHT: SELECT t1.[TerritoryName] FROM... (qualified!)")
+        prompt_parts.append("")
+        
         prompt_parts.append("✅ AZURE SQL SERVER SYNTAX REQUIREMENTS:")
         prompt_parts.append("  • CRITICAL: Use TOP N instead of LIMIT N (e.g., 'SELECT TOP 10' not 'LIMIT 10')")
         prompt_parts.append("  • Use [brackets] for column names with spaces or special characters")
@@ -2847,16 +3185,16 @@ INNER JOIN {secondary_table} t2 ON {join_condition};
             # Initialize orchestrator for retry logic
             orchestrator = DynamicAgentOrchestrator()
             
-            # Use orchestrator's retry mechanism for SQL generation
-            print("🔄 Attempting SQL generation with retry logic...")
+            # DISABLED: Let orchestrator handle all retry logic instead of duplicating
+            print("🔄 Skipping query planner retry - letting orchestrator handle retries...")
+            print("💡 Orchestrator has enhanced retry logic with better error correction")
             
-            # Execute SQL generation with retry
-            retry_result = await orchestrator._generate_sql_with_retry(
-                query=query,
-                available_tables=confirmed_tables,
-                error_context="Intelligent query planner fallback",
-                use_deterministic=False
-            )
+            # Return failure to let orchestrator's retry system take over
+            return {
+                'status': 'failed', 
+                'error': 'Query planner retry disabled - using orchestrator retry system',
+                'let_orchestrator_retry': True
+            }
             
             if retry_result.get('status') == 'success':
                 return {

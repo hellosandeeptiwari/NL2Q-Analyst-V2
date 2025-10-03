@@ -238,6 +238,10 @@ class SchemaSemanticAnalyzer:
             table_name, columns, table_analysis["data_categories"]
         )
         
+        # 🔧 CRITICAL FIX: Preserve the actual columns in the analysis result
+        # This was missing and causing the LLM to receive empty column arrays!
+        table_analysis["columns"] = columns
+        
         return table_analysis
     
     def _infer_table_business_purpose(self, table_name: str) -> str:

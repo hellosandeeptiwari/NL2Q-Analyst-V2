@@ -1,543 +1,6 @@
 [
   {
     "nl": "summarize top 10 sales of tirosint sol by territory",
-    "sql": "The request to summarize the top 10 sales of \"tirosint sol\" by territory cannot be fulfilled directly because the provided catalog does not include any columns related to sales or specific product sales data. The only relevant columns available are from the `dbo.Reporting_BI_PrescriberOverview` table, which includes `TerritoryName`, `RegionName`, `PrescriberName`, `ProductGroupName`, and `TRX(C4 Wk)`.\n\nSince \"tirosint sol\" is not explicitly mentioned in the available columns, and there is no indication of how to filter or summarize sales data for this specific product, I cannot generate a valid SQL statement based on the provided information.\n\nIf you have more specific details or additional tables that include sales data for \"tirosint sol,\" please provide that information for further assistance.",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:16:13.972095",
-    "results": [],
-    "columns": [],
-    "row_count": 0
-  },
-  {
-    "nl": "show me top 5 prescriptions by region",
-    "sql": "To show the top 5 prescriptions by region using the available columns from the `dbo.Reporting_BI_PrescriberOverview` table, we can group the data by `RegionName` and sum the `TRX(C4 Wk)` metrics. However, since the request is to show the top prescriptions by region, we need to ensure we are correctly aggregating and ordering the data.\n\nHere is the SQL SELECT statement that fulfills the request:\n\n```sql\nSELECT TOP 5 [RegionName], SUM([TRX(C4 Wk)]) AS TotalPrescriptions\nFROM dbo.Reporting_BI_PrescriberOverview\nGROUP BY [RegionName]\nORDER BY TotalPrescriptions DESC\n```\n\nThis statement retrieves the top 5 regions based on the total number of prescriptions, summing the `TRX(C4 Wk)` for each region and ordering the results in descending order.",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:17:20.182429",
-    "results": [],
-    "columns": [],
-    "row_count": 0
-  },
-  {
-    "nl": "summarize top 10 sales of tirosint sol by territory",
-    "sql": "The request to summarize the top 10 sales of \"tirosint sol\" by territory cannot be directly mapped to the available columns in the provided catalog. The catalog does not include any information about specific products or sales figures related to \"tirosint sol.\" \n\nThe only relevant columns available are from the `dbo.Reporting_BI_PrescriberOverview` table, which includes `TerritoryName`, `RegionName`, `PrescriberName`, `ProductGroupName`, and `TRX(C4 Wk)`. However, there is no indication that \"tirosint sol\" is a value in the `ProductGroupName` column, nor is there a way to filter or summarize sales specifically for that product.\n\nIf you have additional information or a different product name that is present in the catalog, please provide that, and I can assist you further.",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:17:39.934562",
-    "results": [],
-    "columns": [],
-    "row_count": 0
-  },
-  {
-    "nl": "get all prescriber data",
-    "sql": "```sql\nSELECT TOP 100 PERCENT [dbo.Reporting_BI_PrescriberOverview].[TerritoryName], \n       [dbo.Reporting_BI_PrescriberOverview].[RegionName], \n       [dbo.Reporting_BI_PrescriberOverview].[PrescriberName], \n       [dbo.Reporting_BI_PrescriberOverview].[ProductGroupName], \n       [dbo.Reporting_BI_PrescriberOverview].[TRX(C4 Wk)]\nFROM [dbo].[Reporting_BI_PrescriberOverview]\n``` \n\nThis SQL statement retrieves all prescriber data from the `dbo.Reporting_BI_PrescriberOverview` table, including the specified columns. The use of `TOP 100 PERCENT` is to comply with the requirement for a single SELECT statement, although it effectively returns all rows.",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:17:59.122790",
-    "results": [],
-    "columns": [],
-    "row_count": 0
-  },
-  {
-    "nl": "get all prescriber data",
-    "sql": "To retrieve all prescriber data from the `dbo.Reporting_BI_PrescriberOverview` table, the following SQL SELECT statement can be generated:\n\n```sql\nSELECT TOP 100 PERCENT [dbo.Reporting_BI_PrescriberOverview].[TerritoryName], \n                       [dbo.Reporting_BI_PrescriberOverview].[RegionName], \n                       [dbo.Reporting_BI_PrescriberOverview].[PrescriberName], \n                       [dbo.Reporting_BI_PrescriberOverview].[ProductGroupName], \n                       [dbo.Reporting_BI_PrescriberOverview].[TRX(C4 Wk)]\nFROM [dbo].[Reporting_BI_PrescriberOverview]\n```\n\nThis statement selects all relevant columns from the `dbo.Reporting_BI_PrescriberOverview` table, adhering to the specified syntax rules and using only the columns available in the authoritative catalog. Note that `TOP 100 PERCENT` is used to ensure the query is compliant with the requirement for a single SELECT statement.",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:18:07.669892",
-    "results": [],
-    "columns": [],
-    "row_count": 0
-  },
-  {
-    "nl": "show me top 5 prescriptions by region",
-    "sql": "The request to show the top 5 prescriptions by region cannot be directly mapped to the available columns in the provided catalog. The term \"prescriptions\" is not explicitly defined in the available columns, and there is no direct metric or count of prescriptions available in the `dbo.Reporting_BI_PrescriberOverview` table.\n\nHowever, if we interpret \"prescriptions\" as the transactions (TRX) associated with each region, we can generate a query that retrieves the top 5 regions based on the total transactions. Here\u2019s how that SQL statement would look:\n\n```sql\nSELECT TOP 5 [RegionName], SUM([TRX(C4 Wk)]) AS TotalTransactions\nFROM dbo.Reporting_BI_PrescriberOverview\nGROUP BY [RegionName]\nORDER BY TotalTransactions DESC\n``` \n\nThis query groups the data by region, sums the transactions for each region, and then selects the top 5 regions with the highest total transactions.",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:18:21.279058",
-    "results": [],
-    "columns": [],
-    "row_count": 0
-  },
-  {
-    "nl": "show me top 5 prescriptions by region",
-    "sql": "To show the top 5 prescriptions by region using the available columns from the `dbo.Reporting_BI_PrescriberOverview` table, we can use the `RegionName` and the metric `TRX(C4 Wk)`. However, since we need to aggregate the prescriptions by region, we will use the `SUM` function to calculate the total prescriptions for each region.\n\nHere is the SQL SELECT statement that meets your requirements:\n\n```sql\nSELECT TOP 5 [RegionName], SUM([TRX(C4 Wk)]) AS TotalPrescriptions\nFROM dbo.Reporting_BI_PrescriberOverview\nGROUP BY [RegionName]\nORDER BY TotalPrescriptions DESC\n``` \n\nThis statement retrieves the top 5 regions based on the total number of prescriptions, summing the `TRX(C4 Wk)` metric for each region and ordering the results in descending order.",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:18:43.209619",
-    "results": [],
-    "columns": [],
-    "row_count": 0
-  },
-  {
-    "nl": "find data for levothyroxine products",
-    "sql": "The request to find data for \"levothyroxine products\" cannot be directly mapped to the available tables and columns in the authoritative catalog provided. The catalog does not include any specific product names or identifiers, such as \"levothyroxine,\" within the columns of the `dbo.Reporting_BI_PrescriberOverview` table.\n\nSince the only product-related column available is `ProductGroupName`, and there is no indication that it contains specific product names or categories, I cannot generate a SQL statement that specifically filters for \"levothyroxine products.\"\n\nIf you have additional information or another table that includes product names, please provide that, and I can assist further.",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:19:17.977245",
-    "results": [],
-    "columns": [],
-    "row_count": 0
-  },
-  {
-    "nl": "find data for levothyroxine products",
-    "sql": "The request to find data for \"levothyroxine products\" cannot be directly mapped to the available tables and columns in the authoritative catalog provided. The catalog does not include any specific product names or identifiers, such as \"levothyroxine,\" within the dbo.Reporting_BI_PrescriberOverview table. \n\nSince the only product-related column available is [ProductGroupName], and there is no indication that it contains specific product names or categories, I cannot generate a SQL statement that would accurately retrieve data specifically for levothyroxine products.\n\nIf you have additional information or a different table that includes product names, please provide that, and I can assist further.",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:19:23.609319",
-    "results": [],
-    "columns": [],
-    "row_count": 0
-  },
-  {
-    "nl": "get all prescriber data",
-    "sql": "```sql\nSELECT TOP 100 PERCENT [dbo.Reporting_BI_PrescriberOverview].[TerritoryName], \n       [dbo.Reporting_BI_PrescriberOverview].[RegionName], \n       [dbo.Reporting_BI_PrescriberOverview].[PrescriberName], \n       [dbo.Reporting_BI_PrescriberOverview].[ProductGroupName], \n       [dbo.Reporting_BI_PrescriberOverview].[TRX(C4 Wk)]\nFROM [dbo].[Reporting_BI_PrescriberOverview]\n``` \n\nThis SQL statement retrieves all prescriber data from the `dbo.Reporting_BI_PrescriberOverview` table, including the specified columns. The use of `TOP 100 PERCENT` is to comply with the requirement of using `TOP N`, although it effectively returns all rows.",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:19:38.981457",
-    "results": [],
-    "columns": [],
-    "row_count": 0
-  },
-  {
-    "nl": "find data for levothyroxine products",
-    "sql": "The request to find data for \"levothyroxine products\" cannot be directly mapped to the available tables and columns in the authoritative catalog provided. The catalog only includes the table `dbo.Reporting_BI_PrescriberOverview`, which contains columns for `TerritoryName`, `RegionName`, `PrescriberName`, `ProductGroupName`, and `TRX(C4 Wk)`. However, there is no indication that the `ProductGroupName` column specifically contains information about \"levothyroxine products.\"\n\nSince the specific product name or type is not available in the provided schema, I cannot generate a SQL statement that meets the request. If you have additional information or a different table that includes product details, please provide that, and I can assist further.",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:19:46.207521",
-    "results": [],
-    "columns": [],
-    "row_count": 0
-  },
-  {
-    "nl": "summarize top 10 sales of tirosint sol by territory",
-    "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 10 RegionId, TerritoryId, PrescriberId, Zipcode, RegionName, TerritoryName, PrescriberName, ProductGroupName\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%summarize%' OR ProductGroupName LIKE '%tirosint sol%';",
-    "job_id": "plan_3640584125878596083_session_6083",
-    "user": "default_user",
-    "timestamp": "2025-10-03T16:22:06.394172",
-    "results": [
-      {
-        "column_1": "100030",
-        "column_2": "10003006",
-        "column_3": "1820993",
-        "column_4": "46143",
-        "column_5": "Midwest",
-        "column_6": "Indianapolis IN",
-        "column_7": "MARY YODER",
-        "column_8": "Tirosint Sol"
-      },
-      {
-        "column_1": "100040",
-        "column_2": "10004017",
-        "column_3": "1346549",
-        "column_4": "77030",
-        "column_5": "Southwest",
-        "column_6": "Houston S TX",
-        "column_7": "LIZABETH RILEY",
-        "column_8": "Tirosint Sol"
-      },
-      {
-        "column_1": "100020",
-        "column_2": "10002081",
-        "column_3": "4287520",
-        "column_4": "33331",
-        "column_5": "Southeast",
-        "column_6": "Miami RSS",
-        "column_7": "TESSEY JOSE",
-        "column_8": "Tirosint Sol"
-      },
-      {
-        "column_1": "100010",
-        "column_2": "10001004",
-        "column_3": "6986378",
-        "column_4": "10001",
-        "column_5": "Northeast",
-        "column_6": "Manhattan NY",
-        "column_7": "SONYA CHAUDHARI",
-        "column_8": "Tirosint Sol"
-      },
-      {
-        "column_1": "100040",
-        "column_2": "10004008",
-        "column_3": "7061811",
-        "column_4": "78666",
-        "column_5": "Southwest",
-        "column_6": "Austin TX",
-        "column_7": "HADEEL BARRAWI",
-        "column_8": "Tirosint Sol"
-      }
-    ],
-    "columns": [],
-    "row_count": 10
-  },
-  {
-    "nl": "summarize top 10 sales of tirosint sol by territory",
-    "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 10 RegionId, TerritoryId, PrescriberId, Zipcode, RegionName, TerritoryName, PrescriberName, ProductGroupName\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%summarize%' OR ProductGroupName LIKE '%tirosint sol%';",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:22:06.461171",
-    "results": [
-      [
-        "100030",
-        "10003006",
-        "1820993",
-        "46143",
-        "Midwest",
-        "Indianapolis IN",
-        "MARY YODER",
-        "Tirosint Sol"
-      ],
-      [
-        "100040",
-        "10004017",
-        "1346549",
-        "77030",
-        "Southwest",
-        "Houston S TX",
-        "LIZABETH RILEY",
-        "Tirosint Sol"
-      ],
-      [
-        "100020",
-        "10002081",
-        "4287520",
-        "33331",
-        "Southeast",
-        "Miami RSS",
-        "TESSEY JOSE",
-        "Tirosint Sol"
-      ],
-      [
-        "100010",
-        "10001004",
-        "6986378",
-        "10001",
-        "Northeast",
-        "Manhattan NY",
-        "SONYA CHAUDHARI",
-        "Tirosint Sol"
-      ],
-      [
-        "100040",
-        "10004008",
-        "7061811",
-        "78666",
-        "Southwest",
-        "Austin TX",
-        "HADEEL BARRAWI",
-        "Tirosint Sol"
-      ]
-    ],
-    "columns": [],
-    "row_count": 10
-  },
-  {
-    "nl": "summarize top 10 sales of tirosint sol by territory",
-    "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 10 RegionId, TerritoryId, PrescriberId, Zipcode, RegionName, TerritoryName, PrescriberName, ProductGroupName\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%summarize%' OR ProductGroupName LIKE '%tirosint sol%';",
-    "job_id": "plan_3640584125878596083_session_6083",
-    "user": "default_user",
-    "timestamp": "2025-10-03T16:22:30.505652",
-    "results": [
-      {
-        "column_1": "100030",
-        "column_2": "10003006",
-        "column_3": "1820993",
-        "column_4": "46143",
-        "column_5": "Midwest",
-        "column_6": "Indianapolis IN",
-        "column_7": "MARY YODER",
-        "column_8": "Tirosint Sol"
-      },
-      {
-        "column_1": "100040",
-        "column_2": "10004017",
-        "column_3": "1346549",
-        "column_4": "77030",
-        "column_5": "Southwest",
-        "column_6": "Houston S TX",
-        "column_7": "LIZABETH RILEY",
-        "column_8": "Tirosint Sol"
-      },
-      {
-        "column_1": "100020",
-        "column_2": "10002081",
-        "column_3": "4287520",
-        "column_4": "33331",
-        "column_5": "Southeast",
-        "column_6": "Miami RSS",
-        "column_7": "TESSEY JOSE",
-        "column_8": "Tirosint Sol"
-      },
-      {
-        "column_1": "100010",
-        "column_2": "10001004",
-        "column_3": "6986378",
-        "column_4": "10001",
-        "column_5": "Northeast",
-        "column_6": "Manhattan NY",
-        "column_7": "SONYA CHAUDHARI",
-        "column_8": "Tirosint Sol"
-      },
-      {
-        "column_1": "100040",
-        "column_2": "10004008",
-        "column_3": "7061811",
-        "column_4": "78666",
-        "column_5": "Southwest",
-        "column_6": "Austin TX",
-        "column_7": "HADEEL BARRAWI",
-        "column_8": "Tirosint Sol"
-      }
-    ],
-    "columns": [],
-    "row_count": 10
-  },
-  {
-    "nl": "summarize top 10 sales of tirosint sol by territory",
-    "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 10 RegionId, TerritoryId, PrescriberId, Zipcode, RegionName, TerritoryName, PrescriberName, ProductGroupName\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%summarize%' OR ProductGroupName LIKE '%tirosint sol%';",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:22:30.543653",
-    "results": [
-      [
-        "100030",
-        "10003006",
-        "1820993",
-        "46143",
-        "Midwest",
-        "Indianapolis IN",
-        "MARY YODER",
-        "Tirosint Sol"
-      ],
-      [
-        "100040",
-        "10004017",
-        "1346549",
-        "77030",
-        "Southwest",
-        "Houston S TX",
-        "LIZABETH RILEY",
-        "Tirosint Sol"
-      ],
-      [
-        "100020",
-        "10002081",
-        "4287520",
-        "33331",
-        "Southeast",
-        "Miami RSS",
-        "TESSEY JOSE",
-        "Tirosint Sol"
-      ],
-      [
-        "100010",
-        "10001004",
-        "6986378",
-        "10001",
-        "Northeast",
-        "Manhattan NY",
-        "SONYA CHAUDHARI",
-        "Tirosint Sol"
-      ],
-      [
-        "100040",
-        "10004008",
-        "7061811",
-        "78666",
-        "Southwest",
-        "Austin TX",
-        "HADEEL BARRAWI",
-        "Tirosint Sol"
-      ]
-    ],
-    "columns": [],
-    "row_count": 10
-  },
-  {
-    "nl": "summarize top 10 sales of tirosint sol by territory",
-    "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 10 RegionId, TerritoryId, PrescriberId, Zipcode, RegionName, TerritoryName, PrescriberName, ProductGroupName\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%summarize%' OR ProductGroupName LIKE '%tirosint sol%';",
-    "job_id": "plan_3640584125878596083_session_6083",
-    "user": "default_user",
-    "timestamp": "2025-10-03T16:22:57.401817",
-    "results": [
-      {
-        "column_1": "100030",
-        "column_2": "10003006",
-        "column_3": "1820993",
-        "column_4": "46143",
-        "column_5": "Midwest",
-        "column_6": "Indianapolis IN",
-        "column_7": "MARY YODER",
-        "column_8": "Tirosint Sol"
-      },
-      {
-        "column_1": "100040",
-        "column_2": "10004017",
-        "column_3": "1346549",
-        "column_4": "77030",
-        "column_5": "Southwest",
-        "column_6": "Houston S TX",
-        "column_7": "LIZABETH RILEY",
-        "column_8": "Tirosint Sol"
-      },
-      {
-        "column_1": "100020",
-        "column_2": "10002081",
-        "column_3": "4287520",
-        "column_4": "33331",
-        "column_5": "Southeast",
-        "column_6": "Miami RSS",
-        "column_7": "TESSEY JOSE",
-        "column_8": "Tirosint Sol"
-      },
-      {
-        "column_1": "100010",
-        "column_2": "10001004",
-        "column_3": "6986378",
-        "column_4": "10001",
-        "column_5": "Northeast",
-        "column_6": "Manhattan NY",
-        "column_7": "SONYA CHAUDHARI",
-        "column_8": "Tirosint Sol"
-      },
-      {
-        "column_1": "100040",
-        "column_2": "10004008",
-        "column_3": "7061811",
-        "column_4": "78666",
-        "column_5": "Southwest",
-        "column_6": "Austin TX",
-        "column_7": "HADEEL BARRAWI",
-        "column_8": "Tirosint Sol"
-      }
-    ],
-    "columns": [],
-    "row_count": 10
-  },
-  {
-    "nl": "summarize top 10 sales of tirosint sol by territory",
-    "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 10 RegionId, TerritoryId, PrescriberId, Zipcode, RegionName, TerritoryName, PrescriberName, ProductGroupName\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%summarize%' OR ProductGroupName LIKE '%tirosint sol%';",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:22:57.433818",
-    "results": [
-      [
-        "100030",
-        "10003006",
-        "1820993",
-        "46143",
-        "Midwest",
-        "Indianapolis IN",
-        "MARY YODER",
-        "Tirosint Sol"
-      ],
-      [
-        "100040",
-        "10004017",
-        "1346549",
-        "77030",
-        "Southwest",
-        "Houston S TX",
-        "LIZABETH RILEY",
-        "Tirosint Sol"
-      ],
-      [
-        "100020",
-        "10002081",
-        "4287520",
-        "33331",
-        "Southeast",
-        "Miami RSS",
-        "TESSEY JOSE",
-        "Tirosint Sol"
-      ],
-      [
-        "100010",
-        "10001004",
-        "6986378",
-        "10001",
-        "Northeast",
-        "Manhattan NY",
-        "SONYA CHAUDHARI",
-        "Tirosint Sol"
-      ],
-      [
-        "100040",
-        "10004008",
-        "7061811",
-        "78666",
-        "Southwest",
-        "Austin TX",
-        "HADEEL BARRAWI",
-        "Tirosint Sol"
-      ]
-    ],
-    "columns": [],
-    "row_count": 10
-  },
-  {
-    "nl": "summarize top 10 sales of tirosint sol by territory",
-    "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 10 RegionId, TerritoryId, PrescriberId, Zipcode, RegionName, TerritoryName, PrescriberName, ProductGroupName\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%summarize%' OR ProductGroupName LIKE '%tirosint sol%';",
-    "job_id": "plan_3640584125878596083_session_6083",
-    "user": "default_user",
-    "timestamp": "2025-10-03T16:22:59.564818",
-    "results": [
-      {
-        "column_1": "100030",
-        "column_2": "10003006",
-        "column_3": "1820993",
-        "column_4": "46143",
-        "column_5": "Midwest",
-        "column_6": "Indianapolis IN",
-        "column_7": "MARY YODER",
-        "column_8": "Tirosint Sol"
-      },
-      {
-        "column_1": "100040",
-        "column_2": "10004017",
-        "column_3": "1346549",
-        "column_4": "77030",
-        "column_5": "Southwest",
-        "column_6": "Houston S TX",
-        "column_7": "LIZABETH RILEY",
-        "column_8": "Tirosint Sol"
-      },
-      {
-        "column_1": "100020",
-        "column_2": "10002081",
-        "column_3": "4287520",
-        "column_4": "33331",
-        "column_5": "Southeast",
-        "column_6": "Miami RSS",
-        "column_7": "TESSEY JOSE",
-        "column_8": "Tirosint Sol"
-      },
-      {
-        "column_1": "100010",
-        "column_2": "10001004",
-        "column_3": "6986378",
-        "column_4": "10001",
-        "column_5": "Northeast",
-        "column_6": "Manhattan NY",
-        "column_7": "SONYA CHAUDHARI",
-        "column_8": "Tirosint Sol"
-      },
-      {
-        "column_1": "100040",
-        "column_2": "10004008",
-        "column_3": "7061811",
-        "column_4": "78666",
-        "column_5": "Southwest",
-        "column_6": "Austin TX",
-        "column_7": "HADEEL BARRAWI",
-        "column_8": "Tirosint Sol"
-      }
-    ],
-    "columns": [],
-    "row_count": 10
-  },
-  {
-    "nl": "summarize top 10 sales of tirosint sol by territory",
     "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 10 RegionId, TerritoryId, PrescriberId, Zipcode, RegionName, TerritoryName, PrescriberName, ProductGroupName\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%summarize%' OR ProductGroupName LIKE '%tirosint sol%';",
     "job_id": "test123",
     "user": "anonymous",
@@ -1728,5 +1191,240 @@
     ],
     "columns": [],
     "row_count": 100
+  },
+  {
+    "nl": "\"Compare prescribers with PDRP flag enabled vs disabled, show the difference in TRX and NRX performance for Tirosint products, and calculate the impact of lunch & learn activities on prescription growth\"\n",
+    "sql": "-- Since there are no date columns available for temporal analysis, \n-- we will perform a simple aggregation to compare prescribers with \n-- PDRP flag enabled vs disabled for Tirosint products.\n\nSELECT \n    [PDRPFlag],\n    SUM([TRX]) AS Total_TRX,\n    SUM([NRX]) AS Total_NRX,\n    SUM([LunchLearn]) AS Total_LunchLearn\nFROM \n    [dbo].[Reporting_BI_PrescriberProfile]\nWHERE \n    [TirosintTargetFlag] = 'Y'\nGROUP BY \n    [PDRPFlag]\nORDER BY \n    [PDRPFlag]",
+    "job_id": "plan_175317713013522597_conv_1",
+    "user": "default_user",
+    "timestamp": "2025-10-03T18:50:31.787431",
+    "results": [
+      {
+        "PDRPFlag": "NO",
+        "Total_TRX": 6342847,
+        "Total_NRX": 2697582,
+        "Total_LunchLearn": 5392
+      },
+      {
+        "PDRPFlag": "YES",
+        "Total_TRX": 383127,
+        "Total_NRX": 153130,
+        "Total_LunchLearn": 245
+      }
+    ],
+    "columns": [],
+    "row_count": 2
+  },
+  {
+    "nl": "Show me patients with Tirosint target flag analysis",
+    "sql": "-- Full temporal analysis cannot be performed as there are no date columns specified for time-series analysis.\nSELECT TOP 100 [PrescriberName], [TirosintTargetFlag]\nFROM [dbo].[Reporting_BI_PrescriberOverview]\nWHERE [TirosintTargetFlag] = 'Y'",
+    "job_id": "plan_950013815538210985_test_mainstream",
+    "user": "test_user",
+    "timestamp": "2025-10-03T18:54:05.627339",
+    "results": [
+      {
+        "PrescriberName": "JOAN ZIMMER",
+        "TirosintTargetFlag": "Y"
+      },
+      {
+        "PrescriberName": "NOLA GARDNER",
+        "TirosintTargetFlag": "Y"
+      },
+      {
+        "PrescriberName": "SAMANTHA MCGILL",
+        "TirosintTargetFlag": "Y"
+      },
+      {
+        "PrescriberName": "ANTONIO ZAMORANO",
+        "TirosintTargetFlag": "Y"
+      },
+      {
+        "PrescriberName": "JOHN MERENDINO",
+        "TirosintTargetFlag": "Y"
+      }
+    ],
+    "columns": [],
+    "row_count": 100
+  },
+  {
+    "nl": "Show me patients with Tirosint target flag analysis",
+    "sql": "-- Temporal analysis cannot be performed as there are no date columns specified for time-series analysis.\nSELECT TOP 100 [PrescriberName], [TirosintTargetFlag]\nFROM [dbo].[Reporting_BI_PrescriberOverview]\nWHERE [TirosintTargetFlag] = 'Y'",
+    "job_id": "plan_1867790867698049573_test_mainstream",
+    "user": "test_user",
+    "timestamp": "2025-10-03T18:56:38.950821",
+    "results": [
+      {
+        "PrescriberName": "JOAN ZIMMER",
+        "TirosintTargetFlag": "Y"
+      },
+      {
+        "PrescriberName": "NOLA GARDNER",
+        "TirosintTargetFlag": "Y"
+      },
+      {
+        "PrescriberName": "SAMANTHA MCGILL",
+        "TirosintTargetFlag": "Y"
+      },
+      {
+        "PrescriberName": "ANTONIO ZAMORANO",
+        "TirosintTargetFlag": "Y"
+      },
+      {
+        "PrescriberName": "JOHN MERENDINO",
+        "TirosintTargetFlag": "Y"
+      }
+    ],
+    "columns": [],
+    "row_count": 100
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "-- This query identifies territories with good rep coverage and high activity levels, \n-- but low prescription rates for targeted products (Tirosint). \n-- It includes rep names for follow-up.\n\nSELECT \n    [TerritoryId],\n    [TerritoryName],\n    [PrescriberName],\n    COUNT([Calls4]) AS TotalCalls,\n    SUM([TRX(C4 Wk)]) AS TotalPrescriptions\nFROM \n    [dbo].[Reporting_BI_PrescriberOverview]\nWHERE \n    [TirosintTargetFlag] = 'Y' -- Focus on prescribers targeted for Tirosint\nGROUP BY \n    [TerritoryId], \n    [TerritoryName], \n    [PrescriberName]\nHAVING \n    SUM([TRX(C4 Wk)]) < 10 -- Prescriptions are low\n    AND COUNT([Calls4]) > 5 -- Good rep coverage with sufficient activity\nORDER BY \n    [TerritoryName]",
+    "job_id": "plan_8134136196923851731_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-03T18:59:46.175660",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me territories with the lowest performance, including rep names",
+    "sql": "SELECT TOP 10 \n    ngd.[Territory] AS [Territory], \n    ngd.[PerformanceMetric] AS [Performance], \n    po.[RepName] AS [Representative]\nFROM \n    [dbo].[Reporting_BI_NGD] AS ngd\nJOIN \n    [dbo].[Reporting_BI_PrescriberOverview] AS po ON ngd.[RepID] = po.[RepID]\nJOIN \n    [dbo].[Reporting_BI_PrescriberProfile] AS pp ON po.[PrescriberID] = pp.[PrescriberID]\nORDER BY \n    ngd.[PerformanceMetric] ASC",
+    "job_id": "plan_-3621226822751280460_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-03T20:22:17.801561",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me territories with the lowest performance, including rep names",
+    "sql": "SELECT TOP 10 \n    t1.[Territory] AS [Territory],\n    t1.[PerformanceMetric] AS [Performance],\n    t2.[RepName] AS [Representative]\nFROM \n    [dbo].[Reporting_BI_NGD] AS t1\nJOIN \n    [dbo].[Reporting_BI_PrescriberOverview] AS t2 ON t1.[RepID] = t2.[RepID]\nJOIN \n    [dbo].[Reporting_BI_PrescriberProfile] AS t3 ON t2.[PrescriberID] = t3.[PrescriberID]\nORDER BY \n    t1.[PerformanceMetric] ASC",
+    "job_id": "plan_-3646935364578906149_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-03T20:24:37.221892",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me territories with the lowest performance, including rep names",
+    "sql": "SELECT TOP 10 \n    t1.[Territory], \n    t1.[PerformanceMetric], \n    t2.[RepName]\nFROM \n    [dbo].[Reporting_BI_NGD] AS t1\nJOIN \n    [dbo].[Reporting_BI_PrescriberOverview] AS t2 ON t1.[RepID] = t2.[RepID]\nJOIN \n    [dbo].[Reporting_BI_PrescriberProfile] AS t3 ON t2.[PrescriberID] = t3.[PrescriberID]\nORDER BY \n    t1.[PerformanceMetric] ASC",
+    "job_id": "plan_-4180572162121490556_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-03T20:28:40.511724",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me territories with the lowest performance, including rep names",
+    "sql": "SELECT TOP 10 \n    t1.[Territory], \n    t1.[PerformanceMetric], \n    t2.[RepName]\nFROM \n    [dbo].[Reporting_BI_NGD] AS t1\nJOIN \n    [dbo].[Reporting_BI_PrescriberOverview] AS t2 ON t1.[RepID] = t2.[RepID]\nJOIN \n    [dbo].[Reporting_BI_PrescriberProfile] AS t3 ON t2.[PrescriberID] = t3.[PrescriberID]\nORDER BY \n    t1.[PerformanceMetric] ASC",
+    "job_id": "plan_-8471846591446592480_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-03T20:36:09.062365",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me territories with the lowest performance, including rep names",
+    "sql": "SELECT TOP 10 \n    t1.[TerritoryName] AS [Territory], \n    t1.[PerformanceScore] AS [Performance], \n    t2.[RepresentativeName] AS [Representative]\nFROM \n    [dbo].[Reporting_BI_NGD] AS t1\nJOIN \n    [dbo].[Reporting_BI_PrescriberOverview] AS t2 ON t1.[RepID] = t2.[RepID]\nJOIN \n    [dbo].[Reporting_BI_PrescriberProfile] AS t3 ON t2.[PrescriberID] = t3.[PrescriberID]\nORDER BY \n    t1.[PerformanceScore] ASC",
+    "job_id": "plan_3121752901267538828_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-03T20:48:57.799230",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me territories with the lowest performance, including rep names",
+    "sql": "SELECT TOP 10 \n    ngd.[Territory] AS [Territory], \n    ngd.[PerformanceMetric] AS [Performance], \n    po.[RepName] AS [Representative]\nFROM \n    [dbo].[Reporting_BI_NGD] AS ngd\nJOIN \n    [dbo].[Reporting_BI_PrescriberOverview] AS po ON ngd.[RepID] = po.[RepID]\nJOIN \n    [dbo].[Reporting_BI_PrescriberProfile] AS pp ON po.[PrescriberID] = pp.[PrescriberID]\nORDER BY \n    ngd.[PerformanceMetric] ASC",
+    "job_id": "plan_-7849190129152081031_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-03T20:56:04.983660",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me territories with performance data",
+    "sql": "SELECT TOP 100 \n    t1.[TerritoryID] AS [Territory],\n    t1.[PerformanceMetricID] AS [PerformanceMetric],\n    t2.[PrescriberName] AS [PrescriberName],\n    t3.[TirosintTargetFlag] AS [TirosintTargetFlag],\n    ISNULL(t1.[TRXCount], 0) AS [TransactionCount],\n    ISNULL(t1.[NRXCount], 0) AS [NewPrescriptionCount]\nFROM \n    [dbo].[Reporting_BI_NGD] AS t1\nJOIN \n    [dbo].[Reporting_BI_PrescriberOverview] AS t2 ON t1.[PrescriberID] = t2.[PrescriberID]\nJOIN \n    [dbo].[Reporting_BI_PrescriberProfile] AS t3 ON t2.[PrescriberID] = t3.[PrescriberID]\nWHERE \n    t3.[TirosintTargetFlag] = 'Y'",
+    "job_id": "plan_4889562656652119161_default_session",
+    "user": "test_user",
+    "timestamp": "2025-10-03T20:57:51.087261",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me territories with the lowest performance, including rep names",
+    "sql": "SELECT TOP 10 \n    t1.[TerritoryName] AS [Territory],\n    t1.[PerformanceValue] AS [Performance],\n    t2.[RepresentativeName] AS [Representative]\nFROM \n    [dbo].[Reporting_BI_NGD] AS t1\nJOIN \n    [dbo].[Reporting_BI_PrescriberOverview] AS t2 ON t1.[RepresentativeID] = t2.[RepresentativeID]\nJOIN \n    [dbo].[Reporting_BI_PrescriberProfile] AS t3 ON t2.[PrescriberID] = t3.[PrescriberID]\nORDER BY \n    t1.[PerformanceValue] ASC",
+    "job_id": "plan_-5996604444966481547_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-03T21:02:10.732363",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me territories with the lowest performance, including rep names",
+    "sql": "SELECT TOP 10 \n    t1.[PerformanceMetric] AS [Territory],\n    t2.[RepName],\n    ISNULL(t1.[TRXCount], 0) AS [TransactionCount],\n    ISNULL(t1.[NRXCount], 0) AS [NewPrescriptionCount]\nFROM \n    [dbo].[Reporting_BI_NGD] AS t1\nJOIN \n    [dbo].[Reporting_BI_PrescriberOverview] AS t2 ON t1.[RepID] = t2.[RepID]\nJOIN \n    [dbo].[Reporting_BI_PrescriberProfile] AS t3 ON t2.[PrescriberID] = t3.[PrescriberID]\nORDER BY \n    [TransactionCount] ASC, [NewPrescriptionCount] ASC",
+    "job_id": "plan_-5814046479134004366_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-03T21:03:28.849196",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me territories with the lowest performance, including rep names",
+    "sql": "SELECT TOP 10 \n    t1.[TerritoryName] AS [Territory], \n    t1.[PerformanceScore] AS [Performance], \n    t2.[RepresentativeName] AS [Representative]\nFROM \n    [dbo].[Reporting_BI_NGD] AS t1\nJOIN \n    [dbo].[Reporting_BI_PrescriberOverview] AS t2 ON t1.[RepID] = t2.[RepID]\nJOIN \n    [dbo].[Reporting_BI_PrescriberProfile] AS t3 ON t2.[PrescriberID] = t3.[PrescriberID]\nORDER BY \n    t1.[PerformanceScore] ASC",
+    "job_id": "plan_-1551312091441471429_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-03T21:05:36.262865",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me territories with the lowest performance, including rep names",
+    "sql": "SELECT TOP 10 \n    t1.[Territory] AS [Territory], \n    t1.[PerformanceMetric] AS [Performance], \n    t2.[RepName] AS [Representative]\nFROM \n    [dbo].[Reporting_BI_NGD] AS t1\nJOIN \n    [dbo].[Reporting_BI_PrescriberOverview] AS t2 ON t1.[RepID] = t2.[RepID]\nJOIN \n    [dbo].[Reporting_BI_PrescriberProfile] AS t3 ON t2.[PrescriberID] = t3.[PrescriberID]\nORDER BY \n    t1.[PerformanceMetric] ASC",
+    "job_id": "plan_3231391875531174740_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-03T21:09:39.976404",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me territories with the lowest performance, including rep names",
+    "sql": "SELECT TOP 10 \n    t1.[TerritoryName] AS [Territory], \n    t1.[PerformanceMetric] AS [Performance], \n    t2.[PrescriberName] AS [Representative]\nFROM \n    [Reporting_BI_NGD] AS t1\nJOIN \n    [Reporting_BI_PrescriberOverview] AS t2 ON t1.[TerritoryId] = t2.[TerritoryId]\nJOIN \n    [Reporting_BI_PrescriberProfile] AS t3 ON t2.[PrescriberId] = t3.[PrescriberId]\nORDER BY \n    t1.[PerformanceMetric] ASC",
+    "job_id": "plan_25810667760397463_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-03T21:10:57.094302",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me territories with the lowest performance, including rep names",
+    "sql": "SELECT TOP 10 \n    t1.[TerritoryName] AS [Territory], \n    t1.[PerformanceMetric] AS [Performance], \n    t2.[PrescriberName] AS [Representative]\nFROM \n    [Reporting_BI_NGD] AS t1\nJOIN \n    [Reporting_BI_PrescriberOverview] AS t2 ON t1.[TerritoryId] = t2.[TerritoryId]\nJOIN \n    [Reporting_BI_PrescriberProfile] AS t3 ON t2.[PrescriberId] = t3.[PrescriberId]\nORDER BY \n    t1.[PerformanceMetric] ASC",
+    "job_id": "plan_2209531536310880982_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-03T21:15:35.083531",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "Show me territories with the lowest performance, including rep names",
+    "sql": "SELECT TOP 10 \n    ngd.[TerritoryName], \n    ngd.[PerformanceMetric], \n    po.[PrescriberName]\nFROM \n    [dbo].[Reporting_BI_NGD] AS ngd\nJOIN \n    [dbo].[Reporting_BI_PrescriberOverview] AS po ON ngd.[PrescriberId] = po.[PrescriberId]\nJOIN \n    [dbo].[Reporting_BI_PrescriberProfile] AS pp ON po.[PrescriberId] = pp.[PrescriberId]\nORDER BY \n    ngd.[PerformanceMetric] ASC",
+    "job_id": "plan_2585551184396590734_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-03T21:17:11.730600",
+    "results": [],
+    "columns": [],
+    "row_count": 0
   }
 ]

@@ -934,7 +934,7 @@ async def get_database_status():
                 original_level = snowflake_logger.level
                 snowflake_logger.setLevel(logging.WARNING)
                 
-                db_adapter = get_adapter("snowflake")
+                db_adapter = get_adapter()  # ✅ Use DB_ENGINE from environment
                 result = db_adapter.run("SELECT 1", dry_run=False)
                 is_connected = not result.error
                 
@@ -1100,7 +1100,7 @@ async def test_database_connection(request: Request):
             
             try:
                 # Test the connection
-                db_adapter = get_adapter("snowflake")
+                db_adapter = get_adapter()  # ✅ Use DB_ENGINE from environment
                 result = db_adapter.run("SELECT 1 as test", dry_run=False)
                 
                 if result.error:
@@ -1383,9 +1383,11 @@ async def check_pinecone_indexing_status() -> Dict[str, Any]:
         stats = pinecone_store.index.describe_index_stats()
         total_vectors = stats.total_vector_count
         
-        # Get table count from Snowflake
-        db_adapter = get_adapter("snowflake")
-        result = db_adapter.run("SHOW TABLES", dry_run=False)
+        # Get table count from database
+        db_adapter = get_adapter()  # ✅ Use DB_ENGINE from environment
+        # Use generic SQL that works for both Snowflake and Azure SQL
+        sql = "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'TABLE'"
+        result = db_adapter.run(sql, dry_run=False)
         total_tables = len(result.rows) if not result.error else 0
         
         # Get actual count and names of indexed tables from Pinecone
