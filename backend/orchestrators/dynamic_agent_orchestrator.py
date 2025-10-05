@@ -207,7 +207,12 @@ class DynamicAgentOrchestrator:
         try:
             from backend.db.engine import get_adapter
             print("🔌 Initializing database connector...")
-            self.db_connector = get_adapter("snowflake")
+            
+            # 🔧 FIX: Use DB_ENGINE from environment variable instead of hardcoded "snowflake"
+            db_engine = os.getenv("DB_ENGINE", "azure")
+            print(f"🔍 Using database engine from environment: {db_engine}")
+            
+            self.db_connector = get_adapter(db_engine)
             if self.db_connector:
                 print("✅ Database connector initialized successfully")
                 
@@ -307,8 +312,9 @@ class DynamicAgentOrchestrator:
 
             # Ensure db_connector is initialized
             if not self.db_connector:
-                from backend.main import get_adapter
-                self.db_connector = get_adapter()  # ✅ Use DB_ENGINE from environment
+                from backend.db.engine import get_adapter
+                db_engine = os.getenv("DB_ENGINE", "azure")
+                self.db_connector = get_adapter(db_engine)  # ✅ Use DB_ENGINE from environment
                 
                 # Set database adapter in intelligent planner if available
                 if self.db_connector and self.intelligent_planner:
@@ -1575,7 +1581,14 @@ Be intelligent but concise. Focus on actionable database insights."""
                     # Try to use the SchemaRetriever for richer column info
                     from backend.agents.schema_retriever import SchemaRetriever
                     retriever = SchemaRetriever()
-                    schema_name = os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES")
+                    # 🔧 FIX: Use database-agnostic schema name detection
+                    db_engine = os.getenv("DB_ENGINE", "azure").lower()
+                    if "azure" in db_engine or "sql" in db_engine:
+                        schema_name = os.getenv("AZURE_SCHEMA", "dbo")
+                    elif "snowflake" in db_engine:
+                        schema_name = os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES")
+                    else:
+                        schema_name = os.getenv("POSTGRES_SCHEMA", "public")
                     col_info = await retriever.get_columns_for_table(table_name, schema=schema_name)
                     if col_info and isinstance(col_info, list):
                         for col in col_info:
@@ -1626,9 +1639,18 @@ Be intelligent but concise. Focus on actionable database insights."""
                         # steps handle column discovery per-table
                         columns = []
 
+                # 🔧 FIX: Use database-agnostic schema name
+                db_engine = os.getenv("DB_ENGINE", "azure").lower()
+                if "azure" in db_engine or "sql" in db_engine:
+                    schema = os.getenv("AZURE_SCHEMA", "dbo")
+                elif "snowflake" in db_engine:
+                    schema = os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES")
+                else:
+                    schema = os.getenv("POSTGRES_SCHEMA", "public")
+                
                 relevant_tables.append({
                     "name": table_name,
-                    "schema": os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES"),
+                    "schema": schema,
                     "columns": columns,
                     "row_count": None,
                     "description": f"Table containing {table_name.replace('_', ' ').lower()} data"
@@ -1694,11 +1716,21 @@ Be intelligent but concise. Focus on actionable database insights."""
             from backend.db.engine import get_adapter
             
             print("🔄 Using fallback schema discovery...")
-            db_adapter = get_adapter("snowflake")
+            # 🔧 FIX: Use environment variable for database engine
+            db_engine = os.getenv("DB_ENGINE", "azure")
+            db_adapter = get_adapter(db_engine)
             
-            # Get limited set of tables for fallback
-            schema_name = os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES")
-            result = db_adapter.run(f"SHOW TABLES IN SCHEMA {schema_name} LIMIT 10", dry_run=False)
+            # 🔧 FIX: Use database-agnostic schema name and query syntax
+            if "azure" in db_engine.lower() or "sql" in db_engine.lower():
+                schema_name = os.getenv("AZURE_SCHEMA", "dbo")
+                # Azure SQL uses different syntax
+                result = db_adapter.run(f"SELECT TOP 10 TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{schema_name}'", dry_run=False)
+            elif "snowflake" in db_engine.lower():
+                schema_name = os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES")
+                result = db_adapter.run(f"SHOW TABLES IN SCHEMA {schema_name} LIMIT 10", dry_run=False)
+            else:
+                schema_name = os.getenv("POSTGRES_SCHEMA", "public")
+                result = db_adapter.run(f"SELECT table_name FROM information_schema.tables WHERE table_schema = '{schema_name}' LIMIT 10", dry_run=False)
             if result.error:
                 return {"error": f"Schema discovery failed: {result.error}", "status": "failed"}
             
@@ -1706,23 +1738,47 @@ Be intelligent but concise. Focus on actionable database insights."""
             table_suggestions = []
             
             for i, row in enumerate(result.rows[:4]):  # Limit to top 4
-                table_name = row[1] if len(row) > 1 else str(row[0])
+                # 🔧 FIX: Extract table name based on database engine
+                if "azure" in db_engine.lower() or "sql" in db_engine.lower():
+                    table_name = row[0] if isinstance(row, (list, tuple)) else str(row)
+                else:
+                    table_name = row[1] if len(row) > 1 else str(row[0])
+                
                 try:
-                    # Get basic table info
-                    columns_result = db_adapter.run(f"DESCRIBE TABLE {table_name}", dry_run=False)
+                    # 🔧 FIX: Use database-agnostic table description syntax
+                    if "azure" in db_engine.lower() or "sql" in db_engine.lower():
+                        columns_result = db_adapter.run(f"SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{table_name}'", dry_run=False)
+                    elif "snowflake" in db_engine.lower():
+                        columns_result = db_adapter.run(f"DESCRIBE TABLE {table_name}", dry_run=False)
+                    else:
+                        columns_result = db_adapter.run(f"SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name = '{table_name}'", dry_run=False)
                     columns = []
                     if not columns_result.error:
                         for col_row in columns_result.rows:
+                            # 🔧 FIX: Handle nullable format differences
+                            if "azure" in db_engine.lower() or "sql" in db_engine.lower():
+                                nullable = col_row[2].upper() == 'YES'
+                            else:
+                                nullable = col_row[2] == 'Y' if len(col_row) > 2 else True
+                            
                             columns.append({
                                 "name": col_row[0],
                                 "data_type": col_row[1],
-                                "nullable": col_row[2] == 'Y',
+                                "nullable": nullable,
                                 "description": None
                             })
                     
+                    # 🔧 FIX: Use database-agnostic schema name
+                    if "azure" in db_engine.lower() or "sql" in db_engine.lower():
+                        schema = os.getenv("AZURE_SCHEMA", "dbo")
+                    elif "snowflake" in db_engine.lower():
+                        schema = os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES")
+                    else:
+                        schema = os.getenv("POSTGRES_SCHEMA", "public")
+                    
                     table_info = {
                         "name": table_name,
-                        "schema": os.getenv("SNOWFLAKE_SCHEMA", "SAMPLES"), 
+                        "schema": schema, 
                         "columns": columns,
                         "row_count": None,
                         "description": f"Table containing {table_name.replace('_', ' ').lower()} data"
@@ -2018,10 +2074,22 @@ Be intelligent but concise. Focus on actionable database insights."""
                     
                     if test_result.get("error"):
                         print(f"❌ SQL execution failed: {test_result.get('error')}")
+                        
+                        # 🔧 CRITICAL: Include semantic analysis and prompts for retry
                         return {
                             "error": f"Generated SQL failed execution: {test_result.get('error')}",
                             "status": "failed",
-                            "sql_attempted": sql_query
+                            "sql_attempted": sql_query,
+                            "semantic_analysis": result.get("semantic_analysis", {}),
+                            "query_understanding": result.get("query_understanding", {}),
+                            "business_logic_applied": result.get("business_logic_applied", []),
+                            "join_strategy": result.get("join_strategy", []),
+                            "intelligent_prompt_used": result.get("prompt_used", ""),
+                            "error_details": {
+                                "error_message": test_result.get('error'),
+                                "error_type": "SQL_EXECUTION_ERROR",
+                                "failed_sql": sql_query
+                            }
                         }
                     else:
                         print(f"✅ SQL executed successfully with {len(test_result.get('data', []))} rows")
@@ -2039,11 +2107,27 @@ Be intelligent but concise. Focus on actionable database insights."""
                         }
                         
                 except Exception as sql_ex:
+                    import traceback
+                    error_trace = traceback.format_exc()
                     print(f"❌ SQL execution test failed: {str(sql_ex)}")
+                    print(f"📋 Stack trace: {error_trace}")
+                    
+                    # 🔧 CRITICAL: Include semantic analysis, prompts, and stack trace for retry
                     return {
                         "error": f"SQL execution failed: {str(sql_ex)}",
                         "status": "failed",
-                        "sql_attempted": sql_query
+                        "sql_attempted": sql_query,
+                        "semantic_analysis": result.get("semantic_analysis", {}),
+                        "query_understanding": result.get("query_understanding", {}),
+                        "business_logic_applied": result.get("business_logic_applied", []),
+                        "join_strategy": result.get("join_strategy", []),
+                        "intelligent_prompt_used": result.get("prompt_used", ""),
+                        "error_details": {
+                            "error_message": str(sql_ex),
+                            "error_type": type(sql_ex).__name__,
+                            "failed_sql": sql_query,
+                            "stack_trace": error_trace
+                        }
                     }
             else:
                 return {
@@ -2356,6 +2440,7 @@ Be intelligent but concise. Focus on actionable database insights."""
                                         fallback_data = fallback_result.data if hasattr(fallback_result, 'data') and fallback_result.data is not None else []
                                         if len(fallback_data) > 0:
                                             print(f"✅ Strategy 1 success: {len(fallback_data)} rows")
+                                            print(f"⚠️ IMPORTANT: Query was modified - WHERE clause removed due to 0 results")
                                         return {
                                             "results": fallback_data,
                                             "row_count": len(fallback_data),
@@ -2365,11 +2450,14 @@ Be intelligent but concise. Focus on actionable database insights."""
                                                 "was_sampled": getattr(fallback_result, 'was_sampled', False),
                                                 "job_id": getattr(fallback_result, 'job_id', None),
                                                 "fallback_used": True,
-                                                "original_query": sql_query
+                                                "fallback_reason": "Original filters returned 0 rows - WHERE clause removed",
+                                                "original_sql": sql_query,
+                                                "modified_sql": simple_query
                                             },
                                             "sql_executed": simple_query,
                                             "execution_attempt": attempt,
-                                            "status": "completed"
+                                            "status": "partial",  # Changed from "completed" to indicate modification
+                                            "warning": "⚠️ Your original query filters were too restrictive and returned no results. Filters were removed to show sample data from the relevant tables."
                                         }
                                 except Exception as fallback_error:
                                     print(f"⚠️ Strategy 1 failed: {fallback_error}")
@@ -2799,7 +2887,8 @@ Be intelligent but concise. Focus on actionable database insights."""
                     
                     # Get database adapter and query real columns
                     from backend.db.engine import get_adapter
-                    db_adapter = get_adapter()
+                    db_engine = os.getenv("DB_ENGINE", "azure")
+                    db_adapter = get_adapter(db_engine)
                     print(f"🔍 DEBUG - Querying real columns for tables: {failed_tables}")
                     
                     schema_info += "\n**🆘 EMERGENCY SCHEMA FALLBACK (Real Database Columns):**\n"

@@ -1,1252 +1,5 @@
 [
   {
-    "nl": "summarize top 10 sales of tirosint sol by territory",
-    "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 10 RegionId, TerritoryId, PrescriberId, Zipcode, RegionName, TerritoryName, PrescriberName, ProductGroupName\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%summarize%' OR ProductGroupName LIKE '%tirosint sol%';",
-    "job_id": "test123",
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:22:59.612815",
-    "results": [
-      [
-        "100030",
-        "10003006",
-        "1820993",
-        "46143",
-        "Midwest",
-        "Indianapolis IN",
-        "MARY YODER",
-        "Tirosint Sol"
-      ],
-      [
-        "100040",
-        "10004017",
-        "1346549",
-        "77030",
-        "Southwest",
-        "Houston S TX",
-        "LIZABETH RILEY",
-        "Tirosint Sol"
-      ],
-      [
-        "100020",
-        "10002081",
-        "4287520",
-        "33331",
-        "Southeast",
-        "Miami RSS",
-        "TESSEY JOSE",
-        "Tirosint Sol"
-      ],
-      [
-        "100010",
-        "10001004",
-        "6986378",
-        "10001",
-        "Northeast",
-        "Manhattan NY",
-        "SONYA CHAUDHARI",
-        "Tirosint Sol"
-      ],
-      [
-        "100040",
-        "10004008",
-        "7061811",
-        "78666",
-        "Southwest",
-        "Austin TX",
-        "HADEEL BARRAWI",
-        "Tirosint Sol"
-      ]
-    ],
-    "columns": [],
-    "row_count": 10
-  },
-  {
-    "nl": "summarize top 10 sales of tirosint sol by territory",
-    "sql": "The request to summarize the top 10 sales of \"tirosint sol\" by territory cannot be fulfilled directly because the provided catalog does not include any columns related to sales or specific product sales data. The available columns in the `dbo.Reporting_BI_PrescriberOverview` table include `TerritoryName`, `RegionName`, `PrescriberName`, `ProductGroupName`, and `TRX(C4 Wk)`, but there is no indication that \"tirosint sol\" is a valid value for `ProductGroupName`, nor is there a direct sales metric that can be summarized.\n\nIf you have access to additional tables or data that include sales information or specific product identifiers, please provide that information for a more accurate SQL statement. Otherwise, based on the current catalog, I cannot generate the requested SQL statement.",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:29:48.614132",
-    "results": [],
-    "columns": [],
-    "row_count": 0
-  },
-  {
-    "nl": "summarize top 10 sales of tirosint sol by territory",
-    "sql": "The request to summarize the top 10 sales of \"tirosint sol\" by territory cannot be fulfilled directly because the provided catalog does not include any columns related to sales or specific product sales data. The only available columns in the `dbo.Reporting_BI_PrescriberOverview` table are `TerritoryName`, `RegionName`, `PrescriberName`, `ProductGroupName`, and `TRX(C4 Wk)`, but there is no indication that \"tirosint sol\" is a specific value in any of these columns.\n\nIf you have additional information or a different table that includes sales data for \"tirosint sol,\" please provide that, and I can assist you further. Otherwise, based on the current catalog, I cannot generate the requested SQL statement.",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:29:53.581258",
-    "results": [],
-    "columns": [],
-    "row_count": 0
-  },
-  {
-    "nl": "summarize top 10 sales of tirosint sol by territory",
-    "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 10 RegionId, TerritoryId, PrescriberId, Zipcode, RegionName, TerritoryName, PrescriberName, ProductGroupName\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%tirosint sol%' OR ProductGroupName LIKE '%tirosint%';",
-    "job_id": "plan_4243078855610769768_session_9768",
-    "user": "default_user",
-    "timestamp": "2025-10-03T16:29:55.733307",
-    "results": [
-      {
-        "column_1": "100050",
-        "column_2": "10005070",
-        "column_3": "1931351",
-        "column_4": "99218",
-        "column_5": "West",
-        "column_6": "Tele-Sales 4 - West",
-        "column_7": "JOAN ZIMMER",
-        "column_8": "Tirosint AG"
-      },
-      {
-        "column_1": "100020",
-        "column_2": "10002012",
-        "column_3": "6564214",
-        "column_4": "39501",
-        "column_5": "Southeast",
-        "column_6": "Jackson MS",
-        "column_7": "SAMANTHA MCGILL",
-        "column_8": "Tirosint AG Yaral"
-      },
-      {
-        "column_1": "100050",
-        "column_2": "10005081",
-        "column_3": "3204069",
-        "column_4": "91205",
-        "column_5": "West",
-        "column_6": "Los Angeles RSS",
-        "column_7": "ANTONIO ZAMORANO",
-        "column_8": "Tirosint AG Yaral"
-      },
-      {
-        "column_1": "100030",
-        "column_2": "10003006",
-        "column_3": "1820993",
-        "column_4": "46143",
-        "column_5": "Midwest",
-        "column_6": "Indianapolis IN",
-        "column_7": "MARY YODER",
-        "column_8": "Tirosint Sol"
-      },
-      {
-        "column_1": "100080",
-        "column_2": "10008006",
-        "column_3": "2363268",
-        "column_4": "19426",
-        "column_5": "Tri-state",
-        "column_6": "Philadelphia N PA",
-        "column_7": "HEATHER LOCKNER",
-        "column_8": "Tirosint AG"
-      }
-    ],
-    "columns": [],
-    "row_count": 10
-  },
-  {
-    "nl": "summarize top 10 sales of tirosint sol by territory",
-    "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 10 RegionId, TerritoryId, PrescriberId, Zipcode, RegionName, TerritoryName, PrescriberName, ProductGroupName\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%tirosint sol%' OR ProductGroupName LIKE '%tirosint%';",
-    "job_id": "test123",
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:29:55.764307",
-    "results": [
-      [
-        "100050",
-        "10005070",
-        "1931351",
-        "99218",
-        "West",
-        "Tele-Sales 4 - West",
-        "JOAN ZIMMER",
-        "Tirosint AG"
-      ],
-      [
-        "100020",
-        "10002012",
-        "6564214",
-        "39501",
-        "Southeast",
-        "Jackson MS",
-        "SAMANTHA MCGILL",
-        "Tirosint AG Yaral"
-      ],
-      [
-        "100050",
-        "10005081",
-        "3204069",
-        "91205",
-        "West",
-        "Los Angeles RSS",
-        "ANTONIO ZAMORANO",
-        "Tirosint AG Yaral"
-      ],
-      [
-        "100030",
-        "10003006",
-        "1820993",
-        "46143",
-        "Midwest",
-        "Indianapolis IN",
-        "MARY YODER",
-        "Tirosint Sol"
-      ],
-      [
-        "100080",
-        "10008006",
-        "2363268",
-        "19426",
-        "Tri-state",
-        "Philadelphia N PA",
-        "HEATHER LOCKNER",
-        "Tirosint AG"
-      ]
-    ],
-    "columns": [],
-    "row_count": 10
-  },
-  {
-    "nl": "summarize top 10 sales of tirosint sol by territory",
-    "sql": "The request to summarize the top 10 sales of \"tirosint sol\" by territory cannot be fulfilled as the provided catalog does not include any columns related to sales or specific product sales data. The only available columns in the `dbo.Reporting_BI_PrescriberOverview` table are related to prescriber information and product group names, but there is no indication of sales figures or a specific product named \"tirosint sol.\"\n\nSince the necessary data to fulfill the request is not present in the catalog, I cannot generate a SQL statement for this request.",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:30:07.154572",
-    "results": [],
-    "columns": [],
-    "row_count": 0
-  },
-  {
-    "nl": "summarize top 10 sales of tirosint sol by territory",
-    "sql": "The request to summarize the top 10 sales of \"tirosint sol\" by territory cannot be fulfilled directly with the available columns in the provided catalog. The catalog does not include any columns related to sales data or specific product sales, such as sales amounts or product identifiers. \n\nThe only relevant columns available are from the `dbo.Reporting_BI_PrescriberOverview` table, which includes `TerritoryName`, `RegionName`, `PrescriberName`, `ProductGroupName`, and `TRX(C4 Wk)`. However, there is no indication that \"tirosint sol\" is a specific value in the `ProductGroupName` column, nor is there a way to filter or aggregate sales data based on the provided columns.\n\nIf you have access to additional tables or columns that include sales data or product identifiers, please provide that information for a more accurate SQL statement.",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:33:59.471758",
-    "results": [],
-    "columns": [],
-    "row_count": 0
-  },
-  {
-    "nl": "summarize top 10 sales of tirosint sol by territory",
-    "sql": "The request to summarize the top 10 sales of \"tirosint sol\" by territory cannot be fulfilled as there are no columns in the provided catalog that specifically relate to sales data or product names. The available columns in the `dbo.Reporting_BI_PrescriberOverview` table include `TerritoryName`, `RegionName`, `PrescriberName`, `ProductGroupName`, and `TRX(C4 Wk)`, but there is no indication that \"tirosint sol\" is a value in the `ProductGroupName` column or that sales data can be summarized directly.\n\nIf you can provide more specific details or clarify the available data, I would be happy to assist further.",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:34:04.728828",
-    "results": [],
-    "columns": [],
-    "row_count": 0
-  },
-  {
-    "nl": "summarize top 10 sales of tirosint sol by territory",
-    "sql": "The request to summarize the top 10 sales of \"tirosint sol\" by territory cannot be fulfilled directly because the provided catalog does not include any columns related to sales or specific product sales data. The only relevant columns available are related to prescriber overview, which do not include sales metrics or product-specific filtering.\n\nTo summarize, the necessary data to fulfill the request (sales figures for \"tirosint sol\") is not present in the available tables and columns. Therefore, I cannot generate a SQL statement based on the current catalog.",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:34:27.200154",
-    "results": [],
-    "columns": [],
-    "row_count": 0
-  },
-  {
-    "nl": "summarize top 10 sales of tirosint sol by territory",
-    "sql": "The request to summarize the top 10 sales of \"tirosint sol\" by territory cannot be fulfilled as the provided catalog does not include any columns related to sales or specific product sales data. The only available columns are related to prescriber overview, including TerritoryName, RegionName, PrescriberName, ProductGroupName, and TRX(C4 Wk), but there is no indication that \"tirosint sol\" is a specific value within the ProductGroupName column or that sales data can be filtered or summarized based on it.\n\nIf you have a specific product name or additional details about how to filter the data, please provide that information. Otherwise, I cannot generate a SQL statement based on the current catalog.",
-    "job_id": "test123",
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:34:58.418504",
-    "results": [],
-    "columns": [],
-    "row_count": 0
-  },
-  {
-    "nl": "summarize top 10 sales of tirosint sol by territory",
-    "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 10 RegionId, TerritoryId, PrescriberId, Zipcode, RegionName, TerritoryName, PrescriberName, ProductGroupName\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%tirosint sol%' OR ProductGroupName LIKE '%tirosint%';",
-    "job_id": "plan_6045578388013972853_session_2853",
-    "user": "default_user",
-    "timestamp": "2025-10-03T16:51:17.015838",
-    "results": [
-      {
-        "column_1": "100050",
-        "column_2": "10005070",
-        "column_3": "1931351",
-        "column_4": "99218",
-        "column_5": "West",
-        "column_6": "Tele-Sales 4 - West",
-        "column_7": "JOAN ZIMMER",
-        "column_8": "Tirosint AG"
-      },
-      {
-        "column_1": "100020",
-        "column_2": "10002012",
-        "column_3": "6564214",
-        "column_4": "39501",
-        "column_5": "Southeast",
-        "column_6": "Jackson MS",
-        "column_7": "SAMANTHA MCGILL",
-        "column_8": "Tirosint AG Yaral"
-      },
-      {
-        "column_1": "100050",
-        "column_2": "10005081",
-        "column_3": "3204069",
-        "column_4": "91205",
-        "column_5": "West",
-        "column_6": "Los Angeles RSS",
-        "column_7": "ANTONIO ZAMORANO",
-        "column_8": "Tirosint AG Yaral"
-      },
-      {
-        "column_1": "100030",
-        "column_2": "10003006",
-        "column_3": "1820993",
-        "column_4": "46143",
-        "column_5": "Midwest",
-        "column_6": "Indianapolis IN",
-        "column_7": "MARY YODER",
-        "column_8": "Tirosint Sol"
-      },
-      {
-        "column_1": "100080",
-        "column_2": "10008006",
-        "column_3": "2363268",
-        "column_4": "19426",
-        "column_5": "Tri-state",
-        "column_6": "Philadelphia N PA",
-        "column_7": "HEATHER LOCKNER",
-        "column_8": "Tirosint AG"
-      }
-    ],
-    "columns": [],
-    "row_count": 10
-  },
-  {
-    "nl": "summarize top 10 sales of tirosint sol by territory",
-    "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 10 RegionId, TerritoryId, PrescriberId, Zipcode, RegionName, TerritoryName, PrescriberName, ProductGroupName\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%tirosint sol%' OR ProductGroupName LIKE '%tirosint%';",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:51:17.060840",
-    "results": [
-      [
-        "100050",
-        "10005070",
-        "1931351",
-        "99218",
-        "West",
-        "Tele-Sales 4 - West",
-        "JOAN ZIMMER",
-        "Tirosint AG"
-      ],
-      [
-        "100020",
-        "10002012",
-        "6564214",
-        "39501",
-        "Southeast",
-        "Jackson MS",
-        "SAMANTHA MCGILL",
-        "Tirosint AG Yaral"
-      ],
-      [
-        "100050",
-        "10005081",
-        "3204069",
-        "91205",
-        "West",
-        "Los Angeles RSS",
-        "ANTONIO ZAMORANO",
-        "Tirosint AG Yaral"
-      ],
-      [
-        "100030",
-        "10003006",
-        "1820993",
-        "46143",
-        "Midwest",
-        "Indianapolis IN",
-        "MARY YODER",
-        "Tirosint Sol"
-      ],
-      [
-        "100080",
-        "10008006",
-        "2363268",
-        "19426",
-        "Tri-state",
-        "Philadelphia N PA",
-        "HEATHER LOCKNER",
-        "Tirosint AG"
-      ]
-    ],
-    "columns": [],
-    "row_count": 10
-  },
-  {
-    "nl": "summarize top 10 sales of tirosint sol by territory",
-    "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 10 RegionId, TerritoryId, PrescriberId, Zipcode, RegionName, TerritoryName, PrescriberName, ProductGroupName\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%tirosint sol%' OR ProductGroupName LIKE '%tirosint%';",
-    "job_id": "plan_6045578388013972853_session_2853",
-    "user": "default_user",
-    "timestamp": "2025-10-03T16:52:19.176070",
-    "results": [
-      {
-        "column_1": "100050",
-        "column_2": "10005070",
-        "column_3": "1931351",
-        "column_4": "99218",
-        "column_5": "West",
-        "column_6": "Tele-Sales 4 - West",
-        "column_7": "JOAN ZIMMER",
-        "column_8": "Tirosint AG"
-      },
-      {
-        "column_1": "100020",
-        "column_2": "10002012",
-        "column_3": "6564214",
-        "column_4": "39501",
-        "column_5": "Southeast",
-        "column_6": "Jackson MS",
-        "column_7": "SAMANTHA MCGILL",
-        "column_8": "Tirosint AG Yaral"
-      },
-      {
-        "column_1": "100050",
-        "column_2": "10005081",
-        "column_3": "3204069",
-        "column_4": "91205",
-        "column_5": "West",
-        "column_6": "Los Angeles RSS",
-        "column_7": "ANTONIO ZAMORANO",
-        "column_8": "Tirosint AG Yaral"
-      },
-      {
-        "column_1": "100030",
-        "column_2": "10003006",
-        "column_3": "1820993",
-        "column_4": "46143",
-        "column_5": "Midwest",
-        "column_6": "Indianapolis IN",
-        "column_7": "MARY YODER",
-        "column_8": "Tirosint Sol"
-      },
-      {
-        "column_1": "100080",
-        "column_2": "10008006",
-        "column_3": "2363268",
-        "column_4": "19426",
-        "column_5": "Tri-state",
-        "column_6": "Philadelphia N PA",
-        "column_7": "HEATHER LOCKNER",
-        "column_8": "Tirosint AG"
-      }
-    ],
-    "columns": [],
-    "row_count": 10
-  },
-  {
-    "nl": "summarize top 10 sales of tirosint sol by territory",
-    "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 10 RegionId, TerritoryId, PrescriberId, Zipcode, RegionName, TerritoryName, PrescriberName, ProductGroupName\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%tirosint sol%' OR ProductGroupName LIKE '%tirosint%';",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:52:19.235074",
-    "results": [
-      [
-        "100050",
-        "10005070",
-        "1931351",
-        "99218",
-        "West",
-        "Tele-Sales 4 - West",
-        "JOAN ZIMMER",
-        "Tirosint AG"
-      ],
-      [
-        "100020",
-        "10002012",
-        "6564214",
-        "39501",
-        "Southeast",
-        "Jackson MS",
-        "SAMANTHA MCGILL",
-        "Tirosint AG Yaral"
-      ],
-      [
-        "100050",
-        "10005081",
-        "3204069",
-        "91205",
-        "West",
-        "Los Angeles RSS",
-        "ANTONIO ZAMORANO",
-        "Tirosint AG Yaral"
-      ],
-      [
-        "100030",
-        "10003006",
-        "1820993",
-        "46143",
-        "Midwest",
-        "Indianapolis IN",
-        "MARY YODER",
-        "Tirosint Sol"
-      ],
-      [
-        "100080",
-        "10008006",
-        "2363268",
-        "19426",
-        "Tri-state",
-        "Philadelphia N PA",
-        "HEATHER LOCKNER",
-        "Tirosint AG"
-      ]
-    ],
-    "columns": [],
-    "row_count": 10
-  },
-  {
-    "nl": "summarize top 10 sales of tirosint sol by territory",
-    "sql": "The request to summarize the top 10 sales of \"tirosint sol\" by territory cannot be fulfilled as the provided catalog does not include any columns related to sales or specific product sales data. The only available columns in the `dbo.Reporting_BI_PrescriberOverview` table are `TerritoryName`, `RegionName`, `PrescriberName`, `ProductGroupName`, and `TRX(C4 Wk)`, but there is no indication that \"tirosint sol\" is a valid entry in the `ProductGroupName` column or that there is a way to filter or summarize sales specifically for that product.\n\nTherefore, I cannot generate a SQL statement based on the available data. If you have more information or a different request that aligns with the available columns, please provide that, and I would be happy to assist!",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:52:30.662641",
-    "results": [],
-    "columns": [],
-    "row_count": 0
-  },
-  {
-    "nl": "show me top 5 prescriptions by region",
-    "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 5 RegionId, TerritoryId, PrescriberId, Zipcode, RegionName, TerritoryName, PrescriberName, ProductGroupName\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%prescriptions%';",
-    "job_id": "plan_6250345926195545293_session_5293",
-    "user": "default_user",
-    "timestamp": "2025-10-03T16:53:09.348621",
-    "results": [
-      {
-        "column_1": "100020",
-        "column_2": "10002008",
-        "column_3": "7932121",
-        "column_4": "30501",
-        "column_5": "Southeast",
-        "column_6": "Atlanta N GA",
-        "column_7": "AHMED ABUZOOR",
-        "column_8": "NP Thyroid"
-      },
-      {
-        "column_1": "100030",
-        "column_2": "10003070",
-        "column_3": "3677376",
-        "column_4": "62363",
-        "column_5": "Midwest",
-        "column_6": "Tele-Sales 3 - Midwest",
-        "column_7": "JILL MILLER",
-        "column_8": "Armour Thyroid"
-      },
-      {
-        "column_1": "100060",
-        "column_2": "10006001",
-        "column_3": "2410052",
-        "column_4": "28262",
-        "column_5": "Midatlantic",
-        "column_6": "Charlotte NC",
-        "column_7": "ANDREW BLODGETT",
-        "column_8": "Armour Thyroid"
-      },
-      {
-        "column_1": "100050",
-        "column_2": "10005070",
-        "column_3": "1931351",
-        "column_4": "99218",
-        "column_5": "West",
-        "column_6": "Tele-Sales 4 - West",
-        "column_7": "JOAN ZIMMER",
-        "column_8": "Tirosint AG"
-      },
-      {
-        "column_1": "100050",
-        "column_2": "10005003",
-        "column_3": "2365479",
-        "column_4": "92586",
-        "column_5": "West",
-        "column_6": "San Diego CA",
-        "column_7": "KEVIN NGUYEN",
-        "column_8": "Synthroid"
-      }
-    ],
-    "columns": [],
-    "row_count": 5
-  },
-  {
-    "nl": "show me top 5 prescriptions by region",
-    "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 5 RegionId, TerritoryId, PrescriberId, Zipcode, RegionName, TerritoryName, PrescriberName, ProductGroupName\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%prescriptions%';",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:53:09.490913",
-    "results": [],
-    "columns": [],
-    "row_count": 0
-  },
-  {
-    "nl": "show me top 5 prescriptions by region",
-    "sql": "To show the top 5 prescriptions by region using the available columns from the `dbo.Reporting_BI_PrescriberOverview` table, we can group the data by `RegionName` and sum the `TRX(C4 Wk)` metrics. However, since the `TRX(C4 Wk)` column is a metric and not directly aggregatable without a specific context (like a specific product or prescriber), we will assume that we want to sum the transactions for each region.\n\nHere is the SQL SELECT statement that meets your requirements:\n\n```sql\nSELECT TOP 5 [RegionName], SUM([TRX(C4 Wk)]) AS TotalPrescriptions\nFROM dbo.Reporting_BI_PrescriberOverview\nGROUP BY [RegionName]\nORDER BY TotalPrescriptions DESC\n``` \n\nThis statement retrieves the top 5 regions based on the total number of prescriptions, summing the `TRX(C4 Wk)` for each region and ordering the results in descending order.",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:53:31.010075",
-    "results": [],
-    "columns": [],
-    "row_count": 0
-  },
-  {
-    "nl": "show me top 10 prescriber data with tirosint",
-    "sql": "The request to show the top 10 prescriber data with \"tirosint\" cannot be fulfilled as there is no column in the provided catalog that allows for filtering or identifying products, such as \"tirosint.\" The only relevant columns available are from the `dbo.Reporting_BI_PrescriberOverview` table, which include `TerritoryName`, `RegionName`, `PrescriberName`, `ProductGroupName`, and `TRX(C4 Wk)`. However, there is no indication that the `ProductGroupName` can be filtered for specific products like \"tirosint.\"\n\nIf you would like to see the top 10 prescriber data without filtering for a specific product, please clarify, and I can generate the appropriate SQL statement.",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T16:56:53.661191",
-    "results": [],
-    "columns": [],
-    "row_count": 0
-  },
-  {
-    "nl": "show me top 5 prescribers with highest TRX for tirosint products",
-    "sql": "The request to show the top 5 prescribers with the highest TRX for \"tirosint\" products cannot be fulfilled directly because the provided catalog does not include any column that specifies product names or allows filtering by specific products. The only product-related column available is `ProductGroupName`, but there is no indication that it can be used to filter for \"tirosint\" specifically.\n\nSince the necessary information to filter by product is not available in the catalog, I cannot generate the requested SQL statement. If you have additional details or another request, please let me know!",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T17:00:20.276905",
-    "results": [],
-    "columns": [],
-    "row_count": 0
-  },
-  {
-    "nl": "show me prescribers with tirosint target flag",
-    "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 50 RegionId, TerritoryId, RegionName, TerritoryName, PrescriberName, ProductGroupName, [TRX(C4 Wk)], [TRX(C13 Wk)]\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%me prescribers%' OR ProductGroupName LIKE '%prescribers with%';",
-    "job_id": "plan_-2583122842957200820_session_9180",
-    "user": "default_user",
-    "timestamp": "2025-10-03T17:03:04.720226",
-    "results": [
-      {
-        "column_1": "100020",
-        "column_2": "10002008",
-        "column_3": "Southeast",
-        "column_4": "Atlanta N GA",
-        "column_5": "AHMED ABUZOOR",
-        "column_6": "NP Thyroid",
-        "column_7": 1,
-        "column_8": 2
-      },
-      {
-        "column_1": "100030",
-        "column_2": "10003070",
-        "column_3": "Midwest",
-        "column_4": "Tele-Sales 3 - Midwest",
-        "column_5": "JILL MILLER",
-        "column_6": "Armour Thyroid",
-        "column_7": 0,
-        "column_8": 1
-      },
-      {
-        "column_1": "100060",
-        "column_2": "10006001",
-        "column_3": "Midatlantic",
-        "column_4": "Charlotte NC",
-        "column_5": "ANDREW BLODGETT",
-        "column_6": "Armour Thyroid",
-        "column_7": 1,
-        "column_8": 2
-      },
-      {
-        "column_1": "100050",
-        "column_2": "10005070",
-        "column_3": "West",
-        "column_4": "Tele-Sales 4 - West",
-        "column_5": "JOAN ZIMMER",
-        "column_6": "Tirosint AG",
-        "column_7": 0,
-        "column_8": 0
-      },
-      {
-        "column_1": "100050",
-        "column_2": "10005003",
-        "column_3": "West",
-        "column_4": "San Diego CA",
-        "column_5": "KEVIN NGUYEN",
-        "column_6": "Synthroid",
-        "column_7": 6,
-        "column_8": 20
-      }
-    ],
-    "columns": [],
-    "row_count": 50
-  },
-  {
-    "nl": "show me prescribers with tirosint target flag",
-    "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 50 RegionId, TerritoryId, RegionName, TerritoryName, PrescriberName, ProductGroupName, [TRX(C4 Wk)], [TRX(C13 Wk)]\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%me prescribers%' OR ProductGroupName LIKE '%prescribers with%';",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T17:03:04.927230",
-    "results": [],
-    "columns": [],
-    "row_count": 0
-  },
-  {
-    "nl": "show me top 10 prescribers where TirosintTargetFlag is Yes",
-    "sql": "The request to show the top 10 prescribers where `TirosintTargetFlag` is Yes cannot be fulfilled because the column `TirosintTargetFlag` is not listed in the authoritative catalog provided. The only available columns in the `dbo.Reporting_BI_PrescriberOverview` table are `TerritoryName`, `RegionName`, `PrescriberName`, `ProductGroupName`, and `TRX(C4 Wk)`. \n\nSince the required column does not exist in the specified table, I cannot generate a SQL statement based on the given request.",
-    "job_id": null,
-    "user": "anonymous",
-    "timestamp": "2025-10-03T17:05:36.914260",
-    "results": [],
-    "columns": [],
-    "row_count": 0
-  },
-  {
-    "nl": "Show me patients with Tirosint target flag analysis",
-    "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 50 RegionId, TerritoryId, RegionName, TerritoryName, PrescriberName, ProductGroupName, [TRX(C4 Wk)], [TRX(C13 Wk)]\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%Tirosint%' OR ProductGroupName LIKE '%patients%';",
-    "job_id": "plan_2170387513276084771_test_mainstream",
-    "user": "test_user",
-    "timestamp": "2025-10-03T18:00:18.544568",
-    "results": [
-      {
-        "column_1": "100050",
-        "column_2": "10005070",
-        "column_3": "West",
-        "column_4": "Tele-Sales 4 - West",
-        "column_5": "JOAN ZIMMER",
-        "column_6": "Tirosint AG",
-        "column_7": 0,
-        "column_8": 0
-      },
-      {
-        "column_1": "100020",
-        "column_2": "10002012",
-        "column_3": "Southeast",
-        "column_4": "Jackson MS",
-        "column_5": "SAMANTHA MCGILL",
-        "column_6": "Tirosint AG Yaral",
-        "column_7": 1,
-        "column_8": 3
-      },
-      {
-        "column_1": "100050",
-        "column_2": "10005081",
-        "column_3": "West",
-        "column_4": "Los Angeles RSS",
-        "column_5": "ANTONIO ZAMORANO",
-        "column_6": "Tirosint AG Yaral",
-        "column_7": 2,
-        "column_8": 5
-      },
-      {
-        "column_1": "100030",
-        "column_2": "10003006",
-        "column_3": "Midwest",
-        "column_4": "Indianapolis IN",
-        "column_5": "MARY YODER",
-        "column_6": "Tirosint Sol",
-        "column_7": 0,
-        "column_8": 1
-      },
-      {
-        "column_1": "100080",
-        "column_2": "10008006",
-        "column_3": "Tri-state",
-        "column_4": "Philadelphia N PA",
-        "column_5": "HEATHER LOCKNER",
-        "column_6": "Tirosint AG",
-        "column_7": 0,
-        "column_8": 0
-      }
-    ],
-    "columns": [],
-    "row_count": 50
-  },
-  {
-    "nl": "Show me patients with Tirosint target flag analysis",
-    "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 50 RegionId, TerritoryId, RegionName, TerritoryName, PrescriberName, ProductGroupName, [TRX(C4 Wk)], [TRX(C13 Wk)]\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%Tirosint%' OR ProductGroupName LIKE '%patients%';",
-    "job_id": "plan_4502538460362696128_conv_1",
-    "user": "default_user",
-    "timestamp": "2025-10-03T18:06:28.739140",
-    "results": [
-      {
-        "column_1": "100050",
-        "column_2": "10005070",
-        "column_3": "West",
-        "column_4": "Tele-Sales 4 - West",
-        "column_5": "JOAN ZIMMER",
-        "column_6": "Tirosint AG",
-        "column_7": 0,
-        "column_8": 0
-      },
-      {
-        "column_1": "100020",
-        "column_2": "10002012",
-        "column_3": "Southeast",
-        "column_4": "Jackson MS",
-        "column_5": "SAMANTHA MCGILL",
-        "column_6": "Tirosint AG Yaral",
-        "column_7": 1,
-        "column_8": 3
-      },
-      {
-        "column_1": "100050",
-        "column_2": "10005081",
-        "column_3": "West",
-        "column_4": "Los Angeles RSS",
-        "column_5": "ANTONIO ZAMORANO",
-        "column_6": "Tirosint AG Yaral",
-        "column_7": 2,
-        "column_8": 5
-      },
-      {
-        "column_1": "100030",
-        "column_2": "10003006",
-        "column_3": "Midwest",
-        "column_4": "Indianapolis IN",
-        "column_5": "MARY YODER",
-        "column_6": "Tirosint Sol",
-        "column_7": 0,
-        "column_8": 1
-      },
-      {
-        "column_1": "100080",
-        "column_2": "10008006",
-        "column_3": "Tri-state",
-        "column_4": "Philadelphia N PA",
-        "column_5": "HEATHER LOCKNER",
-        "column_6": "Tirosint AG",
-        "column_7": 0,
-        "column_8": 0
-      }
-    ],
-    "columns": [],
-    "row_count": 50
-  },
-  {
-    "nl": "Show me patients with Tirosint target flag analysis",
-    "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 50 RegionId, TerritoryId, RegionName, TerritoryName, PrescriberName, ProductGroupName, [TRX(C4 Wk)], [TRX(C13 Wk)]\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%Tirosint%' OR ProductGroupName LIKE '%patients%';",
-    "job_id": "plan_2318776739166047119_test_mainstream",
-    "user": "test_user",
-    "timestamp": "2025-10-03T18:16:11.101776",
-    "results": [
-      {
-        "column_1": "100050",
-        "column_2": "10005070",
-        "column_3": "West",
-        "column_4": "Tele-Sales 4 - West",
-        "column_5": "JOAN ZIMMER",
-        "column_6": "Tirosint AG",
-        "column_7": 0,
-        "column_8": 0
-      },
-      {
-        "column_1": "100020",
-        "column_2": "10002012",
-        "column_3": "Southeast",
-        "column_4": "Jackson MS",
-        "column_5": "SAMANTHA MCGILL",
-        "column_6": "Tirosint AG Yaral",
-        "column_7": 1,
-        "column_8": 3
-      },
-      {
-        "column_1": "100050",
-        "column_2": "10005081",
-        "column_3": "West",
-        "column_4": "Los Angeles RSS",
-        "column_5": "ANTONIO ZAMORANO",
-        "column_6": "Tirosint AG Yaral",
-        "column_7": 2,
-        "column_8": 5
-      },
-      {
-        "column_1": "100030",
-        "column_2": "10003006",
-        "column_3": "Midwest",
-        "column_4": "Indianapolis IN",
-        "column_5": "MARY YODER",
-        "column_6": "Tirosint Sol",
-        "column_7": 0,
-        "column_8": 1
-      },
-      {
-        "column_1": "100080",
-        "column_2": "10008006",
-        "column_3": "Tri-state",
-        "column_4": "Philadelphia N PA",
-        "column_5": "HEATHER LOCKNER",
-        "column_6": "Tirosint AG",
-        "column_7": 0,
-        "column_8": 0
-      }
-    ],
-    "columns": [],
-    "row_count": 50
-  },
-  {
-    "nl": "Show me patients with Tirosint target flag analysis",
-    "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 50 RegionId, TerritoryId, RegionName, TerritoryName, PrescriberName, ProductGroupName, [TRX(C4 Wk)], [TRX(C13 Wk)]\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%Tirosint%' OR ProductGroupName LIKE '%patients%';",
-    "job_id": "plan_4253099514791785662_test_mainstream",
-    "user": "test_user",
-    "timestamp": "2025-10-03T18:23:54.427309",
-    "results": [
-      {
-        "RegionId": "100050",
-        "TerritoryId": "10005070",
-        "RegionName": "West",
-        "TerritoryName": "Tele-Sales 4 - West",
-        "PrescriberName": "JOAN ZIMMER",
-        "ProductGroupName": "Tirosint AG",
-        "TRX(C4 Wk)": 0,
-        "TRX(C13 Wk)": 0
-      },
-      {
-        "RegionId": "100020",
-        "TerritoryId": "10002012",
-        "RegionName": "Southeast",
-        "TerritoryName": "Jackson MS",
-        "PrescriberName": "SAMANTHA MCGILL",
-        "ProductGroupName": "Tirosint AG Yaral",
-        "TRX(C4 Wk)": 1,
-        "TRX(C13 Wk)": 3
-      },
-      {
-        "RegionId": "100050",
-        "TerritoryId": "10005081",
-        "RegionName": "West",
-        "TerritoryName": "Los Angeles RSS",
-        "PrescriberName": "ANTONIO ZAMORANO",
-        "ProductGroupName": "Tirosint AG Yaral",
-        "TRX(C4 Wk)": 2,
-        "TRX(C13 Wk)": 5
-      },
-      {
-        "RegionId": "100030",
-        "TerritoryId": "10003006",
-        "RegionName": "Midwest",
-        "TerritoryName": "Indianapolis IN",
-        "PrescriberName": "MARY YODER",
-        "ProductGroupName": "Tirosint Sol",
-        "TRX(C4 Wk)": 0,
-        "TRX(C13 Wk)": 1
-      },
-      {
-        "RegionId": "100080",
-        "TerritoryId": "10008006",
-        "RegionName": "Tri-state",
-        "TerritoryName": "Philadelphia N PA",
-        "PrescriberName": "HEATHER LOCKNER",
-        "ProductGroupName": "Tirosint AG",
-        "TRX(C4 Wk)": 0,
-        "TRX(C13 Wk)": 0
-      }
-    ],
-    "columns": [],
-    "row_count": 50
-  },
-  {
-    "nl": "Show me patients with Tirosint target flag analysis",
-    "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 50 RegionId, TerritoryId, RegionName, TerritoryName, PrescriberName, ProductGroupName, [TRX(C4 Wk)], [TRX(C13 Wk)]\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%Tirosint%' OR ProductGroupName LIKE '%patients%';",
-    "job_id": "plan_3725786263401942184_test_mainstream",
-    "user": "test_user",
-    "timestamp": "2025-10-03T18:29:16.720493",
-    "results": [
-      {
-        "RegionId": "100050",
-        "TerritoryId": "10005070",
-        "RegionName": "West",
-        "TerritoryName": "Tele-Sales 4 - West",
-        "PrescriberName": "JOAN ZIMMER",
-        "ProductGroupName": "Tirosint AG",
-        "TRX(C4 Wk)": 0,
-        "TRX(C13 Wk)": 0
-      },
-      {
-        "RegionId": "100020",
-        "TerritoryId": "10002012",
-        "RegionName": "Southeast",
-        "TerritoryName": "Jackson MS",
-        "PrescriberName": "SAMANTHA MCGILL",
-        "ProductGroupName": "Tirosint AG Yaral",
-        "TRX(C4 Wk)": 1,
-        "TRX(C13 Wk)": 3
-      },
-      {
-        "RegionId": "100050",
-        "TerritoryId": "10005081",
-        "RegionName": "West",
-        "TerritoryName": "Los Angeles RSS",
-        "PrescriberName": "ANTONIO ZAMORANO",
-        "ProductGroupName": "Tirosint AG Yaral",
-        "TRX(C4 Wk)": 2,
-        "TRX(C13 Wk)": 5
-      },
-      {
-        "RegionId": "100030",
-        "TerritoryId": "10003006",
-        "RegionName": "Midwest",
-        "TerritoryName": "Indianapolis IN",
-        "PrescriberName": "MARY YODER",
-        "ProductGroupName": "Tirosint Sol",
-        "TRX(C4 Wk)": 0,
-        "TRX(C13 Wk)": 1
-      },
-      {
-        "RegionId": "100080",
-        "TerritoryId": "10008006",
-        "RegionName": "Tri-state",
-        "TerritoryName": "Philadelphia N PA",
-        "PrescriberName": "HEATHER LOCKNER",
-        "ProductGroupName": "Tirosint AG",
-        "TRX(C4 Wk)": 0,
-        "TRX(C13 Wk)": 0
-      }
-    ],
-    "columns": [],
-    "row_count": 50
-  },
-  {
-    "nl": "Show me patients with Tirosint target flag analysis",
-    "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 50 RegionId, TerritoryId, RegionName, TerritoryName, PrescriberName, ProductGroupName, [TRX(C4 Wk)], [TRX(C13 Wk)]\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%Tirosint%' OR ProductGroupName LIKE '%patients%';",
-    "job_id": "plan_4668412481080893136_test_mainstream",
-    "user": "test_user",
-    "timestamp": "2025-10-03T18:31:12.631976",
-    "results": [
-      {
-        "RegionId": "100050",
-        "TerritoryId": "10005070",
-        "RegionName": "West",
-        "TerritoryName": "Tele-Sales 4 - West",
-        "PrescriberName": "JOAN ZIMMER",
-        "ProductGroupName": "Tirosint AG",
-        "TRX(C4 Wk)": 0,
-        "TRX(C13 Wk)": 0
-      },
-      {
-        "RegionId": "100020",
-        "TerritoryId": "10002012",
-        "RegionName": "Southeast",
-        "TerritoryName": "Jackson MS",
-        "PrescriberName": "SAMANTHA MCGILL",
-        "ProductGroupName": "Tirosint AG Yaral",
-        "TRX(C4 Wk)": 1,
-        "TRX(C13 Wk)": 3
-      },
-      {
-        "RegionId": "100050",
-        "TerritoryId": "10005081",
-        "RegionName": "West",
-        "TerritoryName": "Los Angeles RSS",
-        "PrescriberName": "ANTONIO ZAMORANO",
-        "ProductGroupName": "Tirosint AG Yaral",
-        "TRX(C4 Wk)": 2,
-        "TRX(C13 Wk)": 5
-      },
-      {
-        "RegionId": "100030",
-        "TerritoryId": "10003006",
-        "RegionName": "Midwest",
-        "TerritoryName": "Indianapolis IN",
-        "PrescriberName": "MARY YODER",
-        "ProductGroupName": "Tirosint Sol",
-        "TRX(C4 Wk)": 0,
-        "TRX(C13 Wk)": 1
-      },
-      {
-        "RegionId": "100080",
-        "TerritoryId": "10008006",
-        "RegionName": "Tri-state",
-        "TerritoryName": "Philadelphia N PA",
-        "PrescriberName": "HEATHER LOCKNER",
-        "ProductGroupName": "Tirosint AG",
-        "TRX(C4 Wk)": 0,
-        "TRX(C13 Wk)": 0
-      }
-    ],
-    "columns": [],
-    "row_count": 50
-  },
-  {
-    "nl": "Show me patients with Tirosint target flag analysis",
-    "sql": "-- Dynamic template query for Azure SQL Server\nSELECT TOP 50 RegionId, TerritoryId, RegionName, TerritoryName, PrescriberName, ProductGroupName, [TRX(C4 Wk)], [TRX(C13 Wk)]\nFROM Reporting_BI_PrescriberOverview\nWHERE ProductGroupName LIKE '%Tirosint%' OR ProductGroupName LIKE '%patients%';",
-    "job_id": "plan_-7884308711780079751_test_mainstream",
-    "user": "test_user",
-    "timestamp": "2025-10-03T18:34:23.476892",
-    "results": [
-      {
-        "RegionId": "100050",
-        "TerritoryId": "10005070",
-        "RegionName": "West",
-        "TerritoryName": "Tele-Sales 4 - West",
-        "PrescriberName": "JOAN ZIMMER",
-        "ProductGroupName": "Tirosint AG",
-        "TRX(C4 Wk)": 0,
-        "TRX(C13 Wk)": 0
-      },
-      {
-        "RegionId": "100020",
-        "TerritoryId": "10002012",
-        "RegionName": "Southeast",
-        "TerritoryName": "Jackson MS",
-        "PrescriberName": "SAMANTHA MCGILL",
-        "ProductGroupName": "Tirosint AG Yaral",
-        "TRX(C4 Wk)": 1,
-        "TRX(C13 Wk)": 3
-      },
-      {
-        "RegionId": "100050",
-        "TerritoryId": "10005081",
-        "RegionName": "West",
-        "TerritoryName": "Los Angeles RSS",
-        "PrescriberName": "ANTONIO ZAMORANO",
-        "ProductGroupName": "Tirosint AG Yaral",
-        "TRX(C4 Wk)": 2,
-        "TRX(C13 Wk)": 5
-      },
-      {
-        "RegionId": "100030",
-        "TerritoryId": "10003006",
-        "RegionName": "Midwest",
-        "TerritoryName": "Indianapolis IN",
-        "PrescriberName": "MARY YODER",
-        "ProductGroupName": "Tirosint Sol",
-        "TRX(C4 Wk)": 0,
-        "TRX(C13 Wk)": 1
-      },
-      {
-        "RegionId": "100080",
-        "TerritoryId": "10008006",
-        "RegionName": "Tri-state",
-        "TerritoryName": "Philadelphia N PA",
-        "PrescriberName": "HEATHER LOCKNER",
-        "ProductGroupName": "Tirosint AG",
-        "TRX(C4 Wk)": 0,
-        "TRX(C13 Wk)": 0
-      }
-    ],
-    "columns": [],
-    "row_count": 50
-  },
-  {
-    "nl": "Show me patients with Tirosint target flag analysis",
-    "sql": "-- Since there are no date columns available for temporal analysis, \n-- we will perform a simple aggregation query to show prescribers \n-- with the Tirosint target flag set to 'Y'.\n\nSELECT TOP 100 \n    [PrescriberId], \n    [PrescriberName], \n    [TirosintTargetFlag], \n    [RegionName], \n    [TerritoryName]\nFROM \n    [dbo].[Reporting_BI_PrescriberOverview]\nWHERE \n    [TirosintTargetFlag] = 'Y'",
-    "job_id": "plan_5680010255301987315_test_mainstream",
-    "user": "test_user",
-    "timestamp": "2025-10-03T18:37:35.593211",
-    "results": [
-      {
-        "PrescriberId": "1931351",
-        "PrescriberName": "JOAN ZIMMER",
-        "TirosintTargetFlag": "Y",
-        "RegionName": "West",
-        "TerritoryName": "Tele-Sales 4 - West"
-      },
-      {
-        "PrescriberId": "4680073",
-        "PrescriberName": "NOLA GARDNER",
-        "TirosintTargetFlag": "Y",
-        "RegionName": "Tri-state",
-        "TerritoryName": "Rochester NY"
-      },
-      {
-        "PrescriberId": "6564214",
-        "PrescriberName": "SAMANTHA MCGILL",
-        "TirosintTargetFlag": "Y",
-        "RegionName": "Southeast",
-        "TerritoryName": "Jackson MS"
-      },
-      {
-        "PrescriberId": "3204069",
-        "PrescriberName": "ANTONIO ZAMORANO",
-        "TirosintTargetFlag": "Y",
-        "RegionName": "West",
-        "TerritoryName": "Los Angeles RSS"
-      },
-      {
-        "PrescriberId": "1333663",
-        "PrescriberName": "JOHN MERENDINO",
-        "TirosintTargetFlag": "Y",
-        "RegionName": "Midatlantic",
-        "TerritoryName": "Washington DC"
-      }
-    ],
-    "columns": [],
-    "row_count": 100
-  },
-  {
-    "nl": "Show me patients with Tirosint target flag analysis",
-    "sql": "-- Full temporal analysis cannot be performed as no date columns are specified for time-series analysis.\nSELECT TOP 100 [PrescriberName], [TirosintTargetFlag]\nFROM [dbo].[Reporting_BI_PrescriberOverview]\nWHERE [TirosintTargetFlag] = 'Y'",
-    "job_id": "plan_-8660817057520041861_test_mainstream",
-    "user": "test_user",
-    "timestamp": "2025-10-03T18:42:34.002815",
-    "results": [
-      {
-        "PrescriberName": "JOAN ZIMMER",
-        "TirosintTargetFlag": "Y"
-      },
-      {
-        "PrescriberName": "NOLA GARDNER",
-        "TirosintTargetFlag": "Y"
-      },
-      {
-        "PrescriberName": "SAMANTHA MCGILL",
-        "TirosintTargetFlag": "Y"
-      },
-      {
-        "PrescriberName": "ANTONIO ZAMORANO",
-        "TirosintTargetFlag": "Y"
-      },
-      {
-        "PrescriberName": "JOHN MERENDINO",
-        "TirosintTargetFlag": "Y"
-      }
-    ],
-    "columns": [],
-    "row_count": 100
-  },
-  {
-    "nl": "\"Compare prescribers with PDRP flag enabled vs disabled, show the difference in TRX and NRX performance for Tirosint products, and calculate the impact of lunch & learn activities on prescription growth\"\n",
-    "sql": "-- Since there are no date columns available for temporal analysis, \n-- we will perform a simple aggregation to compare prescribers with \n-- PDRP flag enabled vs disabled for Tirosint products.\n\nSELECT \n    [PDRPFlag],\n    SUM([TRX]) AS Total_TRX,\n    SUM([NRX]) AS Total_NRX,\n    SUM([LunchLearn]) AS Total_LunchLearn\nFROM \n    [dbo].[Reporting_BI_PrescriberProfile]\nWHERE \n    [TirosintTargetFlag] = 'Y'\nGROUP BY \n    [PDRPFlag]\nORDER BY \n    [PDRPFlag]",
-    "job_id": "plan_175317713013522597_conv_1",
-    "user": "default_user",
-    "timestamp": "2025-10-03T18:50:31.787431",
-    "results": [
-      {
-        "PDRPFlag": "NO",
-        "Total_TRX": 6342847,
-        "Total_NRX": 2697582,
-        "Total_LunchLearn": 5392
-      },
-      {
-        "PDRPFlag": "YES",
-        "Total_TRX": 383127,
-        "Total_NRX": 153130,
-        "Total_LunchLearn": 245
-      }
-    ],
-    "columns": [],
-    "row_count": 2
-  },
-  {
-    "nl": "Show me patients with Tirosint target flag analysis",
-    "sql": "-- Full temporal analysis cannot be performed as there are no date columns specified for time-series analysis.\nSELECT TOP 100 [PrescriberName], [TirosintTargetFlag]\nFROM [dbo].[Reporting_BI_PrescriberOverview]\nWHERE [TirosintTargetFlag] = 'Y'",
-    "job_id": "plan_950013815538210985_test_mainstream",
-    "user": "test_user",
-    "timestamp": "2025-10-03T18:54:05.627339",
-    "results": [
-      {
-        "PrescriberName": "JOAN ZIMMER",
-        "TirosintTargetFlag": "Y"
-      },
-      {
-        "PrescriberName": "NOLA GARDNER",
-        "TirosintTargetFlag": "Y"
-      },
-      {
-        "PrescriberName": "SAMANTHA MCGILL",
-        "TirosintTargetFlag": "Y"
-      },
-      {
-        "PrescriberName": "ANTONIO ZAMORANO",
-        "TirosintTargetFlag": "Y"
-      },
-      {
-        "PrescriberName": "JOHN MERENDINO",
-        "TirosintTargetFlag": "Y"
-      }
-    ],
-    "columns": [],
-    "row_count": 100
-  },
-  {
     "nl": "Show me patients with Tirosint target flag analysis",
     "sql": "-- Temporal analysis cannot be performed as there are no date columns specified for time-series analysis.\nSELECT TOP 100 [PrescriberName], [TirosintTargetFlag]\nFROM [dbo].[Reporting_BI_PrescriberOverview]\nWHERE [TirosintTargetFlag] = 'Y'",
     "job_id": "plan_1867790867698049573_test_mainstream",
@@ -1423,6 +176,482 @@
     "job_id": "plan_2585551184396590734_test_session",
     "user": "test_user",
     "timestamp": "2025-10-03T21:17:11.730600",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "\"I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.\"\n",
+    "sql": "SELECT TOP 100 \n    ngd.[TerritoryName], \n    ngd.[RegionName], \n    ngd.[RepName], \n    ISNULL(po.[TRX], 0) AS TotalPrescriptions, \n    ISNULL(po.[Calls], 0) AS TotalCalls, \n    ISNULL(po.[Samples], 0) AS TotalSamples, \n    ISNULL(pp.[NRX], 0) AS NewPrescriptions, \n    ISNULL(pp.[TRXShare], 0) AS PrescriptionShare\nFROM \n    dbo.Reporting_BI_NGD AS ngd\nJOIN \n    dbo.Reporting_BI_PrescriberOverview AS po ON ngd.[TerritoryId] = po.[TerritoryId]\nJOIN \n    dbo.Reporting_BI_PrescriberProfile AS pp ON ngd.[PrescriberId] = pp.[PrescriberId]\nWHERE \n    po.[TirosintTargetFlag] = 'Y' \n    AND ISNULL(po.[TRX], 0) < 10 \n    AND ISNULL(po.[Calls], 0) > 20\nORDER BY \n    TotalPrescriptions ASC",
+    "job_id": "plan_6189537887595401760_conv_1",
+    "user": "default_user",
+    "timestamp": "2025-10-05T19:14:06.108360",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(ngd.[TotalCalls]) AS TotalActivities,\n        SUM(ISNULL(po.[NRX(C QTD)], 0)) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberOverview po ON ngd.[TerritoryId] = po.[TerritoryId]\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT TOP 100 *\nFROM metrics\nWHERE RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)\nORDER BY TotalActivities DESC",
+    "job_id": "plan_4212433409604881732_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T20:08:53.821193",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(ngd.[TotalCalls]) AS TotalActivities,\n        SUM(ISNULL(po.[NRX(C QTD)], 0)) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberOverview po ON ngd.[TerritoryId] = po.[TerritoryId]\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT TOP 100 *\nFROM metrics\nWHERE RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)\nORDER BY TotalActivities DESC",
+    "job_id": "plan_6843896766653837244_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T20:09:52.597820",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(ngd.[TotalCalls]) AS TotalActivities,\n        SUM(ISNULL(po.[NRX(C QTD)], 0)) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberOverview po ON ngd.[TerritoryId] = po.[TerritoryId]\n    WHERE po.[TirosintTargetFlag] = 'Y'\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT TOP 100 *\nFROM metrics\nWHERE RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)\nORDER BY TotalActivities DESC",
+    "job_id": "plan_-3152889422989613557_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T20:10:53.828553",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(ngd.[TotalCalls]) AS TotalActivities,\n        SUM(CAST(pp.[TRX] AS INT)) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberProfile pp ON ngd.[PrescriberId] = pp.[PrescriberId]\n    WHERE pp.[TirosintTargetFlag] = 'Y'\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT TOP 100\n    m.[TerritoryName],\n    m.RepCount,\n    m.TotalActivities,\n    m.TotalPrescriptions\nFROM metrics m\nWHERE m.RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND m.TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)\nORDER BY m.TotalActivities DESC",
+    "job_id": "plan_-5917592900910802474_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T20:15:27.741483",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "-- Dynamic multi-table join template\nSELECT TOP 10 \n    t1.RegionId,\n    t1.RegionName,\n    t1.TerritoryId,\n    t1.TerritoryName,\n    t2.RegionId,\n    t2.RegionName\nFROM Reporting_BI_PrescriberOverview t1\nINNER JOIN Reporting_BI_PrescriberProfile t2 ON t1.RegionId = t2.RegionId;\n-- Join condition determined dynamically from schema",
+    "job_id": "plan_-4937230710089724963_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T20:18:58.201113",
+    "results": [
+      {
+        "RegionId": "100060",
+        "RegionName": "Midatlantic",
+        "TerritoryId": "10006001",
+        "TerritoryName": "Charlotte NC"
+      },
+      {
+        "RegionId": "100060",
+        "RegionName": "Midatlantic",
+        "TerritoryId": "10006013",
+        "TerritoryName": "Nashville TN"
+      },
+      {
+        "RegionId": "100060",
+        "RegionName": "Midatlantic",
+        "TerritoryId": "10006009",
+        "TerritoryName": "Washington DC"
+      },
+      {
+        "RegionId": "100060",
+        "RegionName": "Midatlantic",
+        "TerritoryId": "10006004",
+        "TerritoryName": "Columbia SC"
+      },
+      {
+        "RegionId": "100060",
+        "RegionName": "Midatlantic",
+        "TerritoryId": "10006005",
+        "TerritoryName": "Richmond VA"
+      }
+    ],
+    "columns": [],
+    "row_count": 10
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(ngd.[TotalCalls]) AS TotalActivities,\n        SUM(CAST(pp.[TRX] AS INT)) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberProfile pp ON ngd.[PrescriberId] = pp.[PrescriberId]\n    WHERE pp.[TirosintTargetFlag] = 'Y'\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT *\nFROM metrics\nWHERE RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)",
+    "job_id": "plan_3925513183099172263_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T20:24:06.562849",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(ngd.[TotalCalls]) AS TotalActivities,\n        SUM(CAST(pp.[TRX] AS INT)) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberProfile pp ON ngd.[PrescriberId] = pp.[PrescriberId]\n    WHERE pp.[TirosintTargetFlag] = 'Y'\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT *\nFROM metrics\nWHERE RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)",
+    "job_id": "plan_7323615768911279362_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T20:25:29.056964",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(ngd.[TotalCalls]) AS TotalActivities,\n        SUM(CAST(pp.[TRX] AS INT)) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberProfile pp ON ngd.[PrescriberId] = pp.[PrescriberId]\n    WHERE pp.[TirosintTargetFlag] = 'Y'\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT *\nFROM metrics\nWHERE RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)",
+    "job_id": "plan_891878520993418972_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T20:27:13.439567",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(CAST(ngd.[TotalCalls] AS DECIMAL(18,2))) AS TotalActivities,\n        SUM(pp.[TRX]) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberProfile pp ON ngd.[PrescriberId] = pp.[PrescriberId]\n    WHERE pp.[TirosintTargetFlag] = 'Y'\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT *\nFROM metrics\nWHERE RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)",
+    "job_id": "plan_9143927738827656972_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T20:28:22.309308",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(CAST(ngd.[TotalCalls] AS DECIMAL(18,2))) AS TotalActivities,\n        SUM(pp.[TRX]) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberProfile pp ON ngd.[PrescriberId] = pp.[PrescriberId]\n    WHERE pp.[TirosintTargetFlag] = 'Y'\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT *\nFROM metrics\nWHERE RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)",
+    "job_id": "plan_4001939151525237410_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T20:29:13.304211",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(CAST(ngd.[TotalCalls] AS DECIMAL(18,2))) AS TotalActivities,\n        SUM(pp.[TRX]) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberProfile pp ON ngd.[PrescriberId] = pp.[PrescriberId]\n    WHERE pp.[TirosintTargetFlag] = 'Y'\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT *\nFROM metrics\nWHERE RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)",
+    "job_id": "plan_5523313309395101844_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T20:32:18.653786",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(CAST(ngd.[TotalCalls] AS DECIMAL(18,2))) AS TotalActivities,\n        SUM(pp.[TRX]) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberProfile pp ON ngd.[PrescriberId] = pp.[PrescriberId]\n    WHERE pp.[TirosintTargetFlag] = 'Y'\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT *\nFROM metrics\nWHERE RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)",
+    "job_id": "plan_-6537633710821715039_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T20:33:29.478137",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(CAST(ngd.[TotalCalls] AS DECIMAL(18,2))) AS TotalActivities,\n        SUM(pp.[TRX]) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberProfile pp ON ngd.[PrescriberId] = pp.[PrescriberId]\n    WHERE pp.[TirosintTargetFlag] = 'Y'\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT TOP 100\n    m.[TerritoryName],\n    m.RepCount,\n    m.TotalActivities,\n    m.TotalPrescriptions\nFROM metrics m\nWHERE m.RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND m.TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)\nORDER BY m.TotalActivities DESC",
+    "job_id": "plan_6252327420077355210_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T20:34:24.785007",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(CAST(ngd.[TotalCalls] AS DECIMAL(18,2))) AS TotalActivities,\n        SUM(pp.[TRX]) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberProfile pp ON ngd.[PrescriberId] = pp.[PrescriberId]\n    WHERE pp.[TirosintTargetFlag] = 'Y'\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT TOP 100\n    m.[TerritoryName],\n    m.RepCount,\n    m.TotalActivities,\n    m.TotalPrescriptions\nFROM metrics m\nWHERE m.RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND m.TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)\nORDER BY m.TotalActivities DESC",
+    "job_id": "plan_-1374565061879663518_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T20:35:55.572782",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(CAST(ngd.[TotalCalls] AS DECIMAL(18,2))) AS TotalActivities,\n        SUM(CAST(pp.[TRX] AS DECIMAL(18,2))) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberProfile pp ON ngd.[PrescriberId] = pp.[PrescriberId]\n    WHERE pp.[TirosintTargetFlag] = 'Y'\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT TOP 100\n    m.[TerritoryName],\n    m.RepCount,\n    m.TotalActivities,\n    m.TotalPrescriptions\nFROM metrics m\nWHERE m.RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND m.TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)\nORDER BY m.TotalActivities DESC",
+    "job_id": "plan_-136980990732848965_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T20:37:17.569189",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(CAST(ngd.[TotalCalls] AS DECIMAL(18,2))) AS TotalActivities,\n        SUM(pp.[TRX]) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberProfile pp ON ngd.[PrescriberId] = pp.[PrescriberId]\n    WHERE pp.[TirosintTargetFlag] = 'Y'\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT *\nFROM metrics\nWHERE RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)",
+    "job_id": "plan_-3478416611168434007_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T20:38:31.327043",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(CAST(ngd.[TotalCalls] AS DECIMAL(18,2))) AS TotalActivities,\n        SUM(pp.[TRX]) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberProfile pp ON ngd.[PrescriberId] = pp.[PrescriberId]\n    WHERE pp.[TirosintTargetFlag] = 'Y'\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT *\nFROM metrics\nWHERE RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)",
+    "job_id": "plan_-4138211243556408544_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T20:40:07.895385",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(CAST(ngd.[TotalCalls] AS DECIMAL(18,2))) AS TotalActivities,\n        SUM(pp.[TRX]) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberProfile pp ON ngd.[PrescriberId] = pp.[PrescriberId]\n    WHERE pp.[TirosintTargetFlag] = 'Y'\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT TOP 100\n    m.[TerritoryName],\n    m.RepCount,\n    m.TotalActivities,\n    m.TotalPrescriptions\nFROM metrics m\nWHERE m.RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND m.TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)\nORDER BY m.TotalActivities DESC",
+    "job_id": "plan_-6415234254591330930_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T20:55:22.514543",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "SELECT 'Error' as error",
+    "job_id": "plan_-693785863216595239_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T20:56:10.319185",
+    "results": [
+      {
+        "error": "Error"
+      }
+    ],
+    "columns": [],
+    "row_count": 1
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "SELECT 'Error' as error",
+    "job_id": "plan_-3965966287566997045_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T20:56:57.522883",
+    "results": [
+      {
+        "error": "Error"
+      }
+    ],
+    "columns": [],
+    "row_count": 1
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(CAST(ngd.[TotalCalls] AS DECIMAL(18,2))) AS TotalActivities,\n        SUM(pp.[TRX]) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberProfile pp ON ngd.[PrescriberId] = pp.[PrescriberId]\n    WHERE pp.[TirosintTargetFlag] = 'Y'\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT *\nFROM metrics\nWHERE RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)",
+    "job_id": "plan_6727182833753316778_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T20:57:50.056892",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "-- Dynamic multi-table join template\nSELECT TOP 10 \n    t1.RegionId,\n    t1.RegionName,\n    t1.TerritoryId,\n    t1.TerritoryName,\n    t2.RegionId,\n    t2.RegionName\nFROM Reporting_BI_PrescriberOverview t1\nINNER JOIN Reporting_BI_PrescriberProfile t2 ON t1.RegionId = t2.RegionId;\n-- Join condition determined dynamically from schema",
+    "job_id": "plan_6540952564131368524_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T20:59:21.763435",
+    "results": [
+      {
+        "RegionId": "100060",
+        "RegionName": "Midatlantic",
+        "TerritoryId": "10006001",
+        "TerritoryName": "Charlotte NC"
+      },
+      {
+        "RegionId": "100060",
+        "RegionName": "Midatlantic",
+        "TerritoryId": "10006013",
+        "TerritoryName": "Nashville TN"
+      },
+      {
+        "RegionId": "100060",
+        "RegionName": "Midatlantic",
+        "TerritoryId": "10006009",
+        "TerritoryName": "Washington DC"
+      },
+      {
+        "RegionId": "100060",
+        "RegionName": "Midatlantic",
+        "TerritoryId": "10006004",
+        "TerritoryName": "Columbia SC"
+      },
+      {
+        "RegionId": "100060",
+        "RegionName": "Midatlantic",
+        "TerritoryId": "10006005",
+        "TerritoryName": "Richmond VA"
+      }
+    ],
+    "columns": [],
+    "row_count": 10
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(CAST(ngd.[TotalCalls] AS DECIMAL(18,2))) AS TotalActivities,\n        SUM(pp.[TRX]) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberProfile pp ON ngd.[PrescriberId] = pp.[PrescriberId]\n    WHERE pp.[TirosintTargetFlag] = 'Y'\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT TOP 100\n    m.[TerritoryName],\n    m.RepCount,\n    m.TotalActivities,\n    m.TotalPrescriptions\nFROM metrics m\nWHERE m.RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND m.TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)\nORDER BY m.TotalActivities DESC",
+    "job_id": "plan_-6662828624588115024_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T21:00:12.115877",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(CAST(ngd.[TotalCalls] AS DECIMAL(18,2))) AS TotalActivities,\n        SUM(po.[TRX]) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberOverview po ON ngd.[TerritoryId] = po.[TerritoryId]\n    WHERE po.[TirosintTargetFlag] = 'Y'\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT TOP 100 *\nFROM metrics\nWHERE RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)\nORDER BY TotalActivities DESC",
+    "job_id": "plan_4782468779584760988_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T21:01:12.288632",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "SELECT 'Error' as error",
+    "job_id": "plan_7428136024853736598_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T21:03:22.311436",
+    "results": [
+      {
+        "error": "Error"
+      }
+    ],
+    "columns": [],
+    "row_count": 1
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(CAST(ngd.[TotalCalls] AS DECIMAL(18,2))) AS TotalActivities,\n        SUM(pp.[TRX]) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberProfile pp ON ngd.[PrescriberId] = pp.[PrescriberId]\n    WHERE pp.[TirosintTargetFlag] = 'Y'\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT *\nFROM metrics\nWHERE RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)",
+    "job_id": "plan_-415968659317793878_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T21:04:47.342248",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(CAST(ngd.[TotalCalls] AS DECIMAL(18,2))) AS TotalActivities,\n        SUM(pp.[TRX]) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberProfile pp ON ngd.[PrescriberId] = pp.[PrescriberId]\n    WHERE pp.[TirosintTargetFlag] = 'Y'\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT *\nFROM metrics\nWHERE RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)",
+    "job_id": "plan_4088134773844716808_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T21:06:01.809462",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(CAST(ngd.[TotalCalls] AS DECIMAL(18,2))) AS TotalActivities,\n        SUM(CAST(pp.[TRX] AS DECIMAL(18,2))) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberProfile pp ON ngd.[PrescriberId] = pp.[PrescriberId]\n    WHERE pp.[TirosintTargetFlag] = 'Y'\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT TOP 100\n    m.[TerritoryName],\n    m.RepCount,\n    m.TotalActivities,\n    m.TotalPrescriptions\nFROM metrics m\nWHERE m.RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND m.TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)\nORDER BY m.TotalActivities DESC",
+    "job_id": "plan_5622022743438811180_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T21:08:59.508971",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "-- Dynamic multi-table join template\nSELECT TOP 10 \n    t1.RegionId,\n    t1.RegionName,\n    t1.TerritoryId,\n    t1.TerritoryName,\n    t2.RegionId,\n    t2.RegionName\nFROM Reporting_BI_PrescriberOverview t1\nINNER JOIN Reporting_BI_PrescriberProfile t2 ON t1.RegionId = t2.RegionId;\n-- Join condition determined dynamically from schema",
+    "job_id": "plan_7148540329019696115_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T21:12:28.498359",
+    "results": [
+      {
+        "RegionId": "100060",
+        "RegionName": "Midatlantic",
+        "TerritoryId": "10006001",
+        "TerritoryName": "Charlotte NC"
+      },
+      {
+        "RegionId": "100060",
+        "RegionName": "Midatlantic",
+        "TerritoryId": "10006013",
+        "TerritoryName": "Nashville TN"
+      },
+      {
+        "RegionId": "100060",
+        "RegionName": "Midatlantic",
+        "TerritoryId": "10006009",
+        "TerritoryName": "Washington DC"
+      },
+      {
+        "RegionId": "100060",
+        "RegionName": "Midatlantic",
+        "TerritoryId": "10006004",
+        "TerritoryName": "Columbia SC"
+      },
+      {
+        "RegionId": "100060",
+        "RegionName": "Midatlantic",
+        "TerritoryId": "10006005",
+        "TerritoryName": "Richmond VA"
+      }
+    ],
+    "columns": [],
+    "row_count": 10
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(TRY_CAST(ngd.[TotalCalls] AS DECIMAL(18,2))) AS TotalActivities,\n        SUM(TRY_CAST(pp.[TRX] AS DECIMAL(18,2))) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberProfile pp ON ngd.[PrescriberId] = pp.[PrescriberId]\n    WHERE pp.[TirosintTargetFlag] = 'Y'\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT TOP 100\n    m.[TerritoryName],\n    m.RepCount,\n    m.TotalActivities,\n    m.TotalPrescriptions\nFROM metrics m\nWHERE m.RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND m.TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)\nORDER BY m.TotalActivities DESC",
+    "job_id": "plan_3301978263863321119_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T21:13:09.932128",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(TRY_CAST(ngd.[TotalCalls] AS DECIMAL(18,2))) AS TotalActivities,\n        SUM(TRY_CAST(pp.[TRX] AS DECIMAL(18,2))) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberProfile pp ON ngd.[PrescriberId] = pp.[PrescriberId]\n    WHERE pp.[TirosintTargetFlag] = 'Y'\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT *\nFROM metrics\nWHERE RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)",
+    "job_id": "plan_8330988048008457403_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T21:14:37.616530",
+    "results": [],
+    "columns": [],
+    "row_count": 0
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "-- Dynamic multi-table join template\nSELECT TOP 10 \n    t1.RegionId,\n    t1.RegionName,\n    t1.TerritoryId,\n    t1.TerritoryName,\n    t2.RegionId,\n    t2.RegionName\nFROM Reporting_BI_PrescriberOverview t1\nINNER JOIN Reporting_BI_PrescriberProfile t2 ON t1.RegionId = t2.RegionId;\n-- Join condition determined dynamically from schema",
+    "job_id": "plan_-8345590944171825206_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T21:16:30.384508",
+    "results": [
+      {
+        "RegionId": "100060",
+        "RegionName": "Midatlantic",
+        "TerritoryId": "10006001",
+        "TerritoryName": "Charlotte NC"
+      },
+      {
+        "RegionId": "100060",
+        "RegionName": "Midatlantic",
+        "TerritoryId": "10006013",
+        "TerritoryName": "Nashville TN"
+      },
+      {
+        "RegionId": "100060",
+        "RegionName": "Midatlantic",
+        "TerritoryId": "10006009",
+        "TerritoryName": "Washington DC"
+      },
+      {
+        "RegionId": "100060",
+        "RegionName": "Midatlantic",
+        "TerritoryId": "10006004",
+        "TerritoryName": "Columbia SC"
+      },
+      {
+        "RegionId": "100060",
+        "RegionName": "Midatlantic",
+        "TerritoryId": "10006005",
+        "TerritoryName": "Richmond VA"
+      }
+    ],
+    "columns": [],
+    "row_count": 10
+  },
+  {
+    "nl": "I need to understand why some territories are underperforming - show me territories where we have good rep coverage and are doing lots of activities, but prescribers still aren't writing many prescriptions for our targeted products. Include the rep names so I can follow up.",
+    "sql": "WITH metrics AS (\n    SELECT\n        ngd.[TerritoryName],\n        COUNT(DISTINCT ngd.[RepName]) AS RepCount,\n        SUM(TRY_CAST(ngd.[TotalCalls] AS DECIMAL(18,2))) AS TotalActivities,\n        SUM(TRY_CAST(pp.[TRX] AS DECIMAL(18,2))) AS TotalPrescriptions\n    FROM dbo.Reporting_BI_NGD ngd\n    JOIN dbo.Reporting_BI_PrescriberProfile pp ON ngd.[PrescriberId] = pp.[PrescriberId]\n    WHERE pp.[TirosintTargetFlag] = 'Y'\n    GROUP BY ngd.[TerritoryName]\n)\nSELECT *\nFROM metrics\nWHERE RepCount > (SELECT AVG(RepCount) FROM metrics)\n  AND TotalPrescriptions < (SELECT AVG(TotalPrescriptions) FROM metrics)",
+    "job_id": "plan_-3338479835289099268_test_session",
+    "user": "test_user",
+    "timestamp": "2025-10-05T21:17:10.646520",
     "results": [],
     "columns": [],
     "row_count": 0

@@ -1416,8 +1416,12 @@ class IntelligentQueryPlanner:
             try:
                 schema_prompt = self._format_semantic_analysis_for_llm(semantic_analysis, query)
             except Exception as e:
+                import traceback
+                error_trace = traceback.format_exc()
                 if "'str' object has no attribute 'get'" in str(e):
                     print(f"🔧 FIXED: Caught string/dict error in schema prompt formatting: {e}")
+                    print(f"📋 Full error trace:")
+                    print(error_trace)
                     # Create simple fallback prompt
                     schema_prompt = f"Generate SQL for query: {query}\nUsing tables: {', '.join(confirmed_tables)}"
                 else:
@@ -1564,6 +1568,9 @@ class IntelligentQueryPlanner:
                 print(f"✅ Template fallback SQL generated: {len(final_sql)} chars")
                 print(final_sql)
             
+            # 🚨 CRITICAL DATA TYPE VALIDATION: Check for VARCHAR in aggregation functions
+            final_sql = self._validate_and_fix_data_types(final_sql, semantic_analysis, confirmed_tables)
+            
             # Return result with comprehensive semantic analysis confidence
             enhanced_result = {
                 'sql': final_sql,
@@ -1582,7 +1589,9 @@ class IntelligentQueryPlanner:
                     'schema_intelligence_used': True,
                     'template_fallback_used': not is_actual_sql,
                     'dynamic_sql_generation': not is_actual_sql
-                }
+                },
+                # 🔧 CRITICAL: Store prompt for retry mechanism
+                'prompt_used': schema_prompt
             }
             
             logger.info(f"✅ SQL generated successfully with confidence: {enhanced_result['confidence']:.2f}")
@@ -2092,7 +2101,20 @@ class IntelligentQueryPlanner:
                 }
             },
             'planning_method': 'intelligent_semantic_analysis',
-            'tables_selected': confirmed_tables
+            'tables_selected': confirmed_tables,
+            # 🔧 CRITICAL: Include full context for retry mechanism
+            'semantic_analysis': query_semantics,
+            'query_understanding': {
+                'entities': query_semantics.get('entities', []),
+                'metrics': query_semantics.get('metrics', []),
+                'filters': query_semantics.get('filters', []),
+                'time_references': query_semantics.get('time_references', []),
+                'aggregations': query_semantics.get('aggregations', [])
+            },
+            'prompt_used': result.get('prompt_used', ''),
+            'schema_context': schema_context,
+            'business_logic_applied': schema_context.get('business_rules', []),
+            'join_strategy': schema_context.get('join_paths', [])
         })
         
         return final_result
@@ -2914,36 +2936,157 @@ INNER JOIN {secondary_table} t2 ON {join_condition};
         
         prompt_parts = []
         
-        # 🎯 QUERY INTENT ANALYSIS - Extract semantic patterns from user query
+        # 🎯 QUERY CONTEXT - Provide comprehensive SQL pattern examples
         query_lower = query.lower()
-        intent_signals = {
-            'aggregation': any(word in query_lower for word in ['total', 'sum', 'count', 'average', 'avg', 'max', 'min', 'group']),
-            'temporal': any(word in query_lower for word in ['month', 'year', 'date', 'period', 'time', 'recent', 'last']),
-            'filtering': any(word in query_lower for word in ['where', 'specific', 'only', 'filter', 'particular']),
-            'ranking': any(word in query_lower for word in ['top', 'highest', 'lowest', 'best', 'worst', 'rank']),
-            'comparison': any(word in query_lower for word in ['compare', 'vs', 'versus', 'difference', 'between']),
-            'detail': any(word in query_lower for word in ['detail', 'breakdown', 'individual', 'each', 'all'])
-        }
         
-        # Add intelligent query context based on intent
-        prompt_parts.append(f"🎯 QUERY ANALYSIS: {query}")
+        prompt_parts = []
+        prompt_parts.append("=" * 80)
+        prompt_parts.append(f"USER QUERY: {query}")
+        prompt_parts.append("=" * 80)
+        prompt_parts.append("")
         
-        # Dynamic SQL pattern suggestion based on intent
-        if intent_signals['aggregation']:
-            prompt_parts.append("📊 PATTERN: Aggregation query - use GROUP BY, SUM/COUNT/AVG appropriately")
-        if intent_signals['temporal']:
-            prompt_parts.append("📅 PATTERN: Time-based analysis - include proper date filtering and ordering")
-        if intent_signals['ranking']:
-            prompt_parts.append("🏆 PATTERN: Ranking query - use ORDER BY with TOP clause for Azure SQL Server")
-        if intent_signals['comparison']:
-            prompt_parts.append("⚖️ PATTERN: Comparison analysis - consider CASE statements or multiple groupings")
+        # Provide comprehensive SQL pattern examples that teach the LLM proper query structure
+        prompt_parts.append("SQL PATTERN EXAMPLES - CHOOSE THE RIGHT PATTERN BASED ON QUERY SEMANTICS:")
+        prompt_parts.append("")
         
+        prompt_parts.append("1. AGGREGATION PATTERN (when asking about metrics per group):")
+        prompt_parts.append("   Use Case: 'territories with X', 'reps who have Y', 'show me areas where Z'")
+        prompt_parts.append("   Structure:")
+        prompt_parts.append("      SELECT")
+        prompt_parts.append("          GroupColumn,                          -- TEXT: OK for GROUP BY")
+        prompt_parts.append("          COUNT(DISTINCT identifier) as CountMetric,  -- COUNT works on any type")
+        prompt_parts.append("          SUM(numeric_column) as TotalMetric,   -- 🔢 NUMERIC ONLY! (e.g., Calls4, TRX)")
+        prompt_parts.append("          AVG(numeric_column) as AvgMetric      -- 🔢 NUMERIC ONLY! (e.g., Samples4)")
+        prompt_parts.append("      FROM table")
+        prompt_parts.append("      GROUP BY GroupColumn                      -- Must match SELECT non-aggregated columns")
+        prompt_parts.append("      HAVING CountMetric > threshold OR TotalMetric < threshold")
+        prompt_parts.append("")
+        prompt_parts.append("   🚨 CRITICAL AGGREGATION RULES:")
+        prompt_parts.append("      ✅ SUM([Calls4])        - Correct: Calls4 is NUMERIC")
+        prompt_parts.append("      ✅ AVG([TRX])           - Correct: TRX is NUMERIC")
+        prompt_parts.append("      ✅ COUNT(DISTINCT [RepName])  - Correct: COUNT works on TEXT")
+        prompt_parts.append("      ❌ SUM([TerritoryName]) - WRONG: TerritoryName is TEXT!")
+        prompt_parts.append("      ❌ AVG([RegionName])    - WRONG: RegionName is TEXT!")
+        prompt_parts.append("")
+        
+        prompt_parts.append("2. COMPARATIVE AGGREGATION (when using words like 'but', 'however', 'although'):")
+        prompt_parts.append("   Use Case: 'territories where we have good X BUT low Y'")
+        prompt_parts.append("   Structure: Use CTE to calculate averages, then filter")
+        prompt_parts.append("      WITH metrics AS (")
+        prompt_parts.append("          SELECT")
+        prompt_parts.append("              Territory,")
+        prompt_parts.append("              COUNT(DISTINCT Rep) as RepCount,")
+        prompt_parts.append("              SUM(Activities) as TotalActivities,")
+        prompt_parts.append("              SUM(Prescriptions) as TotalRx")
+        prompt_parts.append("          FROM ... GROUP BY Territory")
+        prompt_parts.append("      )")
+        prompt_parts.append("      SELECT *")
+        prompt_parts.append("      FROM metrics")
+        prompt_parts.append("      WHERE RepCount > (SELECT AVG(RepCount) FROM metrics)")
+        prompt_parts.append("        AND TotalRx < (SELECT AVG(TotalRx) FROM metrics)")
+        prompt_parts.append("")
+        
+        prompt_parts.append("3. DETAIL/ROW-LEVEL PATTERN (when asking for specific records):")
+        prompt_parts.append("   Use Case: 'show me prescribers', 'list the reps', 'get details of'")
+        prompt_parts.append("   Structure:")
+        prompt_parts.append("      SELECT TOP N")
+        prompt_parts.append("          t1.DetailColumn1,")
+        prompt_parts.append("          t2.DetailColumn2")
+        prompt_parts.append("      FROM table1 t1")
+        prompt_parts.append("      JOIN table2 t2 ON t1.id = t2.id")
+        prompt_parts.append("      WHERE filter_conditions")
+        prompt_parts.append("      ORDER BY sort_column")
+        prompt_parts.append("")
+        
+        prompt_parts.append("=" * 80)
+        prompt_parts.append("🚨 CRITICAL SQL RULES - VIOLATE THESE AND QUERY WILL FAIL:")
+        prompt_parts.append("=" * 80)
+        prompt_parts.append("")
+        prompt_parts.append("1. ❌ NEVER use SUM/AVG/MIN/MAX on TEXT/VARCHAR columns!")
+        prompt_parts.append("   ✅ ONLY use aggregates on NUMERIC columns (INT, DECIMAL, FLOAT, etc.)")
+        prompt_parts.append("   Example: SUM([TRX(C4 Wk)]) ✅  |  SUM([TerritoryName]) ❌ WILL FAIL!")
+        prompt_parts.append("")
+        prompt_parts.append("2. ❌ NEVER use arithmetic operators (+, -, *, /) on TEXT columns!")
+        prompt_parts.append("   Example: [Calls4] + [Samples4] ✅  |  [RepName] + [TerritoryName] ❌ WILL FAIL!")
+        prompt_parts.append("")
+        prompt_parts.append("3. ❌ VARCHAR columns can ONLY be used in:")
+        prompt_parts.append("   - SELECT (display): SELECT [TerritoryName] ✅")
+        prompt_parts.append("   - WHERE (filter): WHERE [TerritoryName] = 'Atlanta' ✅")
+        prompt_parts.append("   - GROUP BY (grouping): GROUP BY [TerritoryName] ✅")
+        prompt_parts.append("   - ORDER BY (sorting): ORDER BY [RegionName] ✅")
+        prompt_parts.append("   - COUNT (counting): COUNT(DISTINCT [RepName]) ✅")
+        prompt_parts.append("")
+        prompt_parts.append("4. ✅ NUMERIC columns can be used for:")
+        prompt_parts.append("   - Aggregation: SUM([Calls4]), AVG([TRX]), MAX([Samples4])")
+        prompt_parts.append("   - Arithmetic: [Calls4] + [LunchLearn4] + [Samples4]")
+        prompt_parts.append("   - Comparison: WHERE [TRX] > 100")
+        prompt_parts.append("")
+        prompt_parts.append("=" * 80)
+        prompt_parts.append("")
+        prompt_parts.append("⚠️ CRITICAL QUERY ANALYSIS - READ THIS BEFORE GENERATING SQL:")
+        prompt_parts.append("")
+        prompt_parts.append("STEP 1: Determine if the query asks for AGGREGATED METRICS or DETAILED RECORDS")
+        prompt_parts.append("  Ask yourself: Does the user want to see:")
+        prompt_parts.append("    A) Individual rows/records (e.g., 'show me the prescribers', 'list the reps')")
+        prompt_parts.append("       → Use Pattern 3 (Detail/Row-Level): Simple SELECT with WHERE")
+        prompt_parts.append("    B) Metrics per group (e.g., 'territories with X', 'areas where Y')")
+        prompt_parts.append("       → Use Pattern 1 or 2 (Aggregation): SELECT ... GROUP BY")
+        prompt_parts.append("")
+        prompt_parts.append("STEP 2: Look for SEMANTIC CLUES in the query:")
+        prompt_parts.append("  - Plural group nouns: 'territories', 'reps', 'prescribers', 'regions'")
+        prompt_parts.append("    → Almost always needs GROUP BY to summarize per group")
+        prompt_parts.append("  - Quantity/quality words: 'good', 'lots of', 'many', 'high', 'strong'")
+        prompt_parts.append("    → Use COUNT/SUM/AVG to quantify")
+        prompt_parts.append("  - Performance words: 'low', 'few', 'underperforming', 'weak'")
+        prompt_parts.append("    → Compare to averages using subqueries or HAVING clause")
+        prompt_parts.append("  - Comparative connectors: 'but', 'however', 'although', 'yet'")
+        prompt_parts.append("    → Use Pattern 2: CTE with multiple metrics, filter high X AND low Y")
+        prompt_parts.append("")
+        prompt_parts.append("STEP 3: Choose aggregation functions based on data type:")
+        prompt_parts.append("  - Counting unique entities: COUNT(DISTINCT column_name)")
+        prompt_parts.append("  - Totaling numbers: SUM(numeric_column)")
+        prompt_parts.append("  - Finding patterns: AVG, MAX, MIN")
+        prompt_parts.append("")
+        prompt_parts.append("EXAMPLE DECISION PROCESS:")
+        prompt_parts.append("  Query: 'territories with good rep coverage and lots of activities but low prescriptions'")
+        prompt_parts.append("  Analysis:")
+        prompt_parts.append("    - 'territories' (plural) → Need GROUP BY TerritoryName")
+        prompt_parts.append("    - 'good rep coverage' → COUNT(DISTINCT RepName) - how many reps per territory")
+        prompt_parts.append("    - 'lots of activities' → SUM(calls + samples + events) - total activity count")
+        prompt_parts.append("    - 'but low prescriptions' → Comparative: high activities AND low prescriptions")
+        prompt_parts.append("    - 'underperforming' → Compare to average, not absolute threshold")
+        prompt_parts.append("  Conclusion: Use Pattern 2 (Comparative Aggregation) with CTE")
         prompt_parts.append("")
         
         # 🧠 INTELLIGENT COLUMN SELECTION - Priority-based semantic mapping
         tables = semantic_analysis.get('tables', {})
         high_relevance_cols = []
         medium_relevance_cols = []
+        
+        # Add pattern reminder before diving into table/column details
+        prompt_parts.append("=" * 80)
+        prompt_parts.append("RECOMMENDED SQL PATTERN FOR THIS QUERY:")
+        
+        # Analyze query to suggest pattern (informational only - LLM makes final decision)
+        query_has_plurals = any(plural in query_lower for plural in ['territories', 'reps', 'prescribers', 'areas', 'regions', 'accounts'])
+        query_has_quantities = any(word in query_lower for word in ['good', 'lots', 'many', 'high', 'low', 'few', 'strong', 'weak'])
+        query_has_comparison = any(word in query_lower for word in ['but', 'however', 'although', 'yet', 'while'])
+        
+        if query_has_plurals and query_has_quantities:
+            if query_has_comparison:
+                prompt_parts.append("✅ SUGGESTED: Pattern 2 (Comparative Aggregation) - query has plural groups + quantities + comparison")
+                prompt_parts.append("   Use CTE: Calculate multiple aggregates, then filter high X AND low Y")
+            else:
+                prompt_parts.append("✅ SUGGESTED: Pattern 1 (Aggregation) - query asks for metrics per group")
+                prompt_parts.append("   Use GROUP BY with COUNT/SUM/AVG aggregates")
+        else:
+            prompt_parts.append("✅ SUGGESTED: Pattern 3 (Detail/Row-Level) - query asks for specific records")
+            prompt_parts.append("   Use simple SELECT with JOINs and WHERE")
+        
+        prompt_parts.append("")
+        prompt_parts.append("(This is a suggestion - analyze the query yourself and choose the best pattern)")
+        prompt_parts.append("=" * 80)
+        prompt_parts.append("")
         
         # 🔧 CRITICAL FIX: Add explicit table-column constraints for LLM
         prompt_parts.append("🚨 CRITICAL TABLE-COLUMN CONSTRAINTS:")
@@ -2964,52 +3107,71 @@ INNER JOIN {secondary_table} t2 ON {join_condition};
             # 🎯 SEMANTIC COLUMN PRIORITIZATION
             columns = table_analysis.get('columns', [])
             
+            # 🔧 CRITICAL: Ensure columns is always a list
+            if not isinstance(columns, list):
+                print(f"⚠️ WARNING: columns for {table_name} is {type(columns)}, converting to list")
+                columns = [columns] if columns else []
+            
             # 🔧 CRITICAL: Show exactly which columns are available in this table
             prompt_parts.append(f"  🔍 AVAILABLE COLUMNS IN {table_name} (ONLY use these!):")
             
             for col in columns:
-                # 🔧 CRITICAL FIX: Handle both string and dict column formats with proper datatype discovery
-                if isinstance(col, str):
-                    col_name = col
-                    col_type = self._infer_datatype_from_column_name(col)
-                    semantic_type = ''
-                    is_key = False
-                elif isinstance(col, dict):
-                    col_name = col.get('name', str(col))
-                    col_type = col.get('data_type', 'VARCHAR')
-                    # 🔧 FIX DATATYPE DISCOVERY: If datatype is unknown, infer from column name
-                    if col_type == 'unknown' or not col_type:
-                        col_type = self._infer_datatype_from_column_name(col_name)
-                        print(f"🔧 DATATYPE FIX: Inferred {col_name} -> {col_type}")
-                    semantic_type = col.get('semantic_type', '')
-                    is_key = col.get('is_primary_key', False) or col.get('is_foreign_key', False)
-                else:
-                    col_name = str(col)
-                    col_type = self._infer_datatype_from_column_name(str(col))
+                #🔧 CRITICAL FIX: Handle both string and dict column formats with proper datatype discovery
+                try:
+                    if isinstance(col, str):
+                        col_name = col
+                        col_type = self._infer_datatype_from_column_name(col)
+                        semantic_type = ''
+                        is_key = False
+                    elif isinstance(col, dict):
+                        col_name = col.get('name', str(col))
+                        col_type = col.get('data_type', 'VARCHAR')
+                        # 🔧 FIX DATATYPE DISCOVERY: If datatype is unknown, infer from column name
+                        if col_type == 'unknown' or not col_type:
+                            col_type = self._infer_datatype_from_column_name(col_name)
+                            print(f"🔧 DATATYPE FIX: Inferred {col_name} -> {col_type}")
+                        semantic_type = col.get('semantic_type', '')
+                        is_key = col.get('is_primary_key', False) or col.get('is_foreign_key', False)
+                    else:
+                        col_name = str(col)
+                        col_type = self._infer_datatype_from_column_name(str(col))
+                        semantic_type = ''
+                        is_key = False
+                except Exception as col_error:
+                    print(f"⚠️ Error processing column {col}: {col_error}")
+                    # Fallback: treat as string
+                    col_name = str(col) if not isinstance(col, dict) else col.get('name', 'Unknown')
+                    col_type = 'VARCHAR'
                     semantic_type = ''
                     is_key = False
                 
-                # Intelligent relevance scoring based on query intent
+                # Simple relevance scoring based on query terms (no hardcoded patterns)
                 relevance_score = 0
                 col_lower = col_name.lower()
                 
-                # High relevance scoring
-                if intent_signals['aggregation'] and any(word in col_lower for word in ['amount', 'count', 'total', 'sum', 'quantity', 'volume']):
-                    relevance_score += 3
-                if intent_signals['temporal'] and any(word in col_lower for word in ['date', 'time', 'month', 'year', 'period']):
-                    relevance_score += 3
-                if intent_signals['filtering'] and semantic_type in ['identifier', 'category', 'status']:
-                    relevance_score += 2
-                if is_key:
-                    relevance_score += 1
-                
-                # Query-specific keyword matching
+                # Query-specific keyword matching - only match actual words in user's query
                 query_keywords = [word for word in query_lower.split() if len(word) > 3]
                 for keyword in query_keywords:
                     if keyword in col_lower:
                         relevance_score += 2
                 
+                # Boost keys as they're often needed for joins
+                if is_key:
+                    relevance_score += 1
+                
+                # 🔧 CRITICAL: Add clear data type usage indicators
+                col_type_upper = col_type.upper()
+                is_numeric = any(t in col_type_upper for t in ['INT', 'DECIMAL', 'FLOAT', 'NUMERIC', 'REAL', 'MONEY', 'BIGINT', 'SMALLINT', 'TINYINT'])
+                is_text = any(t in col_type_upper for t in ['VARCHAR', 'CHAR', 'TEXT', 'NVARCHAR', 'NCHAR'])
+                
                 col_desc = f"    {col_name} ({col_type})"
+                
+                # Add CRITICAL usage indicators
+                if is_numeric:
+                    col_desc += " 🔢 [CAN USE: SUM/AVG/MIN/MAX/arithmetic]"
+                elif is_text:
+                    col_desc += " 📝 [TEXT - NO SUM/AVG! Use for: SELECT/WHERE/GROUP BY/COUNT only]"
+                
                 if semantic_type:
                     col_desc += f" [{semantic_type}]"
                 if is_key:
@@ -3027,7 +3189,57 @@ INNER JOIN {secondary_table} t2 ON {join_condition};
             
             prompt_parts.append("")
         
-        # 🔗 INTELLIGENT JOIN RECOMMENDATIONS
+        # � CRITICAL: Explicitly list NUMERIC columns for aggregation
+        prompt_parts.append("🔢 NUMERIC COLUMNS AVAILABLE FOR AGGREGATION (SUM/AVG/MIN/MAX):")
+        for table_name, table_analysis in tables.items():
+            columns = table_analysis.get('columns', [])
+            numeric_cols = []
+            for col in columns:
+                try:
+                    if isinstance(col, dict):
+                        col_name = col.get('name', '')
+                        col_type = col.get('data_type', '').upper()
+                    else:
+                        col_name = str(col)
+                        col_type = self._infer_datatype_from_column_name(col_name).upper()
+                    
+                    if any(t in col_type for t in ['INT', 'DECIMAL', 'FLOAT', 'NUMERIC', 'REAL', 'MONEY', 'BIGINT', 'SMALLINT', 'TINYINT']):
+                        numeric_cols.append(f"{col_name} ({col_type})")
+                except:
+                    continue
+            
+            if numeric_cols:
+                prompt_parts.append(f"  {table_name}: {', '.join(numeric_cols[:10])}")
+                if len(numeric_cols) > 10:
+                    prompt_parts.append(f"    ... and {len(numeric_cols) - 10} more numeric columns")
+        
+        prompt_parts.append("")
+        prompt_parts.append("📝 TEXT COLUMNS (USE ONLY FOR: SELECT, WHERE, GROUP BY, ORDER BY, COUNT):")
+        for table_name, table_analysis in tables.items():
+            columns = table_analysis.get('columns', [])
+            text_cols = []
+            for col in columns:
+                try:
+                    if isinstance(col, dict):
+                        col_name = col.get('name', '')
+                        col_type = col.get('data_type', '').upper()
+                    else:
+                        col_name = str(col)
+                        col_type = self._infer_datatype_from_column_name(col_name).upper()
+                    
+                    if any(t in col_type for t in ['VARCHAR', 'CHAR', 'TEXT', 'NVARCHAR', 'NCHAR']):
+                        text_cols.append(col_name)
+                except:
+                    continue
+            
+            if text_cols:
+                prompt_parts.append(f"  {table_name}: {', '.join(text_cols[:10])}")
+                if len(text_cols) > 10:
+                    prompt_parts.append(f"    ... and {len(text_cols) - 10} more text columns")
+        
+        prompt_parts.append("")
+        
+        # �🔗 INTELLIGENT JOIN RECOMMENDATIONS
         relationships = semantic_analysis.get('cross_table_relationships', {})
         if relationships and len(tables) > 1:
             prompt_parts.append("🔗 INTELLIGENT JOIN STRATEGY:")
@@ -3050,25 +3262,21 @@ INNER JOIN {secondary_table} t2 ON {join_condition};
         prompt_parts.append("🚀 INTELLIGENT SQL CONSTRUCTION:")
         
         if high_relevance_cols:
-            prompt_parts.append(f"  ⭐ PRIORITIZE COLUMNS: {', '.join(high_relevance_cols[:5])}")
-        
-        if intent_signals['aggregation']:
-            prompt_parts.append("  📊 USE: GROUP BY with appropriate aggregation functions")
-        if intent_signals['temporal']:
-            prompt_parts.append("  📅 USE: Date-based filtering and temporal ordering")
-        if intent_signals['ranking']:
-            prompt_parts.append("  🏆 USE: ORDER BY + TOP syntax for Azure SQL Server")
-        if intent_signals['detail']:
-            prompt_parts.append("  🔍 USE: Comprehensive SELECT with relevant details")
+            prompt_parts.append(f"  ⭐ COLUMNS MATCHING QUERY TERMS: {', '.join(high_relevance_cols[:5])}")
         
         # 💡 Business domain intelligence
         business_domains = semantic_analysis.get('business_domains', {})
         if business_domains:
             prompt_parts.append("💡 BUSINESS INTELLIGENCE:")
             for domain, info in business_domains.items():
-                entities = info.get('entities', [])
-                if entities:
-                    prompt_parts.append(f"  {domain.upper()}: Focus on {', '.join(entities[:3])} context")
+                # 🔧 FIX: Handle case where info might be a string instead of dict
+                if isinstance(info, dict):
+                    entities = info.get('entities', [])
+                    if entities:
+                        prompt_parts.append(f"  {domain.upper()}: Focus on {', '.join(entities[:3])} context")
+                elif isinstance(info, str):
+                    # info is a string description
+                    prompt_parts.append(f"  {domain.upper()}: {info}")
             prompt_parts.append("")
         
         # 🔧 CRITICAL: Add explicit column-table mapping for LLM constraint
@@ -3127,36 +3335,65 @@ INNER JOIN {secondary_table} t2 ON {join_condition};
         prompt_parts.append("")
         
         # Add practical examples with ACTUAL columns from schema (NO FAKE COLUMNS!)
-        prompt_parts.append("💡 EXAMPLE PATTERNS (ALWAYS QUALIFY COLUMNS):")
+        prompt_parts.append("💡 EXAMPLE SQL PATTERNS (ALWAYS QUALIFY COLUMNS WITH TABLE ALIAS):")
+        prompt_parts.append("")
         
         # 🔧 CRITICAL FIX: Use ACTUAL columns from the schema, not fake examples
         sample_columns = []
         first_table = list(tables.keys())[0] if tables else None
         if first_table:
             first_table_columns = tables[first_table].get('columns', [])
-            for col in first_table_columns[:3]:  # Use first 3 real columns
+            for col in first_table_columns[:5]:  # Use first 5 real columns to find good examples
                 col_name = col if isinstance(col, str) else col.get('name', str(col))
                 sample_columns.append(col_name)
         
-        if sample_columns:
+        if sample_columns and len(sample_columns) >= 2:
             # Use REAL columns from the actual schema
-            col1, col2 = sample_columns[0], sample_columns[1] if len(sample_columns) > 1 else sample_columns[0]
-            prompt_parts.append(f"   • Single table: SELECT t1.[{col1}], t1.[{col2}] FROM {first_table} t1 WHERE t1.[{col1}] IS NOT NULL")
-            if len(sample_columns) > 2:
-                col3 = sample_columns[2]
-                prompt_parts.append(f"   • Multi-table: SELECT t1.[{col1}], t2.[{col2}] FROM table1 t1 JOIN table2 t2 ON t1.[{col1}] = t2.[{col1}]")
-                prompt_parts.append(f"   • Group by: SELECT t1.[{col1}], COUNT(*) FROM {first_table} t1 GROUP BY t1.[{col1}] ORDER BY t1.[{col1}]")
-            else:
-                prompt_parts.append(f"   • Multi-table: SELECT t1.[{col1}], t2.[{col2}] FROM table1 t1 JOIN table2 t2 ON t1.[{col1}] = t2.[{col1}]")
-                prompt_parts.append(f"   • Group by: SELECT t1.[{col1}], COUNT(*) FROM {first_table} t1 GROUP BY t1.[{col1}] ORDER BY t1.[{col1}]")
+            col1, col2 = sample_columns[0], sample_columns[1]
+            
+            prompt_parts.append("DETAIL QUERY (row-level data):")
+            prompt_parts.append(f"   SELECT TOP 100 t1.[{col1}], t1.[{col2}]")
+            prompt_parts.append(f"   FROM [{first_table}] t1")
+            prompt_parts.append(f"   WHERE t1.[{col1}] IS NOT NULL")
+            prompt_parts.append(f"   ORDER BY t1.[{col1}]")
+            prompt_parts.append("")
+            
+            prompt_parts.append("AGGREGATION QUERY (metrics per group):")
+            prompt_parts.append(f"   SELECT")
+            prompt_parts.append(f"       t1.[{col1}],")
+            prompt_parts.append(f"       COUNT(DISTINCT t1.[{col2}]) as UniqueCount,")
+            prompt_parts.append(f"       COUNT(*) as TotalRecords")
+            prompt_parts.append(f"   FROM [{first_table}] t1")
+            prompt_parts.append(f"   GROUP BY t1.[{col1}]")
+            prompt_parts.append(f"   HAVING COUNT(DISTINCT t1.[{col2}]) > 5")
+            prompt_parts.append(f"   ORDER BY UniqueCount DESC")
+            prompt_parts.append("")
+            
+            if len(tables) > 1:
+                second_table = list(tables.keys())[1]
+                prompt_parts.append("MULTI-TABLE AGGREGATION (joining + grouping):")
+                prompt_parts.append(f"   SELECT")
+                prompt_parts.append(f"       t1.[{col1}],")
+                prompt_parts.append(f"       COUNT(DISTINCT t1.[{col2}]) as Count1,")
+                prompt_parts.append(f"       COUNT(DISTINCT t2.SomeColumn) as Count2")
+                prompt_parts.append(f"   FROM [{first_table}] t1")
+                prompt_parts.append(f"   JOIN [{second_table}] t2 ON t1.KeyColumn = t2.KeyColumn")
+                prompt_parts.append(f"   GROUP BY t1.[{col1}]")
+                prompt_parts.append(f"   ORDER BY Count1 DESC")
+                prompt_parts.append("")
         else:
             # Fallback to generic examples if no columns available
-            prompt_parts.append("   • Single table: SELECT t1.[Column1], t1.[Column2] FROM table t1 WHERE t1.[Column1] IS NOT NULL")
-            prompt_parts.append("   • Multi-table: SELECT t1.[Column1], t2.[Column2] FROM table1 t1 JOIN table2 t2 ON t1.[Key] = t2.[Key]")
-            prompt_parts.append("   • Group by: SELECT t1.[Column1], COUNT(*) FROM table t1 GROUP BY t1.[Column1] ORDER BY t1.[Column1]")
+            prompt_parts.append("DETAIL: SELECT TOP 100 t1.[Column1], t1.[Column2] FROM table t1 WHERE t1.[Column1] IS NOT NULL")
+            prompt_parts.append("AGGREGATION: SELECT t1.[Column1], COUNT(*) as Total FROM table t1 GROUP BY t1.[Column1] ORDER BY Total DESC")
+            prompt_parts.append("")
         
-        prompt_parts.append("   • ❌ WRONG: SELECT TerritoryName FROM... (ambiguous!)")
-        prompt_parts.append("   • ✅ RIGHT: SELECT t1.[TerritoryName] FROM... (qualified!)")
+        prompt_parts.append("COMMON MISTAKES TO AVOID:")
+        prompt_parts.append("   • ❌ WRONG: SELECT TerritoryName FROM... (column not qualified with table alias)")
+        prompt_parts.append("   • ✅ RIGHT: SELECT t1.[TerritoryName] FROM... (properly qualified)")
+        prompt_parts.append("   • ❌ WRONG: GROUP BY TerritoryName (must match SELECT clause)")
+        prompt_parts.append("   • ✅ RIGHT: GROUP BY t1.[TerritoryName] (same as in SELECT)")
+        prompt_parts.append("   • ❌ WRONG: SELECT ... LIMIT 50 (Azure SQL doesn't support LIMIT)")
+        prompt_parts.append("   • ✅ RIGHT: SELECT TOP 50 ... (Azure SQL syntax)")
         prompt_parts.append("")
         
         prompt_parts.append("✅ AZURE SQL SERVER SYNTAX REQUIREMENTS:")
@@ -3165,7 +3402,25 @@ INNER JOIN {secondary_table} t2 ON {join_condition};
         prompt_parts.append("  • Example: [TRX(C4 Wk)] not TRX(C4 Wk)")
         prompt_parts.append("  • Example: SELECT TOP 50 [...] not SELECT [...] LIMIT 50")
         prompt_parts.append("🚨 AZURE SQL SERVER DOES NOT SUPPORT LIMIT - ALWAYS USE TOP!")
-        prompt_parts.append("🎯 RETURN: Only executable SQL optimized for query intent")
+        prompt_parts.append("")
+        
+        prompt_parts.append("=" * 80)
+        prompt_parts.append("FINAL CHECKLIST BEFORE GENERATING SQL:")
+        prompt_parts.append("=" * 80)
+        prompt_parts.append("1. ✅ Did I analyze the query semantics? (aggregation vs detail)")
+        prompt_parts.append("2. ✅ Does the query ask about groups/territories/reps? → Use GROUP BY")
+        prompt_parts.append("3. ✅ Does the query use comparative words (but/however)? → Use CTE with multiple conditions")
+        prompt_parts.append("4. ✅ Did I use COUNT/SUM/AVG for quantitative terms (good/lots/many/low)?")
+        prompt_parts.append("5. 🚨 CRITICAL: Did I check data types? AM I ONLY using SUM/AVG/MIN/MAX on NUMERIC columns?")
+        prompt_parts.append("   ❌ If I used SUM([TerritoryName]) or AVG([RepName]) → STOP! These are TEXT - will FAIL!")
+        prompt_parts.append("   ✅ Only aggregate NUMERIC columns like SUM([Calls4]), AVG([TRX]), etc.")
+        prompt_parts.append("6. ✅ Did I qualify ALL columns with table aliases? (t1.[ColumnName])")
+        prompt_parts.append("7. ✅ Does my GROUP BY match the SELECT clause exactly?")
+        prompt_parts.append("8. ✅ Did I use TOP instead of LIMIT?")
+        prompt_parts.append("9. ✅ Did I only use columns that exist in the specified tables?")
+        prompt_parts.append("")
+        prompt_parts.append("🎯 NOW GENERATE: Executable SQL optimized for the query's semantic intent")
+        prompt_parts.append("=" * 80)
         
         return "\n".join(prompt_parts)
     
@@ -3213,3 +3468,267 @@ INNER JOIN {secondary_table} t2 ON {join_condition};
         except Exception as e:
             print(f"❌ Error in retry integration: {str(e)}")
             return {'status': 'failed', 'error': f"Retry integration error: {str(e)}"}
+    
+    def _get_real_column_types_from_db(self, tables: List[str]) -> Dict[str, str]:
+        """
+        🎯 Query database directly for authoritative column data types.
+        Returns: {'table.column': 'DATA_TYPE', 'column': 'DATA_TYPE'}
+        
+        This is the SINGLE SOURCE OF TRUTH - always queries actual database schema.
+        """
+        column_types = {}
+        
+        if not self.db_adapter:
+            print("⚠️ No DB adapter available - cannot fetch real column types")
+            return column_types
+        
+        print(f"🔍 Querying database for real column types from {len(tables)} tables...")
+        
+        for table in tables:
+            try:
+                # Query INFORMATION_SCHEMA for actual column types
+                query = f"""
+                SELECT COLUMN_NAME, DATA_TYPE 
+                FROM INFORMATION_SCHEMA.COLUMNS 
+                WHERE TABLE_NAME = '{table}'
+                ORDER BY ORDINAL_POSITION
+                """
+                
+                result = self.db_adapter.run(query, dry_run=False)
+                
+                # Use same pattern as orchestrator: check error and rows attributes
+                if not result.error and hasattr(result, 'rows') and result.rows:
+                    print(f"   ✅ {table}: Found {len(result.rows)} columns from database")
+                    for row in result.rows:
+                        col_name = row[0]
+                        col_type = row[1].upper() if row[1] else 'UNKNOWN'
+                        
+                        # 🔍 DEBUG: Log TRX columns specifically to verify INFORMATION_SCHEMA data
+                        if 'TRX' in col_name.upper() and table == 'Reporting_BI_PrescriberProfile':
+                            print(f"      🔍 DB SAYS: {table}.{col_name} = {col_type}")
+                        
+                        # Store with multiple key formats for flexible lookup
+                        column_types[f"{table}.{col_name}"] = col_type
+                        column_types[col_name] = col_type
+                        
+                        # Also handle common alias patterns
+                        if 'PrescriberOverview' in table:
+                            column_types[f"po.{col_name}"] = col_type
+                        elif 'PrescriberProfile' in table:
+                            column_types[f"pp.{col_name}"] = col_type
+                        elif 'NGD' in table:
+                            column_types[f"ngd.{col_name}"] = col_type
+                else:
+                    print(f"   ⚠️ {table}: No data returned from INFORMATION_SCHEMA query")
+                    
+            except Exception as e:
+                print(f"   ❌ Error querying types for {table}: {e}")
+                continue
+        
+        print(f"✅ Retrieved {len(column_types)} column type mappings from database")
+        return column_types
+    
+    def _validate_and_fix_data_types(self, sql: str, schema_context: Dict[str, Any], confirmed_tables: List[str]) -> str:
+        """
+        🚨 CRITICAL: Validate and auto-fix data type issues in SQL
+        Detects VARCHAR columns being used in SUM/AVG and auto-casts them.
+        This is the FINAL safety check before SQL execution.
+        
+        Uses DYNAMIC approach: Queries database directly for authoritative types.
+        """
+        import re
+        
+        print("🔍 VALIDATING DATA TYPES in generated SQL...")
+        
+        # 🎯 STEP 1: Get AUTHORITATIVE types from database (single source of truth)
+        # Use session-level caching to avoid repeated queries
+        cache_key = tuple(sorted(confirmed_tables))
+        
+        if not hasattr(self, '_column_type_cache'):
+            self._column_type_cache = {}
+        
+        if cache_key in self._column_type_cache:
+            print(f"   ♻️ Using cached column types for {len(confirmed_tables)} tables")
+            db_column_types = self._column_type_cache[cache_key]
+        else:
+            print(f"   🔍 Fetching real column types from database for {len(confirmed_tables)} tables")
+            db_column_types = self._get_real_column_types_from_db(confirmed_tables)
+            self._column_type_cache[cache_key] = db_column_types
+        
+        # 🎯 STEP 2: Build fallback column types from schema_context (may be stale)
+        column_types_fallback = {}
+        
+        # Try multiple possible locations for table/column metadata
+        # schema_context is actually semantic_analysis dict
+        tables_metadata = schema_context.get('tables_metadata', {})
+        if not tables_metadata:
+            # Try 'tables' key which contains table -> info dict
+            tables = schema_context.get('tables', {})
+            if isinstance(tables, dict):
+                # 'tables' is a dict of table_name -> table_info
+                tables_metadata = tables
+            elif isinstance(tables, list):
+                # 'tables' is a list of table_info dicts
+                for table_info in tables:
+                    if isinstance(table_info, dict):
+                        table_name = table_info.get('table_name', table_info.get('name', ''))
+                        if table_name:
+                            tables_metadata[table_name] = table_info
+        
+        print(f"🔍 Schema context has {len(tables_metadata)} tables, DB query returned {len(db_column_types)} type mappings")
+        
+        for table_name, table_info in tables_metadata.items():
+            columns = table_info.get('columns', [])
+            for col in columns:
+                if isinstance(col, dict):
+                    col_name = col.get('name', col.get('column_name', ''))
+                    col_type = col.get('data_type', col.get('type', '')).upper()
+                    
+                    if col_name and col_type:
+                        # Store with and without table prefix (as fallback only)
+                        column_types_fallback[f"{table_name}.{col_name}"] = col_type
+                        column_types_fallback[col_name] = col_type
+                        
+                        # Also handle alias patterns (po., pp., ngd.)
+                        if 'Reporting_BI_PrescriberOverview' in table_name:
+                            column_types_fallback[f"po.{col_name}"] = col_type
+                        elif 'Reporting_BI_PrescriberProfile' in table_name:
+                            column_types_fallback[f"pp.{col_name}"] = col_type
+                        elif 'Reporting_BI_NGD' in table_name:
+                            column_types_fallback[f"ngd.{col_name}"] = col_type
+        
+        # 🎯 STEP 3: Decide which source to use - DB query (authoritative) vs schema context (fallback)
+        if db_column_types:
+            print(f"✅ Using AUTHORITATIVE database column types ({len(db_column_types)} mappings)")
+            column_types = db_column_types
+        elif column_types_fallback:
+            print(f"⚠️ DB query returned nothing, using schema context fallback ({len(column_types_fallback)} mappings)")
+            column_types = column_types_fallback
+        else:
+            print("❌ No column type information available from any source - skipping validation")
+            return sql
+        
+        # Debug: Show sample types  
+        if len(column_types) < 30:
+            print(f"   Sample types: {dict(list(column_types.items())[:10])}")
+        else:
+            print(f"   Sample: TRX={column_types.get('TRX')}, TotalCalls={column_types.get('TotalCalls')}")
+        
+        # Find all aggregation function calls: SUM(...), AVG(...), MIN(...), MAX(...)
+        # Pattern: (SUM|AVG|MIN|MAX)\s*\(\s*([^)]+)\s*\)
+        agg_pattern = r'(SUM|AVG|MIN|MAX)\s*\(\s*([^)]+?)\s*\)'
+        matches = list(re.finditer(agg_pattern, sql, re.IGNORECASE))
+        
+        fixes_applied = []
+        modified_sql = sql
+        
+        for match in reversed(matches):  # Reverse to maintain positions when replacing
+            func_name = match.group(1).upper()
+            column_expr = match.group(2).strip()
+            
+            # Skip if already has CAST/CONVERT
+            if 'CAST' in column_expr.upper() or 'CONVERT' in column_expr.upper():
+                continue
+            
+            # Skip if it's a complex expression (contains arithmetic)
+            if any(op in column_expr for op in ['+', '-', '*', '/', '(', ')']):
+                continue
+            
+            # Extract column name (handle table.column or just column)
+            # Also handle ISNULL(column, 0) patterns
+            if 'ISNULL' in column_expr.upper():
+                isnull_match = re.search(r'ISNULL\s*\(\s*([^\s,)]+)', column_expr, re.IGNORECASE)
+                if isnull_match:
+                    column_ref = isnull_match.group(1).strip()
+                else:
+                    column_ref = column_expr
+            else:
+                column_ref = column_expr
+            
+            # Clean up column reference
+            column_ref = column_ref.replace('[', '').replace(']', '').strip()
+            
+            # 🔍 DEBUG: Log what we're looking up
+            if 'TRX' in column_ref.upper():
+                print(f"      🔍 CHECKING: {func_name}({column_ref})")
+            
+            # Check data type with fuzzy matching
+            col_type = None
+            if '.' in column_ref:
+                # table.column format - try exact match first
+                col_type = column_types.get(column_ref)
+                if not col_type:
+                    # Try with just column name
+                    _, col_name = column_ref.split('.', 1)
+                    col_type = column_types.get(col_name)
+                    if 'TRX' in column_ref.upper():
+                        print(f"         Looked up '{column_ref}' → not found, tried '{col_name}' → {col_type}")
+                elif 'TRX' in column_ref.upper():
+                    print(f"         Found '{column_ref}' → {col_type}")
+            else:
+                # Just column name
+                col_type = column_types.get(column_ref)
+                if 'TRX' in column_ref.upper():
+                    print(f"         Looked up '{column_ref}' → {col_type}")
+            
+            if not col_type:
+                print(f"⚠️ Could not determine type for column: {column_ref}")
+                # DEBUG: Show what keys we DO have
+                if len(column_types) < 50:
+                    print(f"   Available keys: {list(column_types.keys())[:20]}")
+                else:
+                    print(f"   Sample keys: TRX={column_types.get('TRX')}, TotalCalls={column_types.get('TotalCalls')}")
+                continue
+            
+            # Check if it's a text type being aggregated
+            text_types = ['VARCHAR', 'CHAR', 'TEXT', 'NVARCHAR', 'NCHAR', 'NTEXT']
+            is_text_type = any(text_type in col_type for text_type in text_types)
+            
+            # 🎯 ADDITIONAL CHECK: Even if schema says INT, wrap in TRY_CAST for safety
+            # This handles data quality issues where INT columns contain VARCHAR data
+            is_suspicious_numeric = col_type in ['INT', 'BIGINT', 'SMALLINT', 'TINYINT'] and 'TRX' in column_ref.upper()
+            
+            if is_text_type or is_suspicious_numeric:
+                if is_text_type:
+                    print(f"🚨 CRITICAL ERROR DETECTED: {func_name}({column_ref}) - {column_ref} is {col_type}!")
+                    print(f"   ❌ Cannot use {func_name} on {col_type} column!")
+                else:
+                    print(f"⚠️ SUSPICIOUS COLUMN: {func_name}({column_ref}) - {column_ref} is {col_type} but may contain invalid data")
+                    print(f"   🛡️ Adding TRY_CAST for data quality protection")
+                
+                # Auto-fix: Wrap in TRY_CAST for safety (handles both schema issues and data quality)
+                if 'ISNULL' in column_expr.upper():
+                    # ISNULL(column, 0) -> ISNULL(TRY_CAST(column AS DECIMAL(18,2)), 0)
+                    fixed_expr = re.sub(
+                        r'(ISNULL\s*\(\s*)([^\s,)]+)',
+                        r'\1TRY_CAST(\2 AS DECIMAL(18,2))',
+                        column_expr,
+                        flags=re.IGNORECASE
+                    )
+                else:
+                    # column -> TRY_CAST(column AS DECIMAL(18,2))
+                    fixed_expr = f"TRY_CAST({column_expr} AS DECIMAL(18,2))"
+                
+                # Replace in SQL
+                old_agg_call = match.group(0)
+                new_agg_call = f"{func_name}({fixed_expr})"
+                
+                modified_sql = modified_sql[:match.start()] + new_agg_call + modified_sql[match.end():]
+                
+                fixes_applied.append({
+                    'column': column_ref,
+                    'type': col_type,
+                    'function': func_name,
+                    'fix': f"{old_agg_call} → {new_agg_call}"
+                })
+                
+                print(f"   ✅ AUTO-FIXED: {func_name}({column_ref}) → {func_name}(TRY_CAST({column_ref} AS DECIMAL))")
+        
+        if fixes_applied:
+            print(f"🔧 Applied {len(fixes_applied)} data type fixes:")
+            for fix in fixes_applied:
+                print(f"   • {fix['column']} ({fix['type']}): {fix['fix']}")
+            return modified_sql
+        else:
+            print("✅ No data type issues found - SQL is valid")
+            return sql
