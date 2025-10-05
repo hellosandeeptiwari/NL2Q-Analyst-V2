@@ -371,12 +371,19 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  min-height: 72px;
+  flex-shrink: 0;
+  gap: 24px;
+  position: relative;
 }
 
 .header-left {
   display: flex;
   align-items: center;
   gap: 16px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
 }
 
 .chat-title {
@@ -384,41 +391,76 @@
   font-weight: 600;
   color: #1f2937;
   margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .database-status-indicator {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: all 0.2s ease;
+  color: #166534;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .database-status-indicator:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: #dcfce7;
   transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
 .chat-actions {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .action-btn {
-  padding: 6px 12px;
+  padding: 8px 16px;
   border: 1px solid #d1d5db;
   background: white;
-  border-radius: 6px;
-  font-size: 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  color: #374151;
+  min-width: fit-content;
+  line-height: 1.2;
+  height: 36px;
 }
 
 .action-btn:hover {
   background: #f9fafb;
   border-color: #9ca3af;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.action-btn:active {
+  transform: translateY(0);
+  box-shadow: none;
 }
 
 .action-btn.active {

@@ -197,7 +197,7 @@ const EnhancedTable: React.FC<EnhancedTableProps> = ({
       {/* Table Header with Controls */}
       <div className="table-header">
         <div className="table-title-section">
-          <h4 className="table-title">{title} ({processedData.length} rows)</h4>
+          <h4 className="table-title">{title}</h4>
           <p className="table-description">{description}</p>
         </div>
         

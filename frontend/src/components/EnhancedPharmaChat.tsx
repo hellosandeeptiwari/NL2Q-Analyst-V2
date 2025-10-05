@@ -1183,27 +1183,21 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
     };
 
     return (
-      <div className="database-status-indicator" style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        padding: '4px 12px',
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
-        borderRadius: '20px',
-        fontSize: '12px',
-        fontWeight: '500'
-      }}>
+      <div className="database-status-indicator">
         <div 
           style={{
             width: '8px',
             height: '8px',
             borderRadius: '50%',
             backgroundColor: getStatusColor(),
-            boxShadow: databaseStatus.isConnected ? `0 0 6px ${getStatusColor()}` : 'none'
+            boxShadow: databaseStatus.isConnected ? `0 0 6px ${getStatusColor()}` : 'none',
+            flexShrink: 0
           }}
         />
-        <FiDatabase size={12} />
-        <span>{getStatusText()}</span>
+        <FiDatabase size={12} style={{ flexShrink: 0 }} />
+        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {getStatusText()}
+        </span>
       </div>
     );
   };
