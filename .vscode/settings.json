@@ -1,0 +1,42 @@
+{
+  // Auto-run setup script when opening PowerShell terminal
+  "terminal.integrated.profiles.windows": {
+    "PowerShell": {
+      "source": "PowerShell",
+      "icon": "terminal-powershell",
+      "args": [
+        "-NoExit",
+        "-File",
+        "${workspaceFolder}/setup-node-path.ps1"
+      ]
+    }
+  },
+  "terminal.integrated.defaultProfile.windows": "PowerShell",
+  
+  // Alternative: Add Node.js to PATH directly (if installed in standard location)
+  "terminal.integrated.env.windows": {
+    "PATH": "C:\\Program Files\\nodejs;${env:PATH}"
+  },
+  
+  // Editor configuration
+  "editor.formatOnSave": true,
+  
+  // Python configuration
+  "python.defaultInterpreterPath": "${workspaceFolder}\\nl2q_venv\\Scripts\\python.exe",
+  
+  // TypeScript/JavaScript configuration
+  "typescript.tsdk": "node_modules/typescript/lib",
+  
+  // File associations
+  "files.associations": {
+    "*.tsx": "typescriptreact",
+    "*.css": "css"
+  },
+  
+  // Exclude node_modules from search
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/build": true,
+    "**/.git": true
+  }
+}
