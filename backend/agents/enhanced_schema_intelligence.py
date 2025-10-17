@@ -33,6 +33,13 @@ class ColumnInfo:
     sample_values: List[Any] = field(default_factory=list)
     business_meaning: Optional[str] = None
     data_patterns: Dict[str, Any] = field(default_factory=dict)
+    # Enhanced temporal intelligence fields
+    temporal_granularity: Optional[str] = None  # 'year', 'quarter', 'month', 'week', 'day', 'hour', 'minute', 'second'
+    is_fiscal_period: bool = False  # True if fiscal period (FY, FQ) vs calendar period
+    is_period_start: bool = False  # True if represents start of period
+    is_period_end: bool = False  # True if represents end of period
+    supports_time_series: bool = False  # True if suitable for time-series analysis
+    temporal_context: Optional[str] = None  # Business context like 'reporting_period', 'transaction_date', 'effective_date'
     
     def __post_init__(self):
         self.is_numeric = self._is_numeric_type(self.data_type)
@@ -42,6 +49,9 @@ class ColumnInfo:
         self.is_amount_field = self._is_amount_field(self.name)
         self.semantic_role = self._determine_semantic_role()
         self.business_meaning = self._infer_business_meaning()
+        # Enhanced temporal analysis
+        if self.is_date:
+            self._analyze_temporal_characteristics()
     
     def _is_numeric_type(self, data_type: str) -> bool:
         numeric_types = ['NUMBER', 'DECIMAL', 'NUMERIC', 'INT', 'INTEGER', 'BIGINT', 'SMALLINT', 'FLOAT', 'DOUBLE', 'REAL']
@@ -162,6 +172,141 @@ class ColumnInfo:
             return f"Numeric value for {col_lower.replace('_', ' ')} - can use in calculations"
         
         return f"Data field: {col_lower.replace('_', ' ')}"
+    
+    def _analyze_temporal_characteristics(self):
+        """
+        Enhanced temporal intelligence - analyze date/time column characteristics
+        for better time-series analysis, trend detection, and temporal query planning
+        """
+        col_lower = self.name.lower()
+        data_type_upper = self.data_type.upper()
+        
+        # Determine temporal granularity from data type and column name
+        if 'TIMESTAMP' in data_type_upper or 'DATETIME' in data_type_upper:
+            if any(term in col_lower for term in ['hour', 'minute', 'second', 'time']):
+                self.temporal_granularity = 'hour'  # High-precision timestamps
+            else:
+                self.temporal_granularity = 'day'  # Standard timestamps
+        elif 'DATE' in data_type_upper:
+            self.temporal_granularity = 'day'  # Standard date columns
+        elif 'TIME' in data_type_upper:
+            self.temporal_granularity = 'second'  # Time-only columns
+        
+        # Refine granularity based on column naming patterns
+        if any(term in col_lower for term in ['year', 'yyyy', 'yr', 'annual', 'annually']):
+            self.temporal_granularity = 'year'
+        elif any(term in col_lower for term in ['quarter', 'qtr', 'q1', 'q2', 'q3', 'q4', 'quarterly']):
+            self.temporal_granularity = 'quarter'
+        elif any(term in col_lower for term in ['month', 'mm', 'mon', 'monthly']):
+            self.temporal_granularity = 'month'
+        elif any(term in col_lower for term in ['week', 'wk', 'weekly']):
+            self.temporal_granularity = 'week'
+        elif any(term in col_lower for term in ['day', 'dd', 'daily', 'date']):
+            self.temporal_granularity = 'day'
+        
+        # Detect fiscal vs calendar periods
+        fiscal_indicators = ['fiscal', 'fy', 'fq', 'fm', 'fiscal_year', 'fiscal_quarter']
+        self.is_fiscal_period = any(indicator in col_lower for indicator in fiscal_indicators)
+        
+        # Detect period start/end indicators
+        self.is_period_start = any(term in col_lower for term in ['start', 'begin', 'from', 'effective', 'opening'])
+        self.is_period_end = any(term in col_lower for term in ['end', 'close', 'closing', 'through', 'until', 'expiration'])
+        
+        # Determine if suitable for time-series analysis
+        # Time-series appropriate for: transaction dates, reporting periods, event timestamps
+        time_series_patterns = [
+            'date', 'timestamp', 'created', 'updated', 'modified', 'recorded',
+            'transaction', 'event', 'occurred', 'happened', 'reported',
+            'period', 'month', 'quarter', 'year', 'day', 'week'
+        ]
+        self.supports_time_series = any(pattern in col_lower for pattern in time_series_patterns)
+        
+        # Determine temporal context for business understanding
+        if any(term in col_lower for term in ['report', 'reporting', 'period']):
+            self.temporal_context = 'reporting_period'
+        elif any(term in col_lower for term in ['transaction', 'sale', 'purchase', 'payment']):
+            self.temporal_context = 'transaction_date'
+        elif any(term in col_lower for term in ['effective', 'valid', 'active']):
+            self.temporal_context = 'effective_date'
+        elif any(term in col_lower for term in ['created', 'insert', 'added']):
+            self.temporal_context = 'creation_date'
+        elif any(term in col_lower for term in ['modified', 'updated', 'changed']):
+            self.temporal_context = 'modification_date'
+        elif any(term in col_lower for term in ['expire', 'expiration', 'end', 'termination']):
+            self.temporal_context = 'expiration_date'
+        elif any(term in col_lower for term in ['start', 'begin', 'opening']):
+            self.temporal_context = 'start_date'
+        elif any(term in col_lower for term in ['due', 'deadline', 'target']):
+            self.temporal_context = 'due_date'
+        else:
+            self.temporal_context = 'general_temporal'
+        
+        # Update business meaning with temporal insights
+        if self.temporal_context and not self.business_meaning:
+            granularity_text = self.temporal_granularity or 'date'
+            period_type = 'fiscal' if self.is_fiscal_period else 'calendar'
+            self.business_meaning = f"{period_type.capitalize()} {self.temporal_context.replace('_', ' ')} at {granularity_text} granularity"
+            if self.supports_time_series:
+                self.business_meaning += " - suitable for time-series analysis and trend detection"
+    
+    def get_temporal_query_hints(self) -> Dict[str, Any]:
+        """
+        Provide query hints for temporal operations based on column characteristics
+        Used by query planner for intelligent temporal query generation
+        """
+        if not self.is_date:
+            return {}
+        
+        hints = {
+            'column_name': self.name,
+            'granularity': self.temporal_granularity,
+            'supports_aggregation': self.supports_time_series,
+            'fiscal_period': self.is_fiscal_period,
+            'temporal_context': self.temporal_context
+        }
+        
+        # Suggest appropriate date functions based on granularity
+        date_functions = []
+        if self.temporal_granularity == 'year':
+            date_functions = ['YEAR()', 'DATE_TRUNC(year)', 'EXTRACT(YEAR FROM)']
+        elif self.temporal_granularity == 'quarter':
+            date_functions = ['QUARTER()', 'DATE_TRUNC(quarter)', 'EXTRACT(QUARTER FROM)']
+        elif self.temporal_granularity == 'month':
+            date_functions = ['MONTH()', 'DATE_TRUNC(month)', 'EXTRACT(MONTH FROM)']
+        elif self.temporal_granularity == 'week':
+            date_functions = ['WEEK()', 'DATE_TRUNC(week)', 'WEEKOFYEAR()']
+        elif self.temporal_granularity == 'day':
+            date_functions = ['DATE()', 'DATE_TRUNC(day)', 'CAST(... AS DATE)']
+        
+        hints['recommended_functions'] = date_functions
+        
+        # Suggest window functions for time-series
+        if self.supports_time_series:
+            hints['window_functions'] = [
+                f'ROW_NUMBER() OVER (ORDER BY {self.name})',
+                f'LAG({self.name}) OVER (ORDER BY {self.name})',
+                f'LEAD({self.name}) OVER (ORDER BY {self.name})',
+                f'FIRST_VALUE(...) OVER (ORDER BY {self.name})',
+                f'LAST_VALUE(...) OVER (ORDER BY {self.name})'
+            ]
+        
+        # Suggest common temporal filters
+        temporal_patterns = []
+        if self.temporal_granularity in ['day', 'hour', 'minute', 'second']:
+            temporal_patterns.extend([
+                'last_7_days', 'last_30_days', 'last_90_days', 
+                'current_month', 'current_quarter', 'current_year',
+                'year_to_date', 'month_to_date'
+            ])
+        if self.temporal_granularity in ['month', 'quarter']:
+            temporal_patterns.extend([
+                'last_6_months', 'last_12_months', 'last_4_quarters',
+                'current_fiscal_year' if self.is_fiscal_period else 'current_calendar_year'
+            ])
+        
+        hints['common_filter_patterns'] = temporal_patterns
+        
+        return hints
 
 @dataclass
 class RelationshipInfo:
@@ -256,6 +401,114 @@ class TableInfo:
     def get_aggregatable_columns(self) -> List[ColumnInfo]:
         """Get columns suitable for aggregation (SUM, AVG, etc.)"""
         return [col for col in self.columns if col.is_numeric and not col.is_identifier]
+    
+    def get_temporal_columns(self) -> List[ColumnInfo]:
+        """Get all date/time columns with temporal intelligence"""
+        return [col for col in self.columns if col.is_date]
+    
+    def get_time_series_columns(self) -> List[ColumnInfo]:
+        """Get columns suitable for time-series analysis"""
+        return [col for col in self.columns if col.is_date and col.supports_time_series]
+    
+    def get_primary_temporal_column(self) -> Optional[ColumnInfo]:
+        """
+        Identify the primary temporal column for time-based queries
+        Priority: transaction dates > reporting periods > creation dates > any date
+        """
+        temporal_cols = self.get_temporal_columns()
+        if not temporal_cols:
+            return None
+        
+        # Priority scoring based on temporal context
+        priority_contexts = {
+            'transaction_date': 10,
+            'reporting_period': 9,
+            'effective_date': 8,
+            'creation_date': 7,
+            'modification_date': 6,
+            'due_date': 5,
+            'start_date': 4,
+            'expiration_date': 3,
+            'general_temporal': 1
+        }
+        
+        # Score each temporal column
+        scored_columns = []
+        for col in temporal_cols:
+            priority = priority_contexts.get(col.temporal_context or 'general_temporal', 1)
+            # Boost if supports time-series
+            if col.supports_time_series:
+                priority += 2
+            scored_columns.append((col, priority))
+        
+        # Return highest priority column
+        scored_columns.sort(key=lambda x: x[1], reverse=True)
+        return scored_columns[0][0]
+    
+    def supports_temporal_analysis(self) -> bool:
+        """Check if table has sufficient temporal data for trend analysis"""
+        return len(self.get_time_series_columns()) > 0
+    
+    def get_temporal_granularity_options(self) -> List[str]:
+        """Get available temporal granularities for this table"""
+        temporal_cols = self.get_temporal_columns()
+        granularities = set()
+        for col in temporal_cols:
+            if col.temporal_granularity:
+                granularities.add(col.temporal_granularity)
+        return sorted(list(granularities))
+    
+    def has_fiscal_periods(self) -> bool:
+        """Check if table contains fiscal period data"""
+        return any(col.is_fiscal_period for col in self.columns if col.is_date)
+    
+    def get_temporal_query_suggestions(self) -> Dict[str, Any]:
+        """
+        Generate intelligent query suggestions for temporal analysis
+        Used by query planner to suggest time-based query patterns
+        """
+        primary_temporal = self.get_primary_temporal_column()
+        if not primary_temporal:
+            return {}
+        
+        suggestions = {
+            'primary_date_column': primary_temporal.name,
+            'granularity': primary_temporal.temporal_granularity,
+            'supports_trends': primary_temporal.supports_time_series,
+            'fiscal_aware': primary_temporal.is_fiscal_period,
+            'suggested_patterns': []
+        }
+        
+        # Generate pattern suggestions based on granularity
+        if primary_temporal.temporal_granularity in ['day', 'hour']:
+            suggestions['suggested_patterns'].extend([
+                f"Trends over time using {primary_temporal.name}",
+                f"Month-over-month comparison by {primary_temporal.name}",
+                f"Year-over-year comparison by {primary_temporal.name}",
+                f"Rolling 30-day averages based on {primary_temporal.name}",
+                f"Daily, weekly, or monthly aggregations by {primary_temporal.name}"
+            ])
+        elif primary_temporal.temporal_granularity in ['month', 'quarter']:
+            suggestions['suggested_patterns'].extend([
+                f"Quarterly trends using {primary_temporal.name}",
+                f"Year-over-year quarterly comparison by {primary_temporal.name}",
+                f"Seasonal patterns by {primary_temporal.name}",
+                f"Annual aggregations by {primary_temporal.name}"
+            ])
+        elif primary_temporal.temporal_granularity == 'year':
+            suggestions['suggested_patterns'].extend([
+                f"Multi-year trends using {primary_temporal.name}",
+                f"Year-over-year growth by {primary_temporal.name}",
+                f"Historical analysis by {primary_temporal.name}"
+            ])
+        
+        # Add fiscal-specific patterns
+        if primary_temporal.is_fiscal_period:
+            suggestions['suggested_patterns'].append(
+                f"Fiscal year analysis using {primary_temporal.name}"
+            )
+        
+        return suggestions
     
     def find_related_tables_by_column_name(self, all_tables: Dict[str, 'TableInfo']) -> List[Tuple[str, str, float]]:
         """Find tables that share column names (potential relationships)"""

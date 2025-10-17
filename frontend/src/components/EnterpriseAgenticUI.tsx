@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './EnterpriseAgenticUI.css';
 import { FiSend, FiCopy, FiCheck, FiDatabase, FiSettings, FiBarChart2, FiTable, FiAlertTriangle, FiInfo, FiChevronDown, FiChevronUp, FiLoader } from 'react-icons/fi';
+import { AdaptiveLayout, IntelligentVisualizationResult } from './visualizations';
 
 // Type definitions
 interface Message {
@@ -27,6 +28,8 @@ interface Plan {
     query_results?: {
       data?: any[];
     };
+    // NEW: Intelligent visualization planning result
+    intelligent_visualization_planning?: IntelligentVisualizationResult;
   };
 }
 
@@ -285,24 +288,85 @@ const PlanStatusDisplay = ({ plan }: { plan: Plan }) => {
 };
 
 const ResultsDisplay = ({ plan }: { plan: Plan }) => {
-  const [activeTab, setActiveTab] = useState('chart');
-
+  // Check for intelligent visualization plan (NEW)
+  const intelligentViz = plan.context?.intelligent_visualization_planning;
+  const hasIntelligentViz = intelligentViz?.status === 'completed' && intelligentViz.visualization_plan;
+  
+  // DEBUG LOGGING
+  console.log('🔍 ResultsDisplay Debug:', {
+    hasIntelligentViz,
+    intelligentVizStatus: intelligentViz?.status,
+    hasVisualizationPlan: !!intelligentViz?.visualization_plan,
+    planKeys: intelligentViz ? Object.keys(intelligentViz) : [],
+    contextKeys: plan.context ? Object.keys(plan.context) : []
+  });
+  
+  // Fallback to legacy visualization
   const hasChart = plan.context?.visualizations?.charts?.length ? plan.context.visualizations.charts.length > 0 : false;
   const hasTable = plan.context?.query_results?.data?.length ? plan.context.query_results.data.length > 0 : false;
 
-  if (!hasChart && !hasTable) {
+  // Smart default tab: prefer intelligent view if available
+  const defaultTab = hasIntelligentViz ? 'intelligent' : (hasChart ? 'chart' : 'table');
+  console.log('🎯 Default tab selected:', defaultTab, '| hasIntelligentViz:', hasIntelligentViz);
+  const [activeTab, setActiveTab] = useState(defaultTab);
+
+  // Get data for visualization
+  const getData = () => {
+    return plan.context?.query_results?.data || plan.context?.data || [];
+  };
+
+  // If no results at all
+  if (!hasIntelligentViz && !hasChart && !hasTable) {
     return <div className="results-display">No results to display.</div>;
   }
 
   return (
     <div className="results-display">
       <div className="results-tabs">
-        {hasChart && <button className={activeTab === 'chart' ? 'active' : ''} onClick={() => setActiveTab('chart')}><FiBarChart2 /> Chart</button>}
-        {hasTable && <button className={activeTab === 'table' ? 'active' : ''} onClick={() => setActiveTab('table')}><FiTable /> Table</button>}
+        {hasIntelligentViz && (
+          <button 
+            className={activeTab === 'intelligent' ? 'active' : ''} 
+            onClick={() => setActiveTab('intelligent')}
+          >
+            <FiBarChart2 /> Intelligent View
+          </button>
+        )}
+        {hasChart && (
+          <button 
+            className={activeTab === 'chart' ? 'active' : ''} 
+            onClick={() => setActiveTab('chart')}
+          >
+            <FiBarChart2 /> Chart
+          </button>
+        )}
+        {hasTable && (
+          <button 
+            className={activeTab === 'table' ? 'active' : ''} 
+            onClick={() => setActiveTab('table')}
+          >
+            <FiTable /> Table
+          </button>
+        )}
       </div>
       <div className="results-content">
-        {activeTab === 'chart' && hasChart && <ChartView chart={plan.context.visualizations!.charts![0]} />}
-        {activeTab === 'table' && hasTable && <TableView data={plan.context.query_results!.data!} />}
+        {activeTab === 'intelligent' && hasIntelligentViz && (() => {
+          console.log('🎨 Rendering AdaptiveLayout with:', {
+            plan: intelligentViz.visualization_plan,
+            dataLength: getData().length
+          });
+          return (
+            <AdaptiveLayout 
+              plan={intelligentViz.visualization_plan!} 
+              data={getData()} 
+            />
+          );
+        })()}
+        {activeTab === 'chart' && hasChart && (
+          <ChartView chart={plan.context.visualizations!.charts![0]} />
+        )}
+        {activeTab === 'table' && hasTable && (
+          <TableView data={plan.context.query_results!.data!} />
+        )}
       </div>
     </div>
   );

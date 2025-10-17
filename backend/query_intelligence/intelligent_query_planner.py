@@ -1685,15 +1685,26 @@ class IntelligentQueryPlanner:
             # DEBUG: Check all prompt parts before joining and highlight key columns
             print(f"🔍 DEBUG: About to join {len(prompt_parts)} prompt parts")
             
-            # 🔧 CRITICAL: Add pharmaceutical product filtering guidance
-            if any('tirosint' in query.lower() for query in [query] if isinstance(query, str)):
-                print("🎯 TIROSINT QUERY DETECTED - Adding product filtering guidance")
-                prompt_parts.append("\n💊 CRITICAL PRODUCT FILTERING GUIDANCE:")
-                prompt_parts.append("  🎯 For Tirosint queries, use these columns:")
-                prompt_parts.append("     - TirosintTargetFlag = 'Yes' (for Tirosint-targeted prescribers)")
-                prompt_parts.append("     - ProductGroupName LIKE '%Tirosint%' (for Tirosint prescriptions)")
-                prompt_parts.append("     - PrimaryProduct = 'Tirosint' (for primary Tirosint prescribers)")
-                prompt_parts.append("  🚨 IMPORTANT: These columns ARE available - use them for Tirosint filtering!")
+            # 🎯 DYNAMIC FILTER GUIDANCE: Use actual database values (no hardcoding!)
+            if schema_context.get('resolved_filters'):
+                from tools.filter_value_resolver import FilterValueResolver
+                
+                resolved_filters = schema_context['resolved_filters']
+                print(f"✅ Adding {len(resolved_filters)} dynamically resolved filters to prompt")
+                
+                prompt_parts.append("\n🎯 DYNAMICALLY RESOLVED FILTER VALUES (USE THESE EXACT VALUES):")
+                prompt_parts.append("  The following filter values were resolved from the actual database:")
+                
+                for column_name, matches in resolved_filters.items():
+                    for match in matches:
+                        if match.confidence >= 0.8:
+                            prompt_parts.append(
+                                f"  ✅ {column_name} = '{match.actual_value}' "
+                                f"(user said: '{match.user_value}', match type: {match.match_type}, confidence: {match.confidence:.0%})"
+                            )
+                
+                prompt_parts.append("\n  ⚠️  CRITICAL: Use the ACTUAL VALUES shown above, not the user's original terms!")
+                prompt_parts.append("  These values were queried directly from the database and are guaranteed to exist.")
             
             for i, part in enumerate(prompt_parts):
                 if not isinstance(part, str):

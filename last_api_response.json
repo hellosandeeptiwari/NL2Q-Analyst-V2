@@ -1,0 +1,5334 @@
+{
+  "plan_id": "plan_2450951354649647908_default_session",
+  "user_query": "Compare TRX vs NRX share performance for Flector, Licart, and Tirosint across all regions",
+  "reasoning_steps": [
+    "Planned 4 execution steps",
+    "Analyzed database structure and content",
+    "Coordinated intelligent query processing"
+  ],
+  "estimated_execution_time": "8s",
+  "tasks": [
+    {
+      "task_type": "schema_discovery",
+      "agent": "dynamic"
+    },
+    {
+      "task_type": "query_generation",
+      "agent": "dynamic"
+    },
+    {
+      "task_type": "execution",
+      "agent": "dynamic"
+    },
+    {
+      "task_type": "intelligent_visualization_planning",
+      "agent": "dynamic"
+    }
+  ],
+  "status": "completed",
+  "context": {
+    "generated_sql": "SELECT TOP 100 \n    po.[RegionName], \n    po.[TerritoryName], \n    SUM(ISNULL(po.[TRX(C QTD)], 0)) AS TotalTRX, \n    SUM(ISNULL(po.[NRX(C QTD)], 0)) AS TotalNRX, \n    SUM(ISNULL(po.[TRXMktShareQTD], 0)) AS TotalTRXMktShare, \n    SUM(ISNULL(po.[NRXMktShareQTD], 0)) AS TotalNRXMktShare\nFROM dbo.Reporting_BI_PrescriberOverview po\nWHERE po.[FlectorTargetFlag] = 'Y' \n   OR po.[LicartTargetFlag] = 'Y' \n   OR po.[TirosintTargetFlag] = 'Y'\nGROUP BY po.[RegionName], po.[TerritoryName]\nORDER BY TotalTRX DESC, TotalNRX DESC",
+    "query_results": {
+      "data": [
+        {
+          "RegionName": "Midatlantic",
+          "TerritoryName": "Tele-Sales 2 - Mid-Atlantic",
+          "TotalTRX": 61764,
+          "TotalNRX": 24778,
+          "TotalTRXMktShare": 475259,
+          "TotalNRXMktShare": 464452
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "Tele-Sales 5 - Southwest",
+          "TotalTRX": 39676,
+          "TotalNRX": 15301,
+          "TotalTRXMktShare": 306237,
+          "TotalNRXMktShare": 302179
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "Tele-Sales 3 - Midwest",
+          "TotalTRX": 33410,
+          "TotalNRX": 13652,
+          "TotalTRXMktShare": 270917,
+          "TotalNRXMktShare": 264465
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "Tele-Sales 4 - West",
+          "TotalTRX": 31566,
+          "TotalNRX": 13153,
+          "TotalTRXMktShare": 273184,
+          "TotalNRXMktShare": 266031
+        },
+        {
+          "RegionName": "Northeast",
+          "TerritoryName": "Long Island NY",
+          "TotalTRX": 27823,
+          "TotalNRX": 13977,
+          "TotalTRXMktShare": 194372,
+          "TotalNRXMktShare": 191548
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "Dallas N TX",
+          "TotalTRX": 27067,
+          "TotalNRX": 13079,
+          "TotalTRXMktShare": 170260,
+          "TotalNRXMktShare": 169630
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "Cleveland OH",
+          "TotalTRX": 26999,
+          "TotalNRX": 10132,
+          "TotalTRXMktShare": 220863,
+          "TotalNRXMktShare": 217006
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "Austin TX",
+          "TotalTRX": 26690,
+          "TotalNRX": 12183,
+          "TotalTRXMktShare": 137461,
+          "TotalNRXMktShare": 135863
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "Houston S TX",
+          "TotalTRX": 24802,
+          "TotalNRX": 11197,
+          "TotalTRXMktShare": 144164,
+          "TotalNRXMktShare": 143090
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Orlando FL",
+          "TotalTRX": 23534,
+          "TotalNRX": 10656,
+          "TotalTRXMktShare": 164026,
+          "TotalNRXMktShare": 162546
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "New Orleans LA",
+          "TotalTRX": 23381,
+          "TotalNRX": 8387,
+          "TotalTRXMktShare": 129745,
+          "TotalNRXMktShare": 127966
+        },
+        {
+          "RegionName": "Midatlantic",
+          "TerritoryName": "Raleigh NC",
+          "TotalTRX": 23298,
+          "TotalNRX": 9420,
+          "TotalTRXMktShare": 174800,
+          "TotalNRXMktShare": 169784
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "Fort Worth TX",
+          "TotalTRX": 22320,
+          "TotalNRX": 10377,
+          "TotalTRXMktShare": 142085,
+          "TotalNRXMktShare": 139097
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Atlanta N GA",
+          "TotalTRX": 22032,
+          "TotalNRX": 10179,
+          "TotalTRXMktShare": 148990,
+          "TotalNRXMktShare": 148024
+        },
+        {
+          "RegionName": "Tri-state",
+          "TerritoryName": "Newark NJ",
+          "TotalTRX": 21929,
+          "TotalNRX": 10003,
+          "TotalTRXMktShare": 136065,
+          "TotalNRXMktShare": 133368
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Jackson MS",
+          "TotalTRX": 21726,
+          "TotalNRX": 7421,
+          "TotalTRXMktShare": 115092,
+          "TotalNRXMktShare": 112504
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Fort Lauderdale FL",
+          "TotalTRX": 21647,
+          "TotalNRX": 10230,
+          "TotalTRXMktShare": 114709,
+          "TotalNRXMktShare": 113396
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "St Louis MO",
+          "TotalTRX": 21409,
+          "TotalNRX": 8768,
+          "TotalTRXMktShare": 149564,
+          "TotalNRXMktShare": 144834
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "Thousand Oaks CA",
+          "TotalTRX": 21146,
+          "TotalNRX": 8664,
+          "TotalTRXMktShare": 149606,
+          "TotalNRXMktShare": 145392
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "San Diego CA",
+          "TotalTRX": 21071,
+          "TotalNRX": 8890,
+          "TotalTRXMktShare": 138110,
+          "TotalNRXMktShare": 136048
+        },
+        {
+          "RegionName": "Northeast",
+          "TerritoryName": "Brooklyn RSS",
+          "TotalTRX": 21017,
+          "TotalNRX": 10009,
+          "TotalTRXMktShare": 174539,
+          "TotalNRXMktShare": 169977
+        },
+        {
+          "RegionName": "Midatlantic",
+          "TerritoryName": "Nashville TN",
+          "TotalTRX": 20996,
+          "TotalNRX": 8434,
+          "TotalTRXMktShare": 150140,
+          "TotalNRXMktShare": 148876
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "Detroit MI",
+          "TotalTRX": 20994,
+          "TotalNRX": 9477,
+          "TotalTRXMktShare": 142807,
+          "TotalNRXMktShare": 140843
+        },
+        {
+          "RegionName": "Midatlantic",
+          "TerritoryName": "Charlotte NC",
+          "TotalTRX": 20656,
+          "TotalNRX": 8317,
+          "TotalTRXMktShare": 186827,
+          "TotalNRXMktShare": 181733
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Tampa FL",
+          "TotalTRX": 20248,
+          "TotalNRX": 9161,
+          "TotalTRXMktShare": 149717,
+          "TotalNRXMktShare": 146134
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "Dallas E TX",
+          "TotalTRX": 19784,
+          "TotalNRX": 9270,
+          "TotalTRXMktShare": 131048,
+          "TotalNRXMktShare": 129119
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "Chicago S IL",
+          "TotalTRX": 19734,
+          "TotalNRX": 9441,
+          "TotalTRXMktShare": 143703,
+          "TotalNRXMktShare": 140335
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "Oklahoma City OK",
+          "TotalTRX": 19672,
+          "TotalNRX": 7482,
+          "TotalTRXMktShare": 113730,
+          "TotalNRXMktShare": 111990
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "Indianapolis IN",
+          "TotalTRX": 19325,
+          "TotalNRX": 8266,
+          "TotalTRXMktShare": 164340,
+          "TotalNRXMktShare": 161410
+        },
+        {
+          "RegionName": "Tri-state",
+          "TerritoryName": "South Jersey NJ",
+          "TotalTRX": 19269,
+          "TotalNRX": 9444,
+          "TotalTRXMktShare": 149749,
+          "TotalNRXMktShare": 148573
+        },
+        {
+          "RegionName": "Tri-state",
+          "TerritoryName": "West Chester PA",
+          "TotalTRX": 19174,
+          "TotalNRX": 7446,
+          "TotalTRXMktShare": 155870,
+          "TotalNRXMktShare": 152123
+        },
+        {
+          "RegionName": "Midatlantic",
+          "TerritoryName": "Richmond VA",
+          "TotalTRX": 19070,
+          "TotalNRX": 7918,
+          "TotalTRXMktShare": 151451,
+          "TotalNRXMktShare": 149262
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Birmingham AL",
+          "TotalTRX": 18998,
+          "TotalNRX": 7001,
+          "TotalTRXMktShare": 126181,
+          "TotalNRXMktShare": 125214
+        },
+        {
+          "RegionName": "Midatlantic",
+          "TerritoryName": "Greensboro NC",
+          "TotalTRX": 18847,
+          "TotalNRX": 7399,
+          "TotalTRXMktShare": 133533,
+          "TotalNRXMktShare": 130322
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Atlanta S GA",
+          "TotalTRX": 18819,
+          "TotalNRX": 7949,
+          "TotalTRXMktShare": 140032,
+          "TotalNRXMktShare": 138130
+        },
+        {
+          "RegionName": "Northeast",
+          "TerritoryName": "White Plains NY",
+          "TotalTRX": 18510,
+          "TotalNRX": 7769,
+          "TotalTRXMktShare": 134037,
+          "TotalNRXMktShare": 129562
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "Houston RSS",
+          "TotalTRX": 18194,
+          "TotalNRX": 8221,
+          "TotalTRXMktShare": 178246,
+          "TotalNRXMktShare": 176927
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "Sacramento CA",
+          "TotalTRX": 18027,
+          "TotalNRX": 7288,
+          "TotalTRXMktShare": 141413,
+          "TotalNRXMktShare": 138380
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Miami FL",
+          "TotalTRX": 17942,
+          "TotalNRX": 8355,
+          "TotalTRXMktShare": 86958,
+          "TotalNRXMktShare": 86597
+        },
+        {
+          "RegionName": "Tri-state",
+          "TerritoryName": "Rochester NY",
+          "TotalTRX": 17870,
+          "TotalNRX": 7733,
+          "TotalTRXMktShare": 177887,
+          "TotalNRXMktShare": 171079
+        },
+        {
+          "RegionName": "Midatlantic",
+          "TerritoryName": "Northern VA",
+          "TotalTRX": 17750,
+          "TotalNRX": 8379,
+          "TotalTRXMktShare": 145780,
+          "TotalNRXMktShare": 142566
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "Columbus OH",
+          "TotalTRX": 17399,
+          "TotalNRX": 5988,
+          "TotalTRXMktShare": 146246,
+          "TotalNRXMktShare": 141191
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "Chicago IL",
+          "TotalTRX": 17366,
+          "TotalNRX": 7454,
+          "TotalTRXMktShare": 213977,
+          "TotalNRXMktShare": 210273
+        },
+        {
+          "RegionName": "Northeast",
+          "TerritoryName": "Manhattan NY",
+          "TotalTRX": 17335,
+          "TotalNRX": 7083,
+          "TotalTRXMktShare": 87785,
+          "TotalNRXMktShare": 84414
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "Las Vegas NV",
+          "TotalTRX": 17164,
+          "TotalNRX": 6719,
+          "TotalTRXMktShare": 144682,
+          "TotalNRXMktShare": 139551
+        },
+        {
+          "RegionName": "Tri-state",
+          "TerritoryName": "Philadelphia N PA",
+          "TotalTRX": 16969,
+          "TotalNRX": 6830,
+          "TotalTRXMktShare": 119184,
+          "TotalNRXMktShare": 117589
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "NE Houston TX",
+          "TotalTRX": 16877,
+          "TotalNRX": 7720,
+          "TotalTRXMktShare": 107704,
+          "TotalNRXMktShare": 107337
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Sarasota FL",
+          "TotalTRX": 16848,
+          "TotalNRX": 7494,
+          "TotalTRXMktShare": 161662,
+          "TotalNRXMktShare": 157306
+        },
+        {
+          "RegionName": "Tri-state",
+          "TerritoryName": "Philadelphia S PA",
+          "TotalTRX": 16738,
+          "TotalNRX": 7029,
+          "TotalTRXMktShare": 123113,
+          "TotalNRXMktShare": 121527
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "E Phoenix AZ",
+          "TotalTRX": 16701,
+          "TotalNRX": 7947,
+          "TotalTRXMktShare": 122668,
+          "TotalNRXMktShare": 119824
+        },
+        {
+          "RegionName": "Midatlantic",
+          "TerritoryName": "Louisville KY",
+          "TotalTRX": 16661,
+          "TotalNRX": 6890,
+          "TotalTRXMktShare": 138976,
+          "TotalNRXMktShare": 135940
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "San Antonio TX",
+          "TotalTRX": 16536,
+          "TotalNRX": 7490,
+          "TotalTRXMktShare": 115160,
+          "TotalNRXMktShare": 114173
+        },
+        {
+          "RegionName": "Midatlantic",
+          "TerritoryName": "Columbia SC",
+          "TotalTRX": 16485,
+          "TotalNRX": 6507,
+          "TotalTRXMktShare": 130252,
+          "TotalNRXMktShare": 127758
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "Kansas City MO",
+          "TotalTRX": 16464,
+          "TotalNRX": 6600,
+          "TotalTRXMktShare": 123481,
+          "TotalNRXMktShare": 121446
+        },
+        {
+          "RegionName": "Midatlantic",
+          "TerritoryName": "Washington DC",
+          "TotalTRX": 16236,
+          "TotalNRX": 7482,
+          "TotalTRXMktShare": 125275,
+          "TotalNRXMktShare": 121079
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "Houston N TX",
+          "TotalTRX": 16119,
+          "TotalNRX": 7880,
+          "TotalTRXMktShare": 103590,
+          "TotalNRXMktShare": 102663
+        },
+        {
+          "RegionName": "Midatlantic",
+          "TerritoryName": "Baltimore MD",
+          "TotalTRX": 15594,
+          "TotalNRX": 6506,
+          "TotalTRXMktShare": 126997,
+          "TotalNRXMktShare": 122761
+        },
+        {
+          "RegionName": "Midatlantic",
+          "TerritoryName": "Knoxville TN",
+          "TotalTRX": 15580,
+          "TotalNRX": 6223,
+          "TotalTRXMktShare": 137558,
+          "TotalNRXMktShare": 133180
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "Denver N CO",
+          "TotalTRX": 15537,
+          "TotalNRX": 6612,
+          "TotalTRXMktShare": 111873,
+          "TotalNRXMktShare": 109756
+        },
+        {
+          "RegionName": "Tri-state",
+          "TerritoryName": "Albany NY",
+          "TotalTRX": 15428,
+          "TotalNRX": 5424,
+          "TotalTRXMktShare": 133282,
+          "TotalNRXMktShare": 130417
+        },
+        {
+          "RegionName": "Tri-state",
+          "TerritoryName": "Harrisburg PA",
+          "TotalTRX": 15342,
+          "TotalNRX": 5804,
+          "TotalTRXMktShare": 143702,
+          "TotalNRXMktShare": 142504
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "Chicago N IL",
+          "TotalTRX": 15042,
+          "TotalNRX": 6748,
+          "TotalTRXMktShare": 131469,
+          "TotalNRXMktShare": 129870
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Jacksonville FL",
+          "TotalTRX": 14813,
+          "TotalNRX": 6576,
+          "TotalTRXMktShare": 113206,
+          "TotalNRXMktShare": 112244
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Tele-Sales 6 - Southeast",
+          "TotalTRX": 14703,
+          "TotalNRX": 5949,
+          "TotalTRXMktShare": 113537,
+          "TotalNRXMktShare": 109944
+        },
+        {
+          "RegionName": "Northeast",
+          "TerritoryName": "Boston MA",
+          "TotalTRX": 14496,
+          "TotalNRX": 5459,
+          "TotalTRXMktShare": 122211,
+          "TotalNRXMktShare": 119413
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "Chicago C IL",
+          "TotalTRX": 14444,
+          "TotalNRX": 5999,
+          "TotalTRXMktShare": 104612,
+          "TotalNRXMktShare": 101536
+        },
+        {
+          "RegionName": "Tri-state",
+          "TerritoryName": "Northwest NJ",
+          "TotalTRX": 14099,
+          "TotalNRX": 6001,
+          "TotalTRXMktShare": 104583,
+          "TotalNRXMktShare": 102042
+        },
+        {
+          "RegionName": "Northeast",
+          "TerritoryName": "S Brooklyn NY",
+          "TotalTRX": 13876,
+          "TotalNRX": 5865,
+          "TotalTRXMktShare": 86276,
+          "TotalNRXMktShare": 80968
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "Seattle WA",
+          "TotalTRX": 13832,
+          "TotalNRX": 5582,
+          "TotalTRXMktShare": 118592,
+          "TotalNRXMktShare": 116560
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "W Phoenix AZ",
+          "TotalTRX": 13651,
+          "TotalNRX": 6029,
+          "TotalTRXMktShare": 115625,
+          "TotalNRXMktShare": 112931
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Atlanta E GA",
+          "TotalTRX": 13571,
+          "TotalNRX": 5298,
+          "TotalTRXMktShare": 119440,
+          "TotalNRXMktShare": 116160
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "San Jose CA",
+          "TotalTRX": 13522,
+          "TotalNRX": 6039,
+          "TotalTRXMktShare": 100572,
+          "TotalNRXMktShare": 97779
+        },
+        {
+          "RegionName": "Northeast",
+          "TerritoryName": "N Boston MA",
+          "TotalTRX": 13506,
+          "TotalNRX": 5289,
+          "TotalTRXMktShare": 128504,
+          "TotalNRXMktShare": 127407
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "Cincinnati OH",
+          "TotalTRX": 13411,
+          "TotalNRX": 5505,
+          "TotalTRXMktShare": 107778,
+          "TotalNRXMktShare": 105355
+        },
+        {
+          "RegionName": "Northeast",
+          "TerritoryName": "W Hartford CT",
+          "TotalTRX": 12970,
+          "TotalNRX": 5272,
+          "TotalTRXMktShare": 98879,
+          "TotalNRXMktShare": 97830
+        },
+        {
+          "RegionName": "Northeast",
+          "TerritoryName": "N Brooklyn NY",
+          "TotalTRX": 12886,
+          "TotalNRX": 5611,
+          "TotalTRXMktShare": 70532,
+          "TotalNRXMktShare": 66242
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "Los Angeles S CA",
+          "TotalTRX": 12191,
+          "TotalNRX": 5005,
+          "TotalTRXMktShare": 88878,
+          "TotalNRXMktShare": 85851
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "Los Angeles N CA",
+          "TotalTRX": 12002,
+          "TotalNRX": 4887,
+          "TotalTRXMktShare": 82070,
+          "TotalNRXMktShare": 76578
+        },
+        {
+          "RegionName": "Northeast",
+          "TerritoryName": "Triborough 1",
+          "TotalTRX": 11722,
+          "TotalNRX": 5102,
+          "TotalTRXMktShare": 42830,
+          "TotalNRXMktShare": 39905
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Miami RSS",
+          "TotalTRX": 11413,
+          "TotalNRX": 5110,
+          "TotalTRXMktShare": 96937,
+          "TotalNRXMktShare": 95909
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "Milwaukee WI",
+          "TotalTRX": 11273,
+          "TotalNRX": 4628,
+          "TotalTRXMktShare": 85377,
+          "TotalNRXMktShare": 84108
+        },
+        {
+          "RegionName": "Northeast",
+          "TerritoryName": "N Manhattan NY",
+          "TotalTRX": 11237,
+          "TotalNRX": 4635,
+          "TotalTRXMktShare": 54441,
+          "TotalNRXMktShare": 52565
+        },
+        {
+          "RegionName": "Northeast",
+          "TerritoryName": "E Hartford CT",
+          "TotalTRX": 11218,
+          "TotalNRX": 4634,
+          "TotalTRXMktShare": 100475,
+          "TotalNRXMktShare": 98956
+        },
+        {
+          "RegionName": "Tri-state",
+          "TerritoryName": "New Jersey RSS",
+          "TotalTRX": 10432,
+          "TotalNRX": 5250,
+          "TotalTRXMktShare": 129204,
+          "TotalNRXMktShare": 127488
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "Denver S CO",
+          "TotalTRX": 10046,
+          "TotalNRX": 3959,
+          "TotalTRXMktShare": 78790,
+          "TotalNRXMktShare": 77592
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "Los Angeles RSS",
+          "TotalTRX": 8339,
+          "TotalNRX": 3457,
+          "TotalTRXMktShare": 94094,
+          "TotalNRXMktShare": 89071
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "Riverside CA",
+          "TotalTRX": 8174,
+          "TotalNRX": 3407,
+          "TotalTRXMktShare": 69765,
+          "TotalNRXMktShare": 67554
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "Grand Rapids MI",
+          "TotalTRX": 7671,
+          "TotalNRX": 2974,
+          "TotalTRXMktShare": 79220,
+          "TotalNRXMktShare": 76208
+        },
+        {
+          "RegionName": "Tri-state",
+          "TerritoryName": "Tele-Sales 1 - Tri-State",
+          "TotalTRX": 7496,
+          "TotalNRX": 2915,
+          "TotalTRXMktShare": 105292,
+          "TotalNRXMktShare": 102498
+        }
+      ],
+      "columns": []
+    },
+    "data": [
+      {
+        "RegionName": "Midatlantic",
+        "TerritoryName": "Tele-Sales 2 - Mid-Atlantic",
+        "TotalTRX": 61764,
+        "TotalNRX": 24778,
+        "TotalTRXMktShare": 475259,
+        "TotalNRXMktShare": 464452
+      },
+      {
+        "RegionName": "Southwest",
+        "TerritoryName": "Tele-Sales 5 - Southwest",
+        "TotalTRX": 39676,
+        "TotalNRX": 15301,
+        "TotalTRXMktShare": 306237,
+        "TotalNRXMktShare": 302179
+      },
+      {
+        "RegionName": "Midwest",
+        "TerritoryName": "Tele-Sales 3 - Midwest",
+        "TotalTRX": 33410,
+        "TotalNRX": 13652,
+        "TotalTRXMktShare": 270917,
+        "TotalNRXMktShare": 264465
+      },
+      {
+        "RegionName": "West",
+        "TerritoryName": "Tele-Sales 4 - West",
+        "TotalTRX": 31566,
+        "TotalNRX": 13153,
+        "TotalTRXMktShare": 273184,
+        "TotalNRXMktShare": 266031
+      },
+      {
+        "RegionName": "Northeast",
+        "TerritoryName": "Long Island NY",
+        "TotalTRX": 27823,
+        "TotalNRX": 13977,
+        "TotalTRXMktShare": 194372,
+        "TotalNRXMktShare": 191548
+      },
+      {
+        "RegionName": "Southwest",
+        "TerritoryName": "Dallas N TX",
+        "TotalTRX": 27067,
+        "TotalNRX": 13079,
+        "TotalTRXMktShare": 170260,
+        "TotalNRXMktShare": 169630
+      },
+      {
+        "RegionName": "Midwest",
+        "TerritoryName": "Cleveland OH",
+        "TotalTRX": 26999,
+        "TotalNRX": 10132,
+        "TotalTRXMktShare": 220863,
+        "TotalNRXMktShare": 217006
+      },
+      {
+        "RegionName": "Southwest",
+        "TerritoryName": "Austin TX",
+        "TotalTRX": 26690,
+        "TotalNRX": 12183,
+        "TotalTRXMktShare": 137461,
+        "TotalNRXMktShare": 135863
+      },
+      {
+        "RegionName": "Southwest",
+        "TerritoryName": "Houston S TX",
+        "TotalTRX": 24802,
+        "TotalNRX": 11197,
+        "TotalTRXMktShare": 144164,
+        "TotalNRXMktShare": 143090
+      },
+      {
+        "RegionName": "Southeast",
+        "TerritoryName": "Orlando FL",
+        "TotalTRX": 23534,
+        "TotalNRX": 10656,
+        "TotalTRXMktShare": 164026,
+        "TotalNRXMktShare": 162546
+      },
+      {
+        "RegionName": "Southwest",
+        "TerritoryName": "New Orleans LA",
+        "TotalTRX": 23381,
+        "TotalNRX": 8387,
+        "TotalTRXMktShare": 129745,
+        "TotalNRXMktShare": 127966
+      },
+      {
+        "RegionName": "Midatlantic",
+        "TerritoryName": "Raleigh NC",
+        "TotalTRX": 23298,
+        "TotalNRX": 9420,
+        "TotalTRXMktShare": 174800,
+        "TotalNRXMktShare": 169784
+      },
+      {
+        "RegionName": "Southwest",
+        "TerritoryName": "Fort Worth TX",
+        "TotalTRX": 22320,
+        "TotalNRX": 10377,
+        "TotalTRXMktShare": 142085,
+        "TotalNRXMktShare": 139097
+      },
+      {
+        "RegionName": "Southeast",
+        "TerritoryName": "Atlanta N GA",
+        "TotalTRX": 22032,
+        "TotalNRX": 10179,
+        "TotalTRXMktShare": 148990,
+        "TotalNRXMktShare": 148024
+      },
+      {
+        "RegionName": "Tri-state",
+        "TerritoryName": "Newark NJ",
+        "TotalTRX": 21929,
+        "TotalNRX": 10003,
+        "TotalTRXMktShare": 136065,
+        "TotalNRXMktShare": 133368
+      },
+      {
+        "RegionName": "Southeast",
+        "TerritoryName": "Jackson MS",
+        "TotalTRX": 21726,
+        "TotalNRX": 7421,
+        "TotalTRXMktShare": 115092,
+        "TotalNRXMktShare": 112504
+      },
+      {
+        "RegionName": "Southeast",
+        "TerritoryName": "Fort Lauderdale FL",
+        "TotalTRX": 21647,
+        "TotalNRX": 10230,
+        "TotalTRXMktShare": 114709,
+        "TotalNRXMktShare": 113396
+      },
+      {
+        "RegionName": "Midwest",
+        "TerritoryName": "St Louis MO",
+        "TotalTRX": 21409,
+        "TotalNRX": 8768,
+        "TotalTRXMktShare": 149564,
+        "TotalNRXMktShare": 144834
+      },
+      {
+        "RegionName": "West",
+        "TerritoryName": "Thousand Oaks CA",
+        "TotalTRX": 21146,
+        "TotalNRX": 8664,
+        "TotalTRXMktShare": 149606,
+        "TotalNRXMktShare": 145392
+      },
+      {
+        "RegionName": "West",
+        "TerritoryName": "San Diego CA",
+        "TotalTRX": 21071,
+        "TotalNRX": 8890,
+        "TotalTRXMktShare": 138110,
+        "TotalNRXMktShare": 136048
+      },
+      {
+        "RegionName": "Northeast",
+        "TerritoryName": "Brooklyn RSS",
+        "TotalTRX": 21017,
+        "TotalNRX": 10009,
+        "TotalTRXMktShare": 174539,
+        "TotalNRXMktShare": 169977
+      },
+      {
+        "RegionName": "Midatlantic",
+        "TerritoryName": "Nashville TN",
+        "TotalTRX": 20996,
+        "TotalNRX": 8434,
+        "TotalTRXMktShare": 150140,
+        "TotalNRXMktShare": 148876
+      },
+      {
+        "RegionName": "Midwest",
+        "TerritoryName": "Detroit MI",
+        "TotalTRX": 20994,
+        "TotalNRX": 9477,
+        "TotalTRXMktShare": 142807,
+        "TotalNRXMktShare": 140843
+      },
+      {
+        "RegionName": "Midatlantic",
+        "TerritoryName": "Charlotte NC",
+        "TotalTRX": 20656,
+        "TotalNRX": 8317,
+        "TotalTRXMktShare": 186827,
+        "TotalNRXMktShare": 181733
+      },
+      {
+        "RegionName": "Southeast",
+        "TerritoryName": "Tampa FL",
+        "TotalTRX": 20248,
+        "TotalNRX": 9161,
+        "TotalTRXMktShare": 149717,
+        "TotalNRXMktShare": 146134
+      },
+      {
+        "RegionName": "Southwest",
+        "TerritoryName": "Dallas E TX",
+        "TotalTRX": 19784,
+        "TotalNRX": 9270,
+        "TotalTRXMktShare": 131048,
+        "TotalNRXMktShare": 129119
+      },
+      {
+        "RegionName": "Midwest",
+        "TerritoryName": "Chicago S IL",
+        "TotalTRX": 19734,
+        "TotalNRX": 9441,
+        "TotalTRXMktShare": 143703,
+        "TotalNRXMktShare": 140335
+      },
+      {
+        "RegionName": "Southwest",
+        "TerritoryName": "Oklahoma City OK",
+        "TotalTRX": 19672,
+        "TotalNRX": 7482,
+        "TotalTRXMktShare": 113730,
+        "TotalNRXMktShare": 111990
+      },
+      {
+        "RegionName": "Midwest",
+        "TerritoryName": "Indianapolis IN",
+        "TotalTRX": 19325,
+        "TotalNRX": 8266,
+        "TotalTRXMktShare": 164340,
+        "TotalNRXMktShare": 161410
+      },
+      {
+        "RegionName": "Tri-state",
+        "TerritoryName": "South Jersey NJ",
+        "TotalTRX": 19269,
+        "TotalNRX": 9444,
+        "TotalTRXMktShare": 149749,
+        "TotalNRXMktShare": 148573
+      },
+      {
+        "RegionName": "Tri-state",
+        "TerritoryName": "West Chester PA",
+        "TotalTRX": 19174,
+        "TotalNRX": 7446,
+        "TotalTRXMktShare": 155870,
+        "TotalNRXMktShare": 152123
+      },
+      {
+        "RegionName": "Midatlantic",
+        "TerritoryName": "Richmond VA",
+        "TotalTRX": 19070,
+        "TotalNRX": 7918,
+        "TotalTRXMktShare": 151451,
+        "TotalNRXMktShare": 149262
+      },
+      {
+        "RegionName": "Southeast",
+        "TerritoryName": "Birmingham AL",
+        "TotalTRX": 18998,
+        "TotalNRX": 7001,
+        "TotalTRXMktShare": 126181,
+        "TotalNRXMktShare": 125214
+      },
+      {
+        "RegionName": "Midatlantic",
+        "TerritoryName": "Greensboro NC",
+        "TotalTRX": 18847,
+        "TotalNRX": 7399,
+        "TotalTRXMktShare": 133533,
+        "TotalNRXMktShare": 130322
+      },
+      {
+        "RegionName": "Southeast",
+        "TerritoryName": "Atlanta S GA",
+        "TotalTRX": 18819,
+        "TotalNRX": 7949,
+        "TotalTRXMktShare": 140032,
+        "TotalNRXMktShare": 138130
+      },
+      {
+        "RegionName": "Northeast",
+        "TerritoryName": "White Plains NY",
+        "TotalTRX": 18510,
+        "TotalNRX": 7769,
+        "TotalTRXMktShare": 134037,
+        "TotalNRXMktShare": 129562
+      },
+      {
+        "RegionName": "Southwest",
+        "TerritoryName": "Houston RSS",
+        "TotalTRX": 18194,
+        "TotalNRX": 8221,
+        "TotalTRXMktShare": 178246,
+        "TotalNRXMktShare": 176927
+      },
+      {
+        "RegionName": "West",
+        "TerritoryName": "Sacramento CA",
+        "TotalTRX": 18027,
+        "TotalNRX": 7288,
+        "TotalTRXMktShare": 141413,
+        "TotalNRXMktShare": 138380
+      },
+      {
+        "RegionName": "Southeast",
+        "TerritoryName": "Miami FL",
+        "TotalTRX": 17942,
+        "TotalNRX": 8355,
+        "TotalTRXMktShare": 86958,
+        "TotalNRXMktShare": 86597
+      },
+      {
+        "RegionName": "Tri-state",
+        "TerritoryName": "Rochester NY",
+        "TotalTRX": 17870,
+        "TotalNRX": 7733,
+        "TotalTRXMktShare": 177887,
+        "TotalNRXMktShare": 171079
+      },
+      {
+        "RegionName": "Midatlantic",
+        "TerritoryName": "Northern VA",
+        "TotalTRX": 17750,
+        "TotalNRX": 8379,
+        "TotalTRXMktShare": 145780,
+        "TotalNRXMktShare": 142566
+      },
+      {
+        "RegionName": "Midwest",
+        "TerritoryName": "Columbus OH",
+        "TotalTRX": 17399,
+        "TotalNRX": 5988,
+        "TotalTRXMktShare": 146246,
+        "TotalNRXMktShare": 141191
+      },
+      {
+        "RegionName": "Midwest",
+        "TerritoryName": "Chicago IL",
+        "TotalTRX": 17366,
+        "TotalNRX": 7454,
+        "TotalTRXMktShare": 213977,
+        "TotalNRXMktShare": 210273
+      },
+      {
+        "RegionName": "Northeast",
+        "TerritoryName": "Manhattan NY",
+        "TotalTRX": 17335,
+        "TotalNRX": 7083,
+        "TotalTRXMktShare": 87785,
+        "TotalNRXMktShare": 84414
+      },
+      {
+        "RegionName": "West",
+        "TerritoryName": "Las Vegas NV",
+        "TotalTRX": 17164,
+        "TotalNRX": 6719,
+        "TotalTRXMktShare": 144682,
+        "TotalNRXMktShare": 139551
+      },
+      {
+        "RegionName": "Tri-state",
+        "TerritoryName": "Philadelphia N PA",
+        "TotalTRX": 16969,
+        "TotalNRX": 6830,
+        "TotalTRXMktShare": 119184,
+        "TotalNRXMktShare": 117589
+      },
+      {
+        "RegionName": "Southwest",
+        "TerritoryName": "NE Houston TX",
+        "TotalTRX": 16877,
+        "TotalNRX": 7720,
+        "TotalTRXMktShare": 107704,
+        "TotalNRXMktShare": 107337
+      },
+      {
+        "RegionName": "Southeast",
+        "TerritoryName": "Sarasota FL",
+        "TotalTRX": 16848,
+        "TotalNRX": 7494,
+        "TotalTRXMktShare": 161662,
+        "TotalNRXMktShare": 157306
+      },
+      {
+        "RegionName": "Tri-state",
+        "TerritoryName": "Philadelphia S PA",
+        "TotalTRX": 16738,
+        "TotalNRX": 7029,
+        "TotalTRXMktShare": 123113,
+        "TotalNRXMktShare": 121527
+      },
+      {
+        "RegionName": "West",
+        "TerritoryName": "E Phoenix AZ",
+        "TotalTRX": 16701,
+        "TotalNRX": 7947,
+        "TotalTRXMktShare": 122668,
+        "TotalNRXMktShare": 119824
+      },
+      {
+        "RegionName": "Midatlantic",
+        "TerritoryName": "Louisville KY",
+        "TotalTRX": 16661,
+        "TotalNRX": 6890,
+        "TotalTRXMktShare": 138976,
+        "TotalNRXMktShare": 135940
+      },
+      {
+        "RegionName": "Southwest",
+        "TerritoryName": "San Antonio TX",
+        "TotalTRX": 16536,
+        "TotalNRX": 7490,
+        "TotalTRXMktShare": 115160,
+        "TotalNRXMktShare": 114173
+      },
+      {
+        "RegionName": "Midatlantic",
+        "TerritoryName": "Columbia SC",
+        "TotalTRX": 16485,
+        "TotalNRX": 6507,
+        "TotalTRXMktShare": 130252,
+        "TotalNRXMktShare": 127758
+      },
+      {
+        "RegionName": "Southwest",
+        "TerritoryName": "Kansas City MO",
+        "TotalTRX": 16464,
+        "TotalNRX": 6600,
+        "TotalTRXMktShare": 123481,
+        "TotalNRXMktShare": 121446
+      },
+      {
+        "RegionName": "Midatlantic",
+        "TerritoryName": "Washington DC",
+        "TotalTRX": 16236,
+        "TotalNRX": 7482,
+        "TotalTRXMktShare": 125275,
+        "TotalNRXMktShare": 121079
+      },
+      {
+        "RegionName": "Southwest",
+        "TerritoryName": "Houston N TX",
+        "TotalTRX": 16119,
+        "TotalNRX": 7880,
+        "TotalTRXMktShare": 103590,
+        "TotalNRXMktShare": 102663
+      },
+      {
+        "RegionName": "Midatlantic",
+        "TerritoryName": "Baltimore MD",
+        "TotalTRX": 15594,
+        "TotalNRX": 6506,
+        "TotalTRXMktShare": 126997,
+        "TotalNRXMktShare": 122761
+      },
+      {
+        "RegionName": "Midatlantic",
+        "TerritoryName": "Knoxville TN",
+        "TotalTRX": 15580,
+        "TotalNRX": 6223,
+        "TotalTRXMktShare": 137558,
+        "TotalNRXMktShare": 133180
+      },
+      {
+        "RegionName": "Southwest",
+        "TerritoryName": "Denver N CO",
+        "TotalTRX": 15537,
+        "TotalNRX": 6612,
+        "TotalTRXMktShare": 111873,
+        "TotalNRXMktShare": 109756
+      },
+      {
+        "RegionName": "Tri-state",
+        "TerritoryName": "Albany NY",
+        "TotalTRX": 15428,
+        "TotalNRX": 5424,
+        "TotalTRXMktShare": 133282,
+        "TotalNRXMktShare": 130417
+      },
+      {
+        "RegionName": "Tri-state",
+        "TerritoryName": "Harrisburg PA",
+        "TotalTRX": 15342,
+        "TotalNRX": 5804,
+        "TotalTRXMktShare": 143702,
+        "TotalNRXMktShare": 142504
+      },
+      {
+        "RegionName": "Midwest",
+        "TerritoryName": "Chicago N IL",
+        "TotalTRX": 15042,
+        "TotalNRX": 6748,
+        "TotalTRXMktShare": 131469,
+        "TotalNRXMktShare": 129870
+      },
+      {
+        "RegionName": "Southeast",
+        "TerritoryName": "Jacksonville FL",
+        "TotalTRX": 14813,
+        "TotalNRX": 6576,
+        "TotalTRXMktShare": 113206,
+        "TotalNRXMktShare": 112244
+      },
+      {
+        "RegionName": "Southeast",
+        "TerritoryName": "Tele-Sales 6 - Southeast",
+        "TotalTRX": 14703,
+        "TotalNRX": 5949,
+        "TotalTRXMktShare": 113537,
+        "TotalNRXMktShare": 109944
+      },
+      {
+        "RegionName": "Northeast",
+        "TerritoryName": "Boston MA",
+        "TotalTRX": 14496,
+        "TotalNRX": 5459,
+        "TotalTRXMktShare": 122211,
+        "TotalNRXMktShare": 119413
+      },
+      {
+        "RegionName": "Midwest",
+        "TerritoryName": "Chicago C IL",
+        "TotalTRX": 14444,
+        "TotalNRX": 5999,
+        "TotalTRXMktShare": 104612,
+        "TotalNRXMktShare": 101536
+      },
+      {
+        "RegionName": "Tri-state",
+        "TerritoryName": "Northwest NJ",
+        "TotalTRX": 14099,
+        "TotalNRX": 6001,
+        "TotalTRXMktShare": 104583,
+        "TotalNRXMktShare": 102042
+      },
+      {
+        "RegionName": "Northeast",
+        "TerritoryName": "S Brooklyn NY",
+        "TotalTRX": 13876,
+        "TotalNRX": 5865,
+        "TotalTRXMktShare": 86276,
+        "TotalNRXMktShare": 80968
+      },
+      {
+        "RegionName": "West",
+        "TerritoryName": "Seattle WA",
+        "TotalTRX": 13832,
+        "TotalNRX": 5582,
+        "TotalTRXMktShare": 118592,
+        "TotalNRXMktShare": 116560
+      },
+      {
+        "RegionName": "West",
+        "TerritoryName": "W Phoenix AZ",
+        "TotalTRX": 13651,
+        "TotalNRX": 6029,
+        "TotalTRXMktShare": 115625,
+        "TotalNRXMktShare": 112931
+      },
+      {
+        "RegionName": "Southeast",
+        "TerritoryName": "Atlanta E GA",
+        "TotalTRX": 13571,
+        "TotalNRX": 5298,
+        "TotalTRXMktShare": 119440,
+        "TotalNRXMktShare": 116160
+      },
+      {
+        "RegionName": "West",
+        "TerritoryName": "San Jose CA",
+        "TotalTRX": 13522,
+        "TotalNRX": 6039,
+        "TotalTRXMktShare": 100572,
+        "TotalNRXMktShare": 97779
+      },
+      {
+        "RegionName": "Northeast",
+        "TerritoryName": "N Boston MA",
+        "TotalTRX": 13506,
+        "TotalNRX": 5289,
+        "TotalTRXMktShare": 128504,
+        "TotalNRXMktShare": 127407
+      },
+      {
+        "RegionName": "Midwest",
+        "TerritoryName": "Cincinnati OH",
+        "TotalTRX": 13411,
+        "TotalNRX": 5505,
+        "TotalTRXMktShare": 107778,
+        "TotalNRXMktShare": 105355
+      },
+      {
+        "RegionName": "Northeast",
+        "TerritoryName": "W Hartford CT",
+        "TotalTRX": 12970,
+        "TotalNRX": 5272,
+        "TotalTRXMktShare": 98879,
+        "TotalNRXMktShare": 97830
+      },
+      {
+        "RegionName": "Northeast",
+        "TerritoryName": "N Brooklyn NY",
+        "TotalTRX": 12886,
+        "TotalNRX": 5611,
+        "TotalTRXMktShare": 70532,
+        "TotalNRXMktShare": 66242
+      },
+      {
+        "RegionName": "West",
+        "TerritoryName": "Los Angeles S CA",
+        "TotalTRX": 12191,
+        "TotalNRX": 5005,
+        "TotalTRXMktShare": 88878,
+        "TotalNRXMktShare": 85851
+      },
+      {
+        "RegionName": "West",
+        "TerritoryName": "Los Angeles N CA",
+        "TotalTRX": 12002,
+        "TotalNRX": 4887,
+        "TotalTRXMktShare": 82070,
+        "TotalNRXMktShare": 76578
+      },
+      {
+        "RegionName": "Northeast",
+        "TerritoryName": "Triborough 1",
+        "TotalTRX": 11722,
+        "TotalNRX": 5102,
+        "TotalTRXMktShare": 42830,
+        "TotalNRXMktShare": 39905
+      },
+      {
+        "RegionName": "Southeast",
+        "TerritoryName": "Miami RSS",
+        "TotalTRX": 11413,
+        "TotalNRX": 5110,
+        "TotalTRXMktShare": 96937,
+        "TotalNRXMktShare": 95909
+      },
+      {
+        "RegionName": "Midwest",
+        "TerritoryName": "Milwaukee WI",
+        "TotalTRX": 11273,
+        "TotalNRX": 4628,
+        "TotalTRXMktShare": 85377,
+        "TotalNRXMktShare": 84108
+      },
+      {
+        "RegionName": "Northeast",
+        "TerritoryName": "N Manhattan NY",
+        "TotalTRX": 11237,
+        "TotalNRX": 4635,
+        "TotalTRXMktShare": 54441,
+        "TotalNRXMktShare": 52565
+      },
+      {
+        "RegionName": "Northeast",
+        "TerritoryName": "E Hartford CT",
+        "TotalTRX": 11218,
+        "TotalNRX": 4634,
+        "TotalTRXMktShare": 100475,
+        "TotalNRXMktShare": 98956
+      },
+      {
+        "RegionName": "Tri-state",
+        "TerritoryName": "New Jersey RSS",
+        "TotalTRX": 10432,
+        "TotalNRX": 5250,
+        "TotalTRXMktShare": 129204,
+        "TotalNRXMktShare": 127488
+      },
+      {
+        "RegionName": "Southwest",
+        "TerritoryName": "Denver S CO",
+        "TotalTRX": 10046,
+        "TotalNRX": 3959,
+        "TotalTRXMktShare": 78790,
+        "TotalNRXMktShare": 77592
+      },
+      {
+        "RegionName": "West",
+        "TerritoryName": "Los Angeles RSS",
+        "TotalTRX": 8339,
+        "TotalNRX": 3457,
+        "TotalTRXMktShare": 94094,
+        "TotalNRXMktShare": 89071
+      },
+      {
+        "RegionName": "West",
+        "TerritoryName": "Riverside CA",
+        "TotalTRX": 8174,
+        "TotalNRX": 3407,
+        "TotalTRXMktShare": 69765,
+        "TotalNRXMktShare": 67554
+      },
+      {
+        "RegionName": "Midwest",
+        "TerritoryName": "Grand Rapids MI",
+        "TotalTRX": 7671,
+        "TotalNRX": 2974,
+        "TotalTRXMktShare": 79220,
+        "TotalNRXMktShare": 76208
+      },
+      {
+        "RegionName": "Tri-state",
+        "TerritoryName": "Tele-Sales 1 - Tri-State",
+        "TotalTRX": 7496,
+        "TotalNRX": 2915,
+        "TotalTRXMktShare": 105292,
+        "TotalNRXMktShare": 102498
+      }
+    ],
+    "intelligent_visualization_planning": {
+      "status": "completed",
+      "visualization_plan": {
+        "layout_type": "comparison",
+        "query_type": "User wants to compare TRX vs NRX share performance across different products and regions, making a comparison layout the most suitable.",
+        "kpis": [
+          {
+            "title": "Total TRX",
+            "value_column": "TotalTRX",
+            "calculation": "sum",
+            "trend": false,
+            "trend_comparison": null,
+            "status_thresholds": null,
+            "format": "number",
+            "icon": "trendingUp",
+            "sparkline": true
+          },
+          {
+            "title": "Total NRX",
+            "value_column": "TotalNRX",
+            "calculation": "sum",
+            "trend": false,
+            "trend_comparison": null,
+            "status_thresholds": null,
+            "format": "number",
+            "icon": "trendingUp",
+            "sparkline": true
+          },
+          {
+            "title": "TRX Market Share",
+            "value_column": "TotalTRXMktShare",
+            "calculation": "mean",
+            "trend": false,
+            "trend_comparison": null,
+            "status_thresholds": null,
+            "format": "percentage",
+            "icon": "activity",
+            "sparkline": false
+          },
+          {
+            "title": "NRX Market Share",
+            "value_column": "TotalNRXMktShare",
+            "calculation": "mean",
+            "trend": false,
+            "trend_comparison": null,
+            "status_thresholds": null,
+            "format": "percentage",
+            "icon": "activity",
+            "sparkline": false
+          }
+        ],
+        "primary_chart": {
+          "type": "bar",
+          "title": "Comparison of TRX vs NRX Performance",
+          "x_axis": "TerritoryName",
+          "y_axis": "TotalTRX, TotalNRX",
+          "style": "grouped",
+          "aggregation": "sum",
+          "color_scheme": "categorical",
+          "interactive_features": [
+            "hover",
+            "zoom"
+          ]
+        },
+        "timeline": null,
+        "breakdown": {
+          "enabled": true,
+          "category_column": "RegionName",
+          "value_column": "TotalTRX, TotalNRX",
+          "layout": "grid",
+          "show_icons": true,
+          "max_categories": 10
+        },
+        "layout_structure": [
+          {
+            "row": 1,
+            "type": "kpi_row",
+            "columns": 4,
+            "height": "120px",
+            "components": null
+          },
+          {
+            "row": 2,
+            "type": "main_chart",
+            "columns": 1,
+            "height": "400px",
+            "components": null
+          },
+          {
+            "row": 3,
+            "type": "breakdown",
+            "columns": 1,
+            "height": "300px",
+            "components": null
+          }
+        ],
+        "metadata": {
+          "data_profile": {
+            "row_count": 89,
+            "column_count": 6,
+            "columns": [
+              "RegionName",
+              "TerritoryName",
+              "TotalTRX",
+              "TotalNRX",
+              "TotalTRXMktShare",
+              "TotalNRXMktShare"
+            ],
+            "numeric_columns": [
+              "TotalTRX",
+              "TotalNRX",
+              "TotalTRXMktShare",
+              "TotalNRXMktShare"
+            ],
+            "categorical_columns": [
+              "RegionName",
+              "TerritoryName"
+            ],
+            "temporal_columns": [],
+            "has_temporal": false,
+            "has_numeric": true,
+            "has_categorical": true,
+            "data_density": 534,
+            "value_distributions": {
+              "RegionName": {
+                "unique_count": 7,
+                "top_values": {
+                  "Southwest": 15,
+                  "Midwest": 13,
+                  "West": 13,
+                  "Southeast": 13,
+                  "Midatlantic": 12
+                }
+              },
+              "TerritoryName": {
+                "unique_count": 89,
+                "top_values": {
+                  "Tele-Sales 2 - Mid-Atlantic": 1,
+                  "Philadelphia N PA": 1,
+                  "Chicago C IL": 1,
+                  "Boston MA": 1,
+                  "Tele-Sales 6 - Southeast": 1
+                }
+              }
+            }
+          },
+          "llm_reasoning": "User wants to compare TRX vs NRX share performance across different products and regions, making a comparison layout the most suitable."
+        }
+      },
+      "summary": "Created comparison layout with 4 KPIs"
+    }
+  },
+  "results": {
+    "1_schema_discovery": {
+      "discovered_tables": [
+        "Reporting_BI_PrescriberProfile",
+        "Reporting_BI_PrescriberOverview",
+        "Reporting_BI_NGD"
+      ],
+      "matched_tables": [
+        "Reporting_BI_PrescriberProfile",
+        "Reporting_BI_PrescriberOverview",
+        "Reporting_BI_NGD"
+      ],
+      "table_details": [
+        {
+          "name": "Reporting_BI_PrescriberProfile",
+          "schema": "dbo",
+          "columns": [
+            {
+              "name": "RegionName",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TerritoryName",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "PrescriberName",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "ProductGroupName",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "PDRPDate",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TimePeriod",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "LastCallDate",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "RegionId",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TerritoryId",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "PrescriberId",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "Zipcode",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TRX",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NRX",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NQTY",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TQTY",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "Calls",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "LunchLearn",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "Samples",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "PreviousTRX",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "PreviousNRX",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TRXShare",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NRXShare",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "PreviousTRXShare",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "PreviousNRXShare",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "PreviousCalls",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "PreviousLunchLearn",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "PreviouSamples",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "STLYTRX",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "STLYNRX",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "STLYTRXShare",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "STLYNRXShare",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "PreviousTQTY",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "PreviousNQTY",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TQTYShare",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NQTYShare",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "PreviousTQTYShare",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "PreviousNQTYShare",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "STLYTQTY",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "STLYNQTY",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "STLYTQTYShare",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "STLYNQTYShare",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "Address",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "City",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "State",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "Credentials",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "Specialty",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NPINumber",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "MeNumber",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "PDRPFlag",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "AMANoContact",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "ProductPriority",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "FlectorTargetFlag",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "FlectorTargetTier",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "LicartTargetFlag",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "LicartTargetTier",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TirosintTargetFlag",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TirosintTargetTier",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "Market",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "ProductFamily",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "PrescriberAtSameAddress",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "PrescriberAtSameAddressSpeciality",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "IbsaDesiccatedTarget",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "MyTarget",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "CNXTerritoryRole",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "BiInclude",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            }
+          ],
+          "row_count": null,
+          "description": "Table containing reporting bi prescriberprofile data"
+        },
+        {
+          "name": "Reporting_BI_PrescriberOverview",
+          "schema": "dbo",
+          "columns": [
+            {
+              "name": "RegionId",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TerritoryId",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "PrescriberId",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "Zipcode",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "RegionName",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TerritoryName",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "PrescriberName",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "ProductGroupName",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "LastCallDate",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TRX(C4 Wk)",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TRX(C13 Wk)",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TRX(C QTD)",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TRX(P4 Wk)",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TRX(P13 Wk)",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TRX(P QTD)",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TRXMktShare4",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TRXMktShare13",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TRXMktShareQTD",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "STLYTRX4",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "STLYTRX13",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "STLYTRXQTD",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NRX(C4 Wk)",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NRX(C13 Wk)",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NRX(C QTD)",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NRX(P4 Wk)",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NRX(P13 Wk)",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NRX(P QTD)",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NRXMktShare4",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NRXMktShare13",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NRXMktShareQTD",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "STLYNRX4",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "STLYNRX13",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "STLYNRXQTD",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "Calls4",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "Calls13",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "CallsQTD",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "LunchLearn4",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "LunchLearn13",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "LunchLearnQTD",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "Samples4",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "Samples13",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "SamplesQTD",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TQTY(C4 Wk)",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TQTY(C13 Wk)",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TQTY(C QTD)",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TQTY(P4 Wk)",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TQTY(P13 Wk)",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TQTY(P QTD)",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TQTYMktShare4",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TQTYMktShare13",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TQTYMktShareQTD",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "STLYTQTY4",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "STLYTQTY13",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "STLYTQTYQTD",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NQTY(C4 Wk)",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NQTY(C13 Wk)",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NQTY(C QTD)",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NQTY(P4 Wk)",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NQTY(P13 Wk)",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NQTY(P QTD)",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NQTYMktShare4",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NQTYMktShare13",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NQTYMktShareQTD",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "STLYNQTY4",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "STLYNQTY13",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "STLYNQTYQTD",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "Specialty",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "Address",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "City",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "State",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "PrimaryProduct",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "SecondaryProduct",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "LicartTargetFlag",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "LicartTargetTier",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "FlectorTargetFlag",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "FlectorTargetTier",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TirosintTargetFlag",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TirosintTargetTier",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "PDRPFlag",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TRXC4WithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TRXC13WithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TRXCQTDWithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TRXP4WithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TRXP13WithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TRXPQTDWithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NRXC4WithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NRXC13WithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NRXCQTDWithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NRXP4WithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NRXP13WithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NRXPQTDWithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TQTYC4WithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TQTYC13WithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TQTYCQTDWithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TQTYP4WithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TQTYP13WithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TQTYPQTDWithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NQTYC4WithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NQTYC13WithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NQTYCQTDWithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NQTYP4WithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NQTYP13WithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NQTYPQTDWithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "MyTarget",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "CNXTerritoryRole",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "BiInclude",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            }
+          ],
+          "row_count": null,
+          "description": "Table containing reporting bi prescriberoverview data"
+        },
+        {
+          "name": "Reporting_BI_NGD",
+          "schema": "dbo",
+          "columns": [
+            {
+              "name": "StartDateTqty",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "EndDateTqty",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "StartDateTqtyWithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "EndDateTqtyWithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TimePeriod",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TerritoryName",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "RegionName",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "AccountName",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "SpecialtyDescription",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "RepName",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "RoWnumber",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "Abs",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "AbsWithPDRP",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "MyTarget",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TerritoryId",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "RegionId",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "PrescriberId",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "Zipcode",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "Product",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "Address1",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "City",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "State",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "PDRPFlag",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NPINumber",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "MeNumber",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TirosintTargetTier",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TirosintTargetFlag",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "LicartTargetFlag",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "LicartTargetTier",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "ProductFamily",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "ProductGroup",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "NGDType",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "TotalCalls",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "CNXTerritoryRole",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            },
+            {
+              "name": "BiInclude",
+              "data_type": "unknown",
+              "nullable": true,
+              "description": null
+            }
+          ],
+          "row_count": null,
+          "description": "Table containing reporting bi ngd data"
+        }
+      ],
+      "table_suggestions": [
+        {
+          "rank": 1,
+          "table_name": "Reporting_BI_PrescriberProfile",
+          "relevance_score": 0.392015457,
+          "description": "Table containing reporting bi prescriberprofile data",
+          "chunk_types": [
+            "column_group",
+            "table_overview"
+          ],
+          "estimated_relevance": "Low",
+          "row_count": "Available"
+        },
+        {
+          "rank": 2,
+          "table_name": "Reporting_BI_PrescriberOverview",
+          "relevance_score": 0.389135361,
+          "description": "Table containing reporting bi prescriberoverview data",
+          "chunk_types": [
+            "column_group",
+            "table_overview"
+          ],
+          "estimated_relevance": "Low",
+          "row_count": "Available"
+        },
+        {
+          "rank": 3,
+          "table_name": "Reporting_BI_NGD",
+          "relevance_score": 0.308460236,
+          "description": "Table containing reporting bi ngd data",
+          "chunk_types": [
+            "column_group",
+            "business_context"
+          ],
+          "estimated_relevance": "Low",
+          "row_count": "Available"
+        }
+      ],
+      "pinecone_matches": [
+        {
+          "metadata": {
+            "table_name": "Reporting_BI_PrescriberProfile",
+            "chunks": {
+              "column_group": {
+                "metadata": {
+                  "chunk_type": "column_group",
+                  "metadata": "{\"column_group\": \"Categories\", \"column_count\": 24, \"columns\": [\"Address\", \"City\", \"State\", \"Credentials\", \"Specialty\", \"NPINumber\", \"MeNumber\", \"PDRPFlag\", \"AMANoContact\", \"ProductPriority\", \"FlectorTargetFlag\", \"FlectorTargetTier\", \"LicartTargetFlag\", \"LicartTargetTier\", \"TirosintTargetFlag\", \"TirosintTargetTier\", \"Market\", \"ProductFamily\", \"PrescriberAtSameAddress\", \"PrescriberAtSameAddressSpeciality\", \"IbsaDesiccatedTarget\", \"MyTarget\", \"CNXTerritoryRole\", \"BiInclude\"], \"part\": null}",
+                  "table_name": "Reporting_BI_PrescriberProfile"
+                }
+              },
+              "business_context": {
+                "metadata": {
+                  "chunk_type": "business_context",
+                  "metadata": "{\"business_domain\": \"General Business\", \"use_cases\": \"Time series analysis\", \"concepts\": \"address, city, prescriberid, prescribername, prescriberprofile, regionid, regionname, reporting, state, territoryid, territoryname, zipcode\", \"part\": null}",
+                  "table_name": "Reporting_BI_PrescriberProfile"
+                }
+              },
+              "table_overview": {
+                "metadata": {
+                  "chunk_type": "table_overview",
+                  "metadata": "{\"total_columns\": 65, \"business_domain\": \"General Business\", \"data_category\": \"Time Series\", \"row_count\": null, \"table_size_category\": \"unknown\", \"primary_keys\": [], \"foreign_keys\": [], \"pk_count\": 0, \"fk_count\": 0, \"has_relationships\": false, \"part\": null}",
+                  "table_name": "Reporting_BI_PrescriberProfile"
+                }
+              }
+            },
+            "content": "",
+            "columns": [
+              "RegionName",
+              "TerritoryName",
+              "PrescriberName",
+              "ProductGroupName",
+              "PDRPDate",
+              "TimePeriod",
+              "LastCallDate",
+              "RegionId",
+              "TerritoryId",
+              "PrescriberId",
+              "Zipcode",
+              "TRX",
+              "NRX",
+              "NQTY",
+              "TQTY",
+              "Calls",
+              "LunchLearn",
+              "Samples",
+              "PreviousTRX",
+              "PreviousNRX",
+              "TRXShare",
+              "NRXShare",
+              "PreviousTRXShare",
+              "PreviousNRXShare",
+              "PreviousCalls",
+              "PreviousLunchLearn",
+              "PreviouSamples",
+              "STLYTRX",
+              "STLYNRX",
+              "STLYTRXShare",
+              "STLYNRXShare",
+              "PreviousTQTY",
+              "PreviousNQTY",
+              "TQTYShare",
+              "NQTYShare",
+              "PreviousTQTYShare",
+              "PreviousNQTYShare",
+              "STLYTQTY",
+              "STLYNQTY",
+              "STLYTQTYShare",
+              "STLYNQTYShare",
+              "Address",
+              "City",
+              "State",
+              "Credentials",
+              "Specialty",
+              "NPINumber",
+              "MeNumber",
+              "PDRPFlag",
+              "AMANoContact",
+              "ProductPriority",
+              "FlectorTargetFlag",
+              "FlectorTargetTier",
+              "LicartTargetFlag",
+              "LicartTargetTier",
+              "TirosintTargetFlag",
+              "TirosintTargetTier",
+              "Market",
+              "ProductFamily",
+              "PrescriberAtSameAddress",
+              "PrescriberAtSameAddressSpeciality",
+              "IbsaDesiccatedTarget",
+              "MyTarget",
+              "CNXTerritoryRole",
+              "BiInclude"
+            ]
+          },
+          "score": 0.392015457
+        },
+        {
+          "metadata": {
+            "table_name": "Reporting_BI_PrescriberOverview",
+            "chunks": {
+              "column_group": {
+                "metadata": {
+                  "chunk_type": "column_group",
+                  "metadata": "{\"column_group\": \"Categories\", \"column_count\": 40, \"columns\": [\"Specialty\", \"Address\", \"City\", \"State\", \"PrimaryProduct\", \"SecondaryProduct\", \"LicartTargetFlag\", \"LicartTargetTier\", \"FlectorTargetFlag\", \"FlectorTargetTier\", \"TirosintTargetFlag\", \"TirosintTargetTier\", \"PDRPFlag\", \"TRXC4WithPDRP\", \"TRXC13WithPDRP\", \"TRXCQTDWithPDRP\", \"TRXP4WithPDRP\", \"TRXP13WithPDRP\", \"TRXPQTDWithPDRP\", \"NRXC4WithPDRP\", \"NRXC13WithPDRP\", \"NRXCQTDWithPDRP\", \"NRXP4WithPDRP\", \"NRXP13WithPDRP\", \"NRXPQTDWithPDRP\", \"TQTYC4WithPDRP\", \"TQTYC13WithPDRP\", \"TQTYCQTDWithPDRP\", \"TQTYP4WithPDRP\", \"TQTYP13WithPDRP\", \"TQTYPQTDWithPDRP\", \"NQTYC4WithPDRP\", \"NQTYC13WithPDRP\", \"NQTYCQTDWithPDRP\", \"NQTYP4WithPDRP\", \"NQTYP13WithPDRP\", \"NQTYPQTDWithPDRP\", \"MyTarget\", \"CNXTerritoryRole\", \"BiInclude\"], \"part\": null}",
+                  "table_name": "Reporting_BI_PrescriberOverview"
+                }
+              },
+              "business_context": {
+                "metadata": {
+                  "chunk_type": "business_context",
+                  "metadata": "{\"business_domain\": \"General Business\", \"use_cases\": \"Time series analysis\", \"concepts\": \"address, city, prescriberid, prescribername, prescriberoverview, regionid, regionname, reporting, specialty, state, territoryid, territoryname\", \"part\": null}",
+                  "table_name": "Reporting_BI_PrescriberOverview"
+                }
+              },
+              "table_overview": {
+                "metadata": {
+                  "chunk_type": "table_overview",
+                  "metadata": "{\"total_columns\": 106, \"business_domain\": \"General Business\", \"data_category\": \"Time Series\", \"row_count\": null, \"table_size_category\": \"unknown\", \"primary_keys\": [], \"foreign_keys\": [], \"pk_count\": 0, \"fk_count\": 0, \"has_relationships\": false, \"part\": null}",
+                  "table_name": "Reporting_BI_PrescriberOverview"
+                }
+              }
+            },
+            "content": "",
+            "columns": [
+              "RegionId",
+              "TerritoryId",
+              "PrescriberId",
+              "Zipcode",
+              "RegionName",
+              "TerritoryName",
+              "PrescriberName",
+              "ProductGroupName",
+              "LastCallDate",
+              "TRX(C4 Wk)",
+              "TRX(C13 Wk)",
+              "TRX(C QTD)",
+              "TRX(P4 Wk)",
+              "TRX(P13 Wk)",
+              "TRX(P QTD)",
+              "TRXMktShare4",
+              "TRXMktShare13",
+              "TRXMktShareQTD",
+              "STLYTRX4",
+              "STLYTRX13",
+              "STLYTRXQTD",
+              "NRX(C4 Wk)",
+              "NRX(C13 Wk)",
+              "NRX(C QTD)",
+              "NRX(P4 Wk)",
+              "NRX(P13 Wk)",
+              "NRX(P QTD)",
+              "NRXMktShare4",
+              "NRXMktShare13",
+              "NRXMktShareQTD",
+              "STLYNRX4",
+              "STLYNRX13",
+              "STLYNRXQTD",
+              "Calls4",
+              "Calls13",
+              "CallsQTD",
+              "LunchLearn4",
+              "LunchLearn13",
+              "LunchLearnQTD",
+              "Samples4",
+              "Samples13",
+              "SamplesQTD",
+              "TQTY(C4 Wk)",
+              "TQTY(C13 Wk)",
+              "TQTY(C QTD)",
+              "TQTY(P4 Wk)",
+              "TQTY(P13 Wk)",
+              "TQTY(P QTD)",
+              "TQTYMktShare4",
+              "TQTYMktShare13",
+              "TQTYMktShareQTD",
+              "STLYTQTY4",
+              "STLYTQTY13",
+              "STLYTQTYQTD",
+              "NQTY(C4 Wk)",
+              "NQTY(C13 Wk)",
+              "NQTY(C QTD)",
+              "NQTY(P4 Wk)",
+              "NQTY(P13 Wk)",
+              "NQTY(P QTD)",
+              "NQTYMktShare4",
+              "NQTYMktShare13",
+              "NQTYMktShareQTD",
+              "STLYNQTY4",
+              "STLYNQTY13",
+              "STLYNQTYQTD",
+              "Specialty",
+              "Address",
+              "City",
+              "State",
+              "PrimaryProduct",
+              "SecondaryProduct",
+              "LicartTargetFlag",
+              "LicartTargetTier",
+              "FlectorTargetFlag",
+              "FlectorTargetTier",
+              "TirosintTargetFlag",
+              "TirosintTargetTier",
+              "PDRPFlag",
+              "TRXC4WithPDRP",
+              "TRXC13WithPDRP",
+              "TRXCQTDWithPDRP",
+              "TRXP4WithPDRP",
+              "TRXP13WithPDRP",
+              "TRXPQTDWithPDRP",
+              "NRXC4WithPDRP",
+              "NRXC13WithPDRP",
+              "NRXCQTDWithPDRP",
+              "NRXP4WithPDRP",
+              "NRXP13WithPDRP",
+              "NRXPQTDWithPDRP",
+              "TQTYC4WithPDRP",
+              "TQTYC13WithPDRP",
+              "TQTYCQTDWithPDRP",
+              "TQTYP4WithPDRP",
+              "TQTYP13WithPDRP",
+              "TQTYPQTDWithPDRP",
+              "NQTYC4WithPDRP",
+              "NQTYC13WithPDRP",
+              "NQTYCQTDWithPDRP",
+              "NQTYP4WithPDRP",
+              "NQTYP13WithPDRP",
+              "NQTYPQTDWithPDRP",
+              "MyTarget",
+              "CNXTerritoryRole",
+              "BiInclude"
+            ]
+          },
+          "score": 0.389135361
+        },
+        {
+          "metadata": {
+            "table_name": "Reporting_BI_NGD",
+            "chunks": {
+              "column_group": {
+                "metadata": {
+                  "chunk_type": "column_group",
+                  "metadata": "{\"column_group\": \"Categories\", \"column_count\": 17, \"columns\": [\"Product\", \"Address1\", \"City\", \"State\", \"PDRPFlag\", \"NPINumber\", \"MeNumber\", \"TirosintTargetTier\", \"TirosintTargetFlag\", \"LicartTargetFlag\", \"LicartTargetTier\", \"ProductFamily\", \"ProductGroup\", \"NGDType\", \"TotalCalls\", \"CNXTerritoryRole\", \"BiInclude\"], \"part\": null}",
+                  "table_name": "Reporting_BI_NGD"
+                }
+              },
+              "business_context": {
+                "metadata": {
+                  "chunk_type": "business_context",
+                  "metadata": "{\"business_domain\": \"General Business\", \"use_cases\": \"Time series analysis\", \"concepts\": \"accountname, address1, city, ngd, prescriberid, product, regionid, regionname, reporting, rownumber, territoryid, territoryname\", \"part\": null}",
+                  "table_name": "Reporting_BI_NGD"
+                }
+              },
+              "table_overview": {
+                "metadata": {
+                  "chunk_type": "table_overview",
+                  "metadata": "{\"total_columns\": 35, \"business_domain\": \"General Business\", \"data_category\": \"Time Series\", \"row_count\": null, \"table_size_category\": \"unknown\", \"primary_keys\": [], \"foreign_keys\": [], \"pk_count\": 0, \"fk_count\": 0, \"has_relationships\": false, \"part\": null}",
+                  "table_name": "Reporting_BI_NGD"
+                }
+              }
+            },
+            "content": "",
+            "columns": [
+              "StartDateTqty",
+              "EndDateTqty",
+              "StartDateTqtyWithPDRP",
+              "EndDateTqtyWithPDRP",
+              "TimePeriod",
+              "TerritoryName",
+              "RegionName",
+              "AccountName",
+              "SpecialtyDescription",
+              "RepName",
+              "RoWnumber",
+              "Abs",
+              "AbsWithPDRP",
+              "MyTarget",
+              "TerritoryId",
+              "RegionId",
+              "PrescriberId",
+              "Zipcode",
+              "Product",
+              "Address1",
+              "City",
+              "State",
+              "PDRPFlag",
+              "NPINumber",
+              "MeNumber",
+              "TirosintTargetTier",
+              "TirosintTargetFlag",
+              "LicartTargetFlag",
+              "LicartTargetTier",
+              "ProductFamily",
+              "ProductGroup",
+              "NGDType",
+              "TotalCalls",
+              "CNXTerritoryRole",
+              "BiInclude"
+            ]
+          },
+          "score": 0.308460236
+        }
+      ],
+      "table_matches": [
+        {
+          "table_name": "Reporting_BI_PrescriberProfile",
+          "total_score": 1.6138954170000002,
+          "best_score": 0.392015457,
+          "chunk_types": [
+            "column_group",
+            "table_overview"
+          ],
+          "sample_content": "{\"column_group\": \"Descriptions\", \"column_count\": 4, \"columns\": [\"RegionName\", \"TerritoryName\", \"PrescriberName\", \"ProductGroupName\"], \"part\": null}"
+        },
+        {
+          "table_name": "Reporting_BI_PrescriberOverview",
+          "total_score": 1.6618500050000002,
+          "best_score": 0.389135361,
+          "chunk_types": [
+            "column_group",
+            "table_overview"
+          ],
+          "sample_content": "{\"column_group\": \"Descriptions\", \"column_count\": 4, \"columns\": [\"RegionName\", \"TerritoryName\", \"PrescriberName\", \"ProductGroupName\"], \"part\": null}"
+        },
+        {
+          "table_name": "Reporting_BI_NGD",
+          "total_score": 0.612604171,
+          "best_score": 0.308460236,
+          "chunk_types": [
+            "column_group",
+            "business_context"
+          ],
+          "sample_content": "{\"business_domain\": \"General Business\", \"use_cases\": \"Time series analysis\", \"concepts\": \"accountname, address1, city, ngd, prescriberid, product, regionid, regionname, reporting, rownumber, territoryid, territoryname\", \"part\": null}"
+        }
+      ],
+      "status": "completed"
+    },
+    "2_query_generation": {
+      "sql_query": "SELECT TOP 100 \n    po.[RegionName], \n    po.[TerritoryName], \n    SUM(ISNULL(po.[TRX(C QTD)], 0)) AS TotalTRX, \n    SUM(ISNULL(po.[NRX(C QTD)], 0)) AS TotalNRX, \n    SUM(ISNULL(po.[TRXMktShareQTD], 0)) AS TotalTRXMktShare, \n    SUM(ISNULL(po.[NRXMktShareQTD], 0)) AS TotalNRXMktShare\nFROM dbo.Reporting_BI_PrescriberOverview po\nWHERE po.[FlectorTargetFlag] = 'Y' \n   OR po.[LicartTargetFlag] = 'Y' \n   OR po.[TirosintTargetFlag] = 'Y'\nGROUP BY po.[RegionName], po.[TerritoryName]\nORDER BY TotalTRX DESC, TotalNRX DESC",
+      "explanation": "Generated with improved deterministic principles",
+      "tables_used": [
+        "Reporting_BI_PrescriberProfile",
+        "Reporting_BI_PrescriberOverview",
+        "Reporting_BI_NGD"
+      ],
+      "planning_method": "enhanced_intelligent_planner",
+      "confidence_score": 0.817,
+      "business_logic_applied": [
+        "\ud83c\udfe5 PHARMACEUTICAL DOMAIN: This system specializes in pharmaceutical analytics",
+        "\ud83d\udc68\u200d\u2695\ufe0f PRESCRIBER ANALYSIS: Always use PrescriberId for prescriber-level joins",
+        "\ud83d\udcca METRICS: TRX=Total Prescriptions, NRX=New Prescriptions, TQTY=Total Quantity",
+        "\ud83c\udfaf NGD INTELLIGENCE: New Growers Decliners track prescriber behavior changes",
+        "\ud83c\udf0d TERRITORY: Use TerritoryId/RegionId for sales territory analysis",
+        "\ud83d\udc8a PRODUCTS: Filter by ProductGroupName, Product, or PrimaryProduct columns",
+        "\ud83d\udcc8 NGD TABLE: Contains New/Growers/Decliners segmentation data",
+        "\ud83c\udfaf BEHAVIOR TRACKING: Use NGDType to filter prescriber behavior segments",
+        "\ud83d\udcde SALES ACTIVITY: TotalCalls shows rep activity correlation with prescribing",
+        "\ud83d\udc64 PRESCRIBER PROFILE: Contains demographic and targeting information",
+        "\ud83d\udccb PRESCRIBER OVERVIEW: Contains aggregated prescription metrics"
+      ],
+      "join_strategy": [
+        {
+          "table1": "Reporting_BI_PrescriberProfile",
+          "table2": "Reporting_BI_PrescriberOverview",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberProfile",
+          "table2": "Reporting_BI_PrescriberOverview",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberProfile",
+          "table2": "Reporting_BI_PrescriberOverview",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberProfile",
+          "table2": "Reporting_BI_PrescriberOverview",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberProfile",
+          "table2": "Reporting_BI_PrescriberOverview",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberProfile",
+          "table2": "Reporting_BI_PrescriberOverview",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberProfile",
+          "table2": "Reporting_BI_PrescriberOverview",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberProfile",
+          "table2": "Reporting_BI_PrescriberOverview",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberProfile",
+          "table2": "Reporting_BI_PrescriberOverview",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberProfile",
+          "table2": "Reporting_BI_PrescriberOverview",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberProfile",
+          "table2": "Reporting_BI_NGD",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberProfile",
+          "table2": "Reporting_BI_NGD",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberProfile",
+          "table2": "Reporting_BI_NGD",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberProfile",
+          "table2": "Reporting_BI_NGD",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberProfile",
+          "table2": "Reporting_BI_NGD",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberProfile",
+          "table2": "Reporting_BI_NGD",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberProfile",
+          "table2": "Reporting_BI_NGD",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberProfile",
+          "table2": "Reporting_BI_NGD",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberProfile",
+          "table2": "Reporting_BI_NGD",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberProfile",
+          "table2": "Reporting_BI_NGD",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberOverview",
+          "table2": "Reporting_BI_NGD",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberOverview",
+          "table2": "Reporting_BI_NGD",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberOverview",
+          "table2": "Reporting_BI_NGD",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberOverview",
+          "table2": "Reporting_BI_NGD",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberOverview",
+          "table2": "Reporting_BI_NGD",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberOverview",
+          "table2": "Reporting_BI_NGD",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberOverview",
+          "table2": "Reporting_BI_NGD",
+          "join_type": "inner",
+          "join_columns": [],
+          "confidence": 0.9
+        },
+        {
+          "table1": "Reporting_BI_PrescriberProfile",
+          "table2": "Reporting_BI_PrescriberOverview",
+          "join_type": "chain_join",
+          "join_columns": [
+            "RegionId",
+            "RegionId"
+          ],
+          "confidence": 0.8,
+          "chain_info": {
+            "join_type": "multi_table_chain",
+            "common_key": "regionid",
+            "tables": [
+              {
+                "table": "Reporting_BI_PrescriberProfile",
+                "column": "RegionId"
+              },
+              {
+                "table": "Reporting_BI_PrescriberOverview",
+                "column": "RegionId"
+              },
+              {
+                "table": "Reporting_BI_NGD",
+                "column": "RegionId"
+              }
+            ],
+            "confidence": 0.8,
+            "description": "Chain join through common key 'regionid' across 3 tables"
+          }
+        },
+        {
+          "table1": "Reporting_BI_PrescriberOverview",
+          "table2": "Reporting_BI_NGD",
+          "join_type": "chain_join",
+          "join_columns": [
+            "RegionId",
+            "RegionId"
+          ],
+          "confidence": 0.8,
+          "chain_info": {
+            "join_type": "multi_table_chain",
+            "common_key": "regionid",
+            "tables": [
+              {
+                "table": "Reporting_BI_PrescriberProfile",
+                "column": "RegionId"
+              },
+              {
+                "table": "Reporting_BI_PrescriberOverview",
+                "column": "RegionId"
+              },
+              {
+                "table": "Reporting_BI_NGD",
+                "column": "RegionId"
+              }
+            ],
+            "confidence": 0.8,
+            "description": "Chain join through common key 'regionid' across 3 tables"
+          }
+        },
+        {
+          "table1": "Reporting_BI_PrescriberProfile",
+          "table2": "Reporting_BI_PrescriberOverview",
+          "join_type": "chain_join",
+          "join_columns": [
+            "TerritoryId",
+            "TerritoryId"
+          ],
+          "confidence": 0.8,
+          "chain_info": {
+            "join_type": "multi_table_chain",
+            "common_key": "territory",
+            "tables": [
+              {
+                "table": "Reporting_BI_PrescriberProfile",
+                "column": "TerritoryId"
+              },
+              {
+                "table": "Reporting_BI_PrescriberOverview",
+                "column": "TerritoryId"
+              },
+              {
+                "table": "Reporting_BI_NGD",
+                "column": "TerritoryId"
+              }
+            ],
+            "confidence": 0.8,
+            "description": "Chain join through common key 'territory' across 3 tables"
+          }
+        },
+        {
+          "table1": "Reporting_BI_PrescriberOverview",
+          "table2": "Reporting_BI_NGD",
+          "join_type": "chain_join",
+          "join_columns": [
+            "TerritoryId",
+            "TerritoryId"
+          ],
+          "confidence": 0.8,
+          "chain_info": {
+            "join_type": "multi_table_chain",
+            "common_key": "territory",
+            "tables": [
+              {
+                "table": "Reporting_BI_PrescriberProfile",
+                "column": "TerritoryId"
+              },
+              {
+                "table": "Reporting_BI_PrescriberOverview",
+                "column": "TerritoryId"
+              },
+              {
+                "table": "Reporting_BI_NGD",
+                "column": "TerritoryId"
+              }
+            ],
+            "confidence": 0.8,
+            "description": "Chain join through common key 'territory' across 3 tables"
+          }
+        },
+        {
+          "table1": "Reporting_BI_PrescriberProfile",
+          "table2": "Reporting_BI_PrescriberOverview",
+          "join_type": "chain_join",
+          "join_columns": [
+            "PrescriberId",
+            "PrescriberId"
+          ],
+          "confidence": 0.8,
+          "chain_info": {
+            "join_type": "multi_table_chain",
+            "common_key": "prescriber",
+            "tables": [
+              {
+                "table": "Reporting_BI_PrescriberProfile",
+                "column": "PrescriberId"
+              },
+              {
+                "table": "Reporting_BI_PrescriberOverview",
+                "column": "PrescriberId"
+              },
+              {
+                "table": "Reporting_BI_NGD",
+                "column": "PrescriberId"
+              }
+            ],
+            "confidence": 0.8,
+            "description": "Chain join through common key 'prescriber' across 3 tables"
+          }
+        },
+        {
+          "table1": "Reporting_BI_PrescriberOverview",
+          "table2": "Reporting_BI_NGD",
+          "join_type": "chain_join",
+          "join_columns": [
+            "PrescriberId",
+            "PrescriberId"
+          ],
+          "confidence": 0.8,
+          "chain_info": {
+            "join_type": "multi_table_chain",
+            "common_key": "prescriber",
+            "tables": [
+              {
+                "table": "Reporting_BI_PrescriberProfile",
+                "column": "PrescriberId"
+              },
+              {
+                "table": "Reporting_BI_PrescriberOverview",
+                "column": "PrescriberId"
+              },
+              {
+                "table": "Reporting_BI_NGD",
+                "column": "PrescriberId"
+              }
+            ],
+            "confidence": 0.8,
+            "description": "Chain join through common key 'prescriber' across 3 tables"
+          }
+        },
+        {
+          "table1": "Reporting_BI_PrescriberProfile",
+          "table2": "Reporting_BI_PrescriberOverview",
+          "join_type": "chain_join",
+          "join_columns": [
+            "Zipcode",
+            "Zipcode"
+          ],
+          "confidence": 0.8,
+          "chain_info": {
+            "join_type": "multi_table_chain",
+            "common_key": "zipcode",
+            "tables": [
+              {
+                "table": "Reporting_BI_PrescriberProfile",
+                "column": "Zipcode"
+              },
+              {
+                "table": "Reporting_BI_PrescriberOverview",
+                "column": "Zipcode"
+              },
+              {
+                "table": "Reporting_BI_NGD",
+                "column": "Zipcode"
+              }
+            ],
+            "confidence": 0.8,
+            "description": "Chain join through common key 'zipcode' across 3 tables"
+          }
+        },
+        {
+          "table1": "Reporting_BI_PrescriberOverview",
+          "table2": "Reporting_BI_NGD",
+          "join_type": "chain_join",
+          "join_columns": [
+            "Zipcode",
+            "Zipcode"
+          ],
+          "confidence": 0.8,
+          "chain_info": {
+            "join_type": "multi_table_chain",
+            "common_key": "zipcode",
+            "tables": [
+              {
+                "table": "Reporting_BI_PrescriberProfile",
+                "column": "Zipcode"
+              },
+              {
+                "table": "Reporting_BI_PrescriberOverview",
+                "column": "Zipcode"
+              },
+              {
+                "table": "Reporting_BI_NGD",
+                "column": "Zipcode"
+              }
+            ],
+            "confidence": 0.8,
+            "description": "Chain join through common key 'zipcode' across 3 tables"
+          }
+        }
+      ],
+      "intelligent_enhancements": {
+        "multi_table_analysis": true,
+        "semantic_join_discovery": true,
+        "business_context_applied": true,
+        "schema_intelligence_used": true,
+        "template_fallback_used": false,
+        "dynamic_sql_generation": false
+      },
+      "test_execution_result": {
+        "status": "completed",
+        "data": [
+          {
+            "RegionName": "Midatlantic",
+            "TerritoryName": "Tele-Sales 2 - Mid-Atlantic",
+            "TotalTRX": 61764,
+            "TotalNRX": 24778,
+            "TotalTRXMktShare": 475259,
+            "TotalNRXMktShare": 464452
+          },
+          {
+            "RegionName": "Southwest",
+            "TerritoryName": "Tele-Sales 5 - Southwest",
+            "TotalTRX": 39676,
+            "TotalNRX": 15301,
+            "TotalTRXMktShare": 306237,
+            "TotalNRXMktShare": 302179
+          },
+          {
+            "RegionName": "Midwest",
+            "TerritoryName": "Tele-Sales 3 - Midwest",
+            "TotalTRX": 33410,
+            "TotalNRX": 13652,
+            "TotalTRXMktShare": 270917,
+            "TotalNRXMktShare": 264465
+          },
+          {
+            "RegionName": "West",
+            "TerritoryName": "Tele-Sales 4 - West",
+            "TotalTRX": 31566,
+            "TotalNRX": 13153,
+            "TotalTRXMktShare": 273184,
+            "TotalNRXMktShare": 266031
+          },
+          {
+            "RegionName": "Northeast",
+            "TerritoryName": "Long Island NY",
+            "TotalTRX": 27823,
+            "TotalNRX": 13977,
+            "TotalTRXMktShare": 194372,
+            "TotalNRXMktShare": 191548
+          },
+          {
+            "RegionName": "Southwest",
+            "TerritoryName": "Dallas N TX",
+            "TotalTRX": 27067,
+            "TotalNRX": 13079,
+            "TotalTRXMktShare": 170260,
+            "TotalNRXMktShare": 169630
+          },
+          {
+            "RegionName": "Midwest",
+            "TerritoryName": "Cleveland OH",
+            "TotalTRX": 26999,
+            "TotalNRX": 10132,
+            "TotalTRXMktShare": 220863,
+            "TotalNRXMktShare": 217006
+          },
+          {
+            "RegionName": "Southwest",
+            "TerritoryName": "Austin TX",
+            "TotalTRX": 26690,
+            "TotalNRX": 12183,
+            "TotalTRXMktShare": 137461,
+            "TotalNRXMktShare": 135863
+          },
+          {
+            "RegionName": "Southwest",
+            "TerritoryName": "Houston S TX",
+            "TotalTRX": 24802,
+            "TotalNRX": 11197,
+            "TotalTRXMktShare": 144164,
+            "TotalNRXMktShare": 143090
+          },
+          {
+            "RegionName": "Southeast",
+            "TerritoryName": "Orlando FL",
+            "TotalTRX": 23534,
+            "TotalNRX": 10656,
+            "TotalTRXMktShare": 164026,
+            "TotalNRXMktShare": 162546
+          },
+          {
+            "RegionName": "Southwest",
+            "TerritoryName": "New Orleans LA",
+            "TotalTRX": 23381,
+            "TotalNRX": 8387,
+            "TotalTRXMktShare": 129745,
+            "TotalNRXMktShare": 127966
+          },
+          {
+            "RegionName": "Midatlantic",
+            "TerritoryName": "Raleigh NC",
+            "TotalTRX": 23298,
+            "TotalNRX": 9420,
+            "TotalTRXMktShare": 174800,
+            "TotalNRXMktShare": 169784
+          },
+          {
+            "RegionName": "Southwest",
+            "TerritoryName": "Fort Worth TX",
+            "TotalTRX": 22320,
+            "TotalNRX": 10377,
+            "TotalTRXMktShare": 142085,
+            "TotalNRXMktShare": 139097
+          },
+          {
+            "RegionName": "Southeast",
+            "TerritoryName": "Atlanta N GA",
+            "TotalTRX": 22032,
+            "TotalNRX": 10179,
+            "TotalTRXMktShare": 148990,
+            "TotalNRXMktShare": 148024
+          },
+          {
+            "RegionName": "Tri-state",
+            "TerritoryName": "Newark NJ",
+            "TotalTRX": 21929,
+            "TotalNRX": 10003,
+            "TotalTRXMktShare": 136065,
+            "TotalNRXMktShare": 133368
+          },
+          {
+            "RegionName": "Southeast",
+            "TerritoryName": "Jackson MS",
+            "TotalTRX": 21726,
+            "TotalNRX": 7421,
+            "TotalTRXMktShare": 115092,
+            "TotalNRXMktShare": 112504
+          },
+          {
+            "RegionName": "Southeast",
+            "TerritoryName": "Fort Lauderdale FL",
+            "TotalTRX": 21647,
+            "TotalNRX": 10230,
+            "TotalTRXMktShare": 114709,
+            "TotalNRXMktShare": 113396
+          },
+          {
+            "RegionName": "Midwest",
+            "TerritoryName": "St Louis MO",
+            "TotalTRX": 21409,
+            "TotalNRX": 8768,
+            "TotalTRXMktShare": 149564,
+            "TotalNRXMktShare": 144834
+          },
+          {
+            "RegionName": "West",
+            "TerritoryName": "Thousand Oaks CA",
+            "TotalTRX": 21146,
+            "TotalNRX": 8664,
+            "TotalTRXMktShare": 149606,
+            "TotalNRXMktShare": 145392
+          },
+          {
+            "RegionName": "West",
+            "TerritoryName": "San Diego CA",
+            "TotalTRX": 21071,
+            "TotalNRX": 8890,
+            "TotalTRXMktShare": 138110,
+            "TotalNRXMktShare": 136048
+          },
+          {
+            "RegionName": "Northeast",
+            "TerritoryName": "Brooklyn RSS",
+            "TotalTRX": 21017,
+            "TotalNRX": 10009,
+            "TotalTRXMktShare": 174539,
+            "TotalNRXMktShare": 169977
+          },
+          {
+            "RegionName": "Midatlantic",
+            "TerritoryName": "Nashville TN",
+            "TotalTRX": 20996,
+            "TotalNRX": 8434,
+            "TotalTRXMktShare": 150140,
+            "TotalNRXMktShare": 148876
+          },
+          {
+            "RegionName": "Midwest",
+            "TerritoryName": "Detroit MI",
+            "TotalTRX": 20994,
+            "TotalNRX": 9477,
+            "TotalTRXMktShare": 142807,
+            "TotalNRXMktShare": 140843
+          },
+          {
+            "RegionName": "Midatlantic",
+            "TerritoryName": "Charlotte NC",
+            "TotalTRX": 20656,
+            "TotalNRX": 8317,
+            "TotalTRXMktShare": 186827,
+            "TotalNRXMktShare": 181733
+          },
+          {
+            "RegionName": "Southeast",
+            "TerritoryName": "Tampa FL",
+            "TotalTRX": 20248,
+            "TotalNRX": 9161,
+            "TotalTRXMktShare": 149717,
+            "TotalNRXMktShare": 146134
+          },
+          {
+            "RegionName": "Southwest",
+            "TerritoryName": "Dallas E TX",
+            "TotalTRX": 19784,
+            "TotalNRX": 9270,
+            "TotalTRXMktShare": 131048,
+            "TotalNRXMktShare": 129119
+          },
+          {
+            "RegionName": "Midwest",
+            "TerritoryName": "Chicago S IL",
+            "TotalTRX": 19734,
+            "TotalNRX": 9441,
+            "TotalTRXMktShare": 143703,
+            "TotalNRXMktShare": 140335
+          },
+          {
+            "RegionName": "Southwest",
+            "TerritoryName": "Oklahoma City OK",
+            "TotalTRX": 19672,
+            "TotalNRX": 7482,
+            "TotalTRXMktShare": 113730,
+            "TotalNRXMktShare": 111990
+          },
+          {
+            "RegionName": "Midwest",
+            "TerritoryName": "Indianapolis IN",
+            "TotalTRX": 19325,
+            "TotalNRX": 8266,
+            "TotalTRXMktShare": 164340,
+            "TotalNRXMktShare": 161410
+          },
+          {
+            "RegionName": "Tri-state",
+            "TerritoryName": "South Jersey NJ",
+            "TotalTRX": 19269,
+            "TotalNRX": 9444,
+            "TotalTRXMktShare": 149749,
+            "TotalNRXMktShare": 148573
+          },
+          {
+            "RegionName": "Tri-state",
+            "TerritoryName": "West Chester PA",
+            "TotalTRX": 19174,
+            "TotalNRX": 7446,
+            "TotalTRXMktShare": 155870,
+            "TotalNRXMktShare": 152123
+          },
+          {
+            "RegionName": "Midatlantic",
+            "TerritoryName": "Richmond VA",
+            "TotalTRX": 19070,
+            "TotalNRX": 7918,
+            "TotalTRXMktShare": 151451,
+            "TotalNRXMktShare": 149262
+          },
+          {
+            "RegionName": "Southeast",
+            "TerritoryName": "Birmingham AL",
+            "TotalTRX": 18998,
+            "TotalNRX": 7001,
+            "TotalTRXMktShare": 126181,
+            "TotalNRXMktShare": 125214
+          },
+          {
+            "RegionName": "Midatlantic",
+            "TerritoryName": "Greensboro NC",
+            "TotalTRX": 18847,
+            "TotalNRX": 7399,
+            "TotalTRXMktShare": 133533,
+            "TotalNRXMktShare": 130322
+          },
+          {
+            "RegionName": "Southeast",
+            "TerritoryName": "Atlanta S GA",
+            "TotalTRX": 18819,
+            "TotalNRX": 7949,
+            "TotalTRXMktShare": 140032,
+            "TotalNRXMktShare": 138130
+          },
+          {
+            "RegionName": "Northeast",
+            "TerritoryName": "White Plains NY",
+            "TotalTRX": 18510,
+            "TotalNRX": 7769,
+            "TotalTRXMktShare": 134037,
+            "TotalNRXMktShare": 129562
+          },
+          {
+            "RegionName": "Southwest",
+            "TerritoryName": "Houston RSS",
+            "TotalTRX": 18194,
+            "TotalNRX": 8221,
+            "TotalTRXMktShare": 178246,
+            "TotalNRXMktShare": 176927
+          },
+          {
+            "RegionName": "West",
+            "TerritoryName": "Sacramento CA",
+            "TotalTRX": 18027,
+            "TotalNRX": 7288,
+            "TotalTRXMktShare": 141413,
+            "TotalNRXMktShare": 138380
+          },
+          {
+            "RegionName": "Southeast",
+            "TerritoryName": "Miami FL",
+            "TotalTRX": 17942,
+            "TotalNRX": 8355,
+            "TotalTRXMktShare": 86958,
+            "TotalNRXMktShare": 86597
+          },
+          {
+            "RegionName": "Tri-state",
+            "TerritoryName": "Rochester NY",
+            "TotalTRX": 17870,
+            "TotalNRX": 7733,
+            "TotalTRXMktShare": 177887,
+            "TotalNRXMktShare": 171079
+          },
+          {
+            "RegionName": "Midatlantic",
+            "TerritoryName": "Northern VA",
+            "TotalTRX": 17750,
+            "TotalNRX": 8379,
+            "TotalTRXMktShare": 145780,
+            "TotalNRXMktShare": 142566
+          },
+          {
+            "RegionName": "Midwest",
+            "TerritoryName": "Columbus OH",
+            "TotalTRX": 17399,
+            "TotalNRX": 5988,
+            "TotalTRXMktShare": 146246,
+            "TotalNRXMktShare": 141191
+          },
+          {
+            "RegionName": "Midwest",
+            "TerritoryName": "Chicago IL",
+            "TotalTRX": 17366,
+            "TotalNRX": 7454,
+            "TotalTRXMktShare": 213977,
+            "TotalNRXMktShare": 210273
+          },
+          {
+            "RegionName": "Northeast",
+            "TerritoryName": "Manhattan NY",
+            "TotalTRX": 17335,
+            "TotalNRX": 7083,
+            "TotalTRXMktShare": 87785,
+            "TotalNRXMktShare": 84414
+          },
+          {
+            "RegionName": "West",
+            "TerritoryName": "Las Vegas NV",
+            "TotalTRX": 17164,
+            "TotalNRX": 6719,
+            "TotalTRXMktShare": 144682,
+            "TotalNRXMktShare": 139551
+          },
+          {
+            "RegionName": "Tri-state",
+            "TerritoryName": "Philadelphia N PA",
+            "TotalTRX": 16969,
+            "TotalNRX": 6830,
+            "TotalTRXMktShare": 119184,
+            "TotalNRXMktShare": 117589
+          },
+          {
+            "RegionName": "Southwest",
+            "TerritoryName": "NE Houston TX",
+            "TotalTRX": 16877,
+            "TotalNRX": 7720,
+            "TotalTRXMktShare": 107704,
+            "TotalNRXMktShare": 107337
+          },
+          {
+            "RegionName": "Southeast",
+            "TerritoryName": "Sarasota FL",
+            "TotalTRX": 16848,
+            "TotalNRX": 7494,
+            "TotalTRXMktShare": 161662,
+            "TotalNRXMktShare": 157306
+          },
+          {
+            "RegionName": "Tri-state",
+            "TerritoryName": "Philadelphia S PA",
+            "TotalTRX": 16738,
+            "TotalNRX": 7029,
+            "TotalTRXMktShare": 123113,
+            "TotalNRXMktShare": 121527
+          },
+          {
+            "RegionName": "West",
+            "TerritoryName": "E Phoenix AZ",
+            "TotalTRX": 16701,
+            "TotalNRX": 7947,
+            "TotalTRXMktShare": 122668,
+            "TotalNRXMktShare": 119824
+          },
+          {
+            "RegionName": "Midatlantic",
+            "TerritoryName": "Louisville KY",
+            "TotalTRX": 16661,
+            "TotalNRX": 6890,
+            "TotalTRXMktShare": 138976,
+            "TotalNRXMktShare": 135940
+          },
+          {
+            "RegionName": "Southwest",
+            "TerritoryName": "San Antonio TX",
+            "TotalTRX": 16536,
+            "TotalNRX": 7490,
+            "TotalTRXMktShare": 115160,
+            "TotalNRXMktShare": 114173
+          },
+          {
+            "RegionName": "Midatlantic",
+            "TerritoryName": "Columbia SC",
+            "TotalTRX": 16485,
+            "TotalNRX": 6507,
+            "TotalTRXMktShare": 130252,
+            "TotalNRXMktShare": 127758
+          },
+          {
+            "RegionName": "Southwest",
+            "TerritoryName": "Kansas City MO",
+            "TotalTRX": 16464,
+            "TotalNRX": 6600,
+            "TotalTRXMktShare": 123481,
+            "TotalNRXMktShare": 121446
+          },
+          {
+            "RegionName": "Midatlantic",
+            "TerritoryName": "Washington DC",
+            "TotalTRX": 16236,
+            "TotalNRX": 7482,
+            "TotalTRXMktShare": 125275,
+            "TotalNRXMktShare": 121079
+          },
+          {
+            "RegionName": "Southwest",
+            "TerritoryName": "Houston N TX",
+            "TotalTRX": 16119,
+            "TotalNRX": 7880,
+            "TotalTRXMktShare": 103590,
+            "TotalNRXMktShare": 102663
+          },
+          {
+            "RegionName": "Midatlantic",
+            "TerritoryName": "Baltimore MD",
+            "TotalTRX": 15594,
+            "TotalNRX": 6506,
+            "TotalTRXMktShare": 126997,
+            "TotalNRXMktShare": 122761
+          },
+          {
+            "RegionName": "Midatlantic",
+            "TerritoryName": "Knoxville TN",
+            "TotalTRX": 15580,
+            "TotalNRX": 6223,
+            "TotalTRXMktShare": 137558,
+            "TotalNRXMktShare": 133180
+          },
+          {
+            "RegionName": "Southwest",
+            "TerritoryName": "Denver N CO",
+            "TotalTRX": 15537,
+            "TotalNRX": 6612,
+            "TotalTRXMktShare": 111873,
+            "TotalNRXMktShare": 109756
+          },
+          {
+            "RegionName": "Tri-state",
+            "TerritoryName": "Albany NY",
+            "TotalTRX": 15428,
+            "TotalNRX": 5424,
+            "TotalTRXMktShare": 133282,
+            "TotalNRXMktShare": 130417
+          },
+          {
+            "RegionName": "Tri-state",
+            "TerritoryName": "Harrisburg PA",
+            "TotalTRX": 15342,
+            "TotalNRX": 5804,
+            "TotalTRXMktShare": 143702,
+            "TotalNRXMktShare": 142504
+          },
+          {
+            "RegionName": "Midwest",
+            "TerritoryName": "Chicago N IL",
+            "TotalTRX": 15042,
+            "TotalNRX": 6748,
+            "TotalTRXMktShare": 131469,
+            "TotalNRXMktShare": 129870
+          },
+          {
+            "RegionName": "Southeast",
+            "TerritoryName": "Jacksonville FL",
+            "TotalTRX": 14813,
+            "TotalNRX": 6576,
+            "TotalTRXMktShare": 113206,
+            "TotalNRXMktShare": 112244
+          },
+          {
+            "RegionName": "Southeast",
+            "TerritoryName": "Tele-Sales 6 - Southeast",
+            "TotalTRX": 14703,
+            "TotalNRX": 5949,
+            "TotalTRXMktShare": 113537,
+            "TotalNRXMktShare": 109944
+          },
+          {
+            "RegionName": "Northeast",
+            "TerritoryName": "Boston MA",
+            "TotalTRX": 14496,
+            "TotalNRX": 5459,
+            "TotalTRXMktShare": 122211,
+            "TotalNRXMktShare": 119413
+          },
+          {
+            "RegionName": "Midwest",
+            "TerritoryName": "Chicago C IL",
+            "TotalTRX": 14444,
+            "TotalNRX": 5999,
+            "TotalTRXMktShare": 104612,
+            "TotalNRXMktShare": 101536
+          },
+          {
+            "RegionName": "Tri-state",
+            "TerritoryName": "Northwest NJ",
+            "TotalTRX": 14099,
+            "TotalNRX": 6001,
+            "TotalTRXMktShare": 104583,
+            "TotalNRXMktShare": 102042
+          },
+          {
+            "RegionName": "Northeast",
+            "TerritoryName": "S Brooklyn NY",
+            "TotalTRX": 13876,
+            "TotalNRX": 5865,
+            "TotalTRXMktShare": 86276,
+            "TotalNRXMktShare": 80968
+          },
+          {
+            "RegionName": "West",
+            "TerritoryName": "Seattle WA",
+            "TotalTRX": 13832,
+            "TotalNRX": 5582,
+            "TotalTRXMktShare": 118592,
+            "TotalNRXMktShare": 116560
+          },
+          {
+            "RegionName": "West",
+            "TerritoryName": "W Phoenix AZ",
+            "TotalTRX": 13651,
+            "TotalNRX": 6029,
+            "TotalTRXMktShare": 115625,
+            "TotalNRXMktShare": 112931
+          },
+          {
+            "RegionName": "Southeast",
+            "TerritoryName": "Atlanta E GA",
+            "TotalTRX": 13571,
+            "TotalNRX": 5298,
+            "TotalTRXMktShare": 119440,
+            "TotalNRXMktShare": 116160
+          },
+          {
+            "RegionName": "West",
+            "TerritoryName": "San Jose CA",
+            "TotalTRX": 13522,
+            "TotalNRX": 6039,
+            "TotalTRXMktShare": 100572,
+            "TotalNRXMktShare": 97779
+          },
+          {
+            "RegionName": "Northeast",
+            "TerritoryName": "N Boston MA",
+            "TotalTRX": 13506,
+            "TotalNRX": 5289,
+            "TotalTRXMktShare": 128504,
+            "TotalNRXMktShare": 127407
+          },
+          {
+            "RegionName": "Midwest",
+            "TerritoryName": "Cincinnati OH",
+            "TotalTRX": 13411,
+            "TotalNRX": 5505,
+            "TotalTRXMktShare": 107778,
+            "TotalNRXMktShare": 105355
+          },
+          {
+            "RegionName": "Northeast",
+            "TerritoryName": "W Hartford CT",
+            "TotalTRX": 12970,
+            "TotalNRX": 5272,
+            "TotalTRXMktShare": 98879,
+            "TotalNRXMktShare": 97830
+          },
+          {
+            "RegionName": "Northeast",
+            "TerritoryName": "N Brooklyn NY",
+            "TotalTRX": 12886,
+            "TotalNRX": 5611,
+            "TotalTRXMktShare": 70532,
+            "TotalNRXMktShare": 66242
+          },
+          {
+            "RegionName": "West",
+            "TerritoryName": "Los Angeles S CA",
+            "TotalTRX": 12191,
+            "TotalNRX": 5005,
+            "TotalTRXMktShare": 88878,
+            "TotalNRXMktShare": 85851
+          },
+          {
+            "RegionName": "West",
+            "TerritoryName": "Los Angeles N CA",
+            "TotalTRX": 12002,
+            "TotalNRX": 4887,
+            "TotalTRXMktShare": 82070,
+            "TotalNRXMktShare": 76578
+          },
+          {
+            "RegionName": "Northeast",
+            "TerritoryName": "Triborough 1",
+            "TotalTRX": 11722,
+            "TotalNRX": 5102,
+            "TotalTRXMktShare": 42830,
+            "TotalNRXMktShare": 39905
+          },
+          {
+            "RegionName": "Southeast",
+            "TerritoryName": "Miami RSS",
+            "TotalTRX": 11413,
+            "TotalNRX": 5110,
+            "TotalTRXMktShare": 96937,
+            "TotalNRXMktShare": 95909
+          },
+          {
+            "RegionName": "Midwest",
+            "TerritoryName": "Milwaukee WI",
+            "TotalTRX": 11273,
+            "TotalNRX": 4628,
+            "TotalTRXMktShare": 85377,
+            "TotalNRXMktShare": 84108
+          },
+          {
+            "RegionName": "Northeast",
+            "TerritoryName": "N Manhattan NY",
+            "TotalTRX": 11237,
+            "TotalNRX": 4635,
+            "TotalTRXMktShare": 54441,
+            "TotalNRXMktShare": 52565
+          },
+          {
+            "RegionName": "Northeast",
+            "TerritoryName": "E Hartford CT",
+            "TotalTRX": 11218,
+            "TotalNRX": 4634,
+            "TotalTRXMktShare": 100475,
+            "TotalNRXMktShare": 98956
+          },
+          {
+            "RegionName": "Tri-state",
+            "TerritoryName": "New Jersey RSS",
+            "TotalTRX": 10432,
+            "TotalNRX": 5250,
+            "TotalTRXMktShare": 129204,
+            "TotalNRXMktShare": 127488
+          },
+          {
+            "RegionName": "Southwest",
+            "TerritoryName": "Denver S CO",
+            "TotalTRX": 10046,
+            "TotalNRX": 3959,
+            "TotalTRXMktShare": 78790,
+            "TotalNRXMktShare": 77592
+          },
+          {
+            "RegionName": "West",
+            "TerritoryName": "Los Angeles RSS",
+            "TotalTRX": 8339,
+            "TotalNRX": 3457,
+            "TotalTRXMktShare": 94094,
+            "TotalNRXMktShare": 89071
+          },
+          {
+            "RegionName": "West",
+            "TerritoryName": "Riverside CA",
+            "TotalTRX": 8174,
+            "TotalNRX": 3407,
+            "TotalTRXMktShare": 69765,
+            "TotalNRXMktShare": 67554
+          },
+          {
+            "RegionName": "Midwest",
+            "TerritoryName": "Grand Rapids MI",
+            "TotalTRX": 7671,
+            "TotalNRX": 2974,
+            "TotalTRXMktShare": 79220,
+            "TotalNRXMktShare": 76208
+          },
+          {
+            "RegionName": "Tri-state",
+            "TerritoryName": "Tele-Sales 1 - Tri-State",
+            "TotalTRX": 7496,
+            "TotalNRX": 2915,
+            "TotalTRXMktShare": 105292,
+            "TotalNRXMktShare": 102498
+          }
+        ],
+        "sql": "SELECT TOP 100 \n    po.[RegionName], \n    po.[TerritoryName], \n    SUM(ISNULL(po.[TRX(C QTD)], 0)) AS TotalTRX, \n    SUM(ISNULL(po.[NRX(C QTD)], 0)) AS TotalNRX, \n    SUM(ISNULL(po.[TRXMktShareQTD], 0)) AS TotalTRXMktShare, \n    SUM(ISNULL(po.[NRXMktShareQTD], 0)) AS TotalNRXMktShare\nFROM dbo.Reporting_BI_PrescriberOverview po\nWHERE po.[FlectorTargetFlag] = 'Y' \n   OR po.[LicartTargetFlag] = 'Y' \n   OR po.[TirosintTargetFlag] = 'Y'\nGROUP BY po.[RegionName], po.[TerritoryName]\nORDER BY TotalTRX DESC, TotalNRX DESC"
+      },
+      "status": "completed"
+    },
+    "3_execution": {
+      "results": [
+        {
+          "RegionName": "Midatlantic",
+          "TerritoryName": "Tele-Sales 2 - Mid-Atlantic",
+          "TotalTRX": 61764,
+          "TotalNRX": 24778,
+          "TotalTRXMktShare": 475259,
+          "TotalNRXMktShare": 464452
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "Tele-Sales 5 - Southwest",
+          "TotalTRX": 39676,
+          "TotalNRX": 15301,
+          "TotalTRXMktShare": 306237,
+          "TotalNRXMktShare": 302179
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "Tele-Sales 3 - Midwest",
+          "TotalTRX": 33410,
+          "TotalNRX": 13652,
+          "TotalTRXMktShare": 270917,
+          "TotalNRXMktShare": 264465
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "Tele-Sales 4 - West",
+          "TotalTRX": 31566,
+          "TotalNRX": 13153,
+          "TotalTRXMktShare": 273184,
+          "TotalNRXMktShare": 266031
+        },
+        {
+          "RegionName": "Northeast",
+          "TerritoryName": "Long Island NY",
+          "TotalTRX": 27823,
+          "TotalNRX": 13977,
+          "TotalTRXMktShare": 194372,
+          "TotalNRXMktShare": 191548
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "Dallas N TX",
+          "TotalTRX": 27067,
+          "TotalNRX": 13079,
+          "TotalTRXMktShare": 170260,
+          "TotalNRXMktShare": 169630
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "Cleveland OH",
+          "TotalTRX": 26999,
+          "TotalNRX": 10132,
+          "TotalTRXMktShare": 220863,
+          "TotalNRXMktShare": 217006
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "Austin TX",
+          "TotalTRX": 26690,
+          "TotalNRX": 12183,
+          "TotalTRXMktShare": 137461,
+          "TotalNRXMktShare": 135863
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "Houston S TX",
+          "TotalTRX": 24802,
+          "TotalNRX": 11197,
+          "TotalTRXMktShare": 144164,
+          "TotalNRXMktShare": 143090
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Orlando FL",
+          "TotalTRX": 23534,
+          "TotalNRX": 10656,
+          "TotalTRXMktShare": 164026,
+          "TotalNRXMktShare": 162546
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "New Orleans LA",
+          "TotalTRX": 23381,
+          "TotalNRX": 8387,
+          "TotalTRXMktShare": 129745,
+          "TotalNRXMktShare": 127966
+        },
+        {
+          "RegionName": "Midatlantic",
+          "TerritoryName": "Raleigh NC",
+          "TotalTRX": 23298,
+          "TotalNRX": 9420,
+          "TotalTRXMktShare": 174800,
+          "TotalNRXMktShare": 169784
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "Fort Worth TX",
+          "TotalTRX": 22320,
+          "TotalNRX": 10377,
+          "TotalTRXMktShare": 142085,
+          "TotalNRXMktShare": 139097
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Atlanta N GA",
+          "TotalTRX": 22032,
+          "TotalNRX": 10179,
+          "TotalTRXMktShare": 148990,
+          "TotalNRXMktShare": 148024
+        },
+        {
+          "RegionName": "Tri-state",
+          "TerritoryName": "Newark NJ",
+          "TotalTRX": 21929,
+          "TotalNRX": 10003,
+          "TotalTRXMktShare": 136065,
+          "TotalNRXMktShare": 133368
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Jackson MS",
+          "TotalTRX": 21726,
+          "TotalNRX": 7421,
+          "TotalTRXMktShare": 115092,
+          "TotalNRXMktShare": 112504
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Fort Lauderdale FL",
+          "TotalTRX": 21647,
+          "TotalNRX": 10230,
+          "TotalTRXMktShare": 114709,
+          "TotalNRXMktShare": 113396
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "St Louis MO",
+          "TotalTRX": 21409,
+          "TotalNRX": 8768,
+          "TotalTRXMktShare": 149564,
+          "TotalNRXMktShare": 144834
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "Thousand Oaks CA",
+          "TotalTRX": 21146,
+          "TotalNRX": 8664,
+          "TotalTRXMktShare": 149606,
+          "TotalNRXMktShare": 145392
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "San Diego CA",
+          "TotalTRX": 21071,
+          "TotalNRX": 8890,
+          "TotalTRXMktShare": 138110,
+          "TotalNRXMktShare": 136048
+        },
+        {
+          "RegionName": "Northeast",
+          "TerritoryName": "Brooklyn RSS",
+          "TotalTRX": 21017,
+          "TotalNRX": 10009,
+          "TotalTRXMktShare": 174539,
+          "TotalNRXMktShare": 169977
+        },
+        {
+          "RegionName": "Midatlantic",
+          "TerritoryName": "Nashville TN",
+          "TotalTRX": 20996,
+          "TotalNRX": 8434,
+          "TotalTRXMktShare": 150140,
+          "TotalNRXMktShare": 148876
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "Detroit MI",
+          "TotalTRX": 20994,
+          "TotalNRX": 9477,
+          "TotalTRXMktShare": 142807,
+          "TotalNRXMktShare": 140843
+        },
+        {
+          "RegionName": "Midatlantic",
+          "TerritoryName": "Charlotte NC",
+          "TotalTRX": 20656,
+          "TotalNRX": 8317,
+          "TotalTRXMktShare": 186827,
+          "TotalNRXMktShare": 181733
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Tampa FL",
+          "TotalTRX": 20248,
+          "TotalNRX": 9161,
+          "TotalTRXMktShare": 149717,
+          "TotalNRXMktShare": 146134
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "Dallas E TX",
+          "TotalTRX": 19784,
+          "TotalNRX": 9270,
+          "TotalTRXMktShare": 131048,
+          "TotalNRXMktShare": 129119
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "Chicago S IL",
+          "TotalTRX": 19734,
+          "TotalNRX": 9441,
+          "TotalTRXMktShare": 143703,
+          "TotalNRXMktShare": 140335
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "Oklahoma City OK",
+          "TotalTRX": 19672,
+          "TotalNRX": 7482,
+          "TotalTRXMktShare": 113730,
+          "TotalNRXMktShare": 111990
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "Indianapolis IN",
+          "TotalTRX": 19325,
+          "TotalNRX": 8266,
+          "TotalTRXMktShare": 164340,
+          "TotalNRXMktShare": 161410
+        },
+        {
+          "RegionName": "Tri-state",
+          "TerritoryName": "South Jersey NJ",
+          "TotalTRX": 19269,
+          "TotalNRX": 9444,
+          "TotalTRXMktShare": 149749,
+          "TotalNRXMktShare": 148573
+        },
+        {
+          "RegionName": "Tri-state",
+          "TerritoryName": "West Chester PA",
+          "TotalTRX": 19174,
+          "TotalNRX": 7446,
+          "TotalTRXMktShare": 155870,
+          "TotalNRXMktShare": 152123
+        },
+        {
+          "RegionName": "Midatlantic",
+          "TerritoryName": "Richmond VA",
+          "TotalTRX": 19070,
+          "TotalNRX": 7918,
+          "TotalTRXMktShare": 151451,
+          "TotalNRXMktShare": 149262
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Birmingham AL",
+          "TotalTRX": 18998,
+          "TotalNRX": 7001,
+          "TotalTRXMktShare": 126181,
+          "TotalNRXMktShare": 125214
+        },
+        {
+          "RegionName": "Midatlantic",
+          "TerritoryName": "Greensboro NC",
+          "TotalTRX": 18847,
+          "TotalNRX": 7399,
+          "TotalTRXMktShare": 133533,
+          "TotalNRXMktShare": 130322
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Atlanta S GA",
+          "TotalTRX": 18819,
+          "TotalNRX": 7949,
+          "TotalTRXMktShare": 140032,
+          "TotalNRXMktShare": 138130
+        },
+        {
+          "RegionName": "Northeast",
+          "TerritoryName": "White Plains NY",
+          "TotalTRX": 18510,
+          "TotalNRX": 7769,
+          "TotalTRXMktShare": 134037,
+          "TotalNRXMktShare": 129562
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "Houston RSS",
+          "TotalTRX": 18194,
+          "TotalNRX": 8221,
+          "TotalTRXMktShare": 178246,
+          "TotalNRXMktShare": 176927
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "Sacramento CA",
+          "TotalTRX": 18027,
+          "TotalNRX": 7288,
+          "TotalTRXMktShare": 141413,
+          "TotalNRXMktShare": 138380
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Miami FL",
+          "TotalTRX": 17942,
+          "TotalNRX": 8355,
+          "TotalTRXMktShare": 86958,
+          "TotalNRXMktShare": 86597
+        },
+        {
+          "RegionName": "Tri-state",
+          "TerritoryName": "Rochester NY",
+          "TotalTRX": 17870,
+          "TotalNRX": 7733,
+          "TotalTRXMktShare": 177887,
+          "TotalNRXMktShare": 171079
+        },
+        {
+          "RegionName": "Midatlantic",
+          "TerritoryName": "Northern VA",
+          "TotalTRX": 17750,
+          "TotalNRX": 8379,
+          "TotalTRXMktShare": 145780,
+          "TotalNRXMktShare": 142566
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "Columbus OH",
+          "TotalTRX": 17399,
+          "TotalNRX": 5988,
+          "TotalTRXMktShare": 146246,
+          "TotalNRXMktShare": 141191
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "Chicago IL",
+          "TotalTRX": 17366,
+          "TotalNRX": 7454,
+          "TotalTRXMktShare": 213977,
+          "TotalNRXMktShare": 210273
+        },
+        {
+          "RegionName": "Northeast",
+          "TerritoryName": "Manhattan NY",
+          "TotalTRX": 17335,
+          "TotalNRX": 7083,
+          "TotalTRXMktShare": 87785,
+          "TotalNRXMktShare": 84414
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "Las Vegas NV",
+          "TotalTRX": 17164,
+          "TotalNRX": 6719,
+          "TotalTRXMktShare": 144682,
+          "TotalNRXMktShare": 139551
+        },
+        {
+          "RegionName": "Tri-state",
+          "TerritoryName": "Philadelphia N PA",
+          "TotalTRX": 16969,
+          "TotalNRX": 6830,
+          "TotalTRXMktShare": 119184,
+          "TotalNRXMktShare": 117589
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "NE Houston TX",
+          "TotalTRX": 16877,
+          "TotalNRX": 7720,
+          "TotalTRXMktShare": 107704,
+          "TotalNRXMktShare": 107337
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Sarasota FL",
+          "TotalTRX": 16848,
+          "TotalNRX": 7494,
+          "TotalTRXMktShare": 161662,
+          "TotalNRXMktShare": 157306
+        },
+        {
+          "RegionName": "Tri-state",
+          "TerritoryName": "Philadelphia S PA",
+          "TotalTRX": 16738,
+          "TotalNRX": 7029,
+          "TotalTRXMktShare": 123113,
+          "TotalNRXMktShare": 121527
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "E Phoenix AZ",
+          "TotalTRX": 16701,
+          "TotalNRX": 7947,
+          "TotalTRXMktShare": 122668,
+          "TotalNRXMktShare": 119824
+        },
+        {
+          "RegionName": "Midatlantic",
+          "TerritoryName": "Louisville KY",
+          "TotalTRX": 16661,
+          "TotalNRX": 6890,
+          "TotalTRXMktShare": 138976,
+          "TotalNRXMktShare": 135940
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "San Antonio TX",
+          "TotalTRX": 16536,
+          "TotalNRX": 7490,
+          "TotalTRXMktShare": 115160,
+          "TotalNRXMktShare": 114173
+        },
+        {
+          "RegionName": "Midatlantic",
+          "TerritoryName": "Columbia SC",
+          "TotalTRX": 16485,
+          "TotalNRX": 6507,
+          "TotalTRXMktShare": 130252,
+          "TotalNRXMktShare": 127758
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "Kansas City MO",
+          "TotalTRX": 16464,
+          "TotalNRX": 6600,
+          "TotalTRXMktShare": 123481,
+          "TotalNRXMktShare": 121446
+        },
+        {
+          "RegionName": "Midatlantic",
+          "TerritoryName": "Washington DC",
+          "TotalTRX": 16236,
+          "TotalNRX": 7482,
+          "TotalTRXMktShare": 125275,
+          "TotalNRXMktShare": 121079
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "Houston N TX",
+          "TotalTRX": 16119,
+          "TotalNRX": 7880,
+          "TotalTRXMktShare": 103590,
+          "TotalNRXMktShare": 102663
+        },
+        {
+          "RegionName": "Midatlantic",
+          "TerritoryName": "Baltimore MD",
+          "TotalTRX": 15594,
+          "TotalNRX": 6506,
+          "TotalTRXMktShare": 126997,
+          "TotalNRXMktShare": 122761
+        },
+        {
+          "RegionName": "Midatlantic",
+          "TerritoryName": "Knoxville TN",
+          "TotalTRX": 15580,
+          "TotalNRX": 6223,
+          "TotalTRXMktShare": 137558,
+          "TotalNRXMktShare": 133180
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "Denver N CO",
+          "TotalTRX": 15537,
+          "TotalNRX": 6612,
+          "TotalTRXMktShare": 111873,
+          "TotalNRXMktShare": 109756
+        },
+        {
+          "RegionName": "Tri-state",
+          "TerritoryName": "Albany NY",
+          "TotalTRX": 15428,
+          "TotalNRX": 5424,
+          "TotalTRXMktShare": 133282,
+          "TotalNRXMktShare": 130417
+        },
+        {
+          "RegionName": "Tri-state",
+          "TerritoryName": "Harrisburg PA",
+          "TotalTRX": 15342,
+          "TotalNRX": 5804,
+          "TotalTRXMktShare": 143702,
+          "TotalNRXMktShare": 142504
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "Chicago N IL",
+          "TotalTRX": 15042,
+          "TotalNRX": 6748,
+          "TotalTRXMktShare": 131469,
+          "TotalNRXMktShare": 129870
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Jacksonville FL",
+          "TotalTRX": 14813,
+          "TotalNRX": 6576,
+          "TotalTRXMktShare": 113206,
+          "TotalNRXMktShare": 112244
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Tele-Sales 6 - Southeast",
+          "TotalTRX": 14703,
+          "TotalNRX": 5949,
+          "TotalTRXMktShare": 113537,
+          "TotalNRXMktShare": 109944
+        },
+        {
+          "RegionName": "Northeast",
+          "TerritoryName": "Boston MA",
+          "TotalTRX": 14496,
+          "TotalNRX": 5459,
+          "TotalTRXMktShare": 122211,
+          "TotalNRXMktShare": 119413
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "Chicago C IL",
+          "TotalTRX": 14444,
+          "TotalNRX": 5999,
+          "TotalTRXMktShare": 104612,
+          "TotalNRXMktShare": 101536
+        },
+        {
+          "RegionName": "Tri-state",
+          "TerritoryName": "Northwest NJ",
+          "TotalTRX": 14099,
+          "TotalNRX": 6001,
+          "TotalTRXMktShare": 104583,
+          "TotalNRXMktShare": 102042
+        },
+        {
+          "RegionName": "Northeast",
+          "TerritoryName": "S Brooklyn NY",
+          "TotalTRX": 13876,
+          "TotalNRX": 5865,
+          "TotalTRXMktShare": 86276,
+          "TotalNRXMktShare": 80968
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "Seattle WA",
+          "TotalTRX": 13832,
+          "TotalNRX": 5582,
+          "TotalTRXMktShare": 118592,
+          "TotalNRXMktShare": 116560
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "W Phoenix AZ",
+          "TotalTRX": 13651,
+          "TotalNRX": 6029,
+          "TotalTRXMktShare": 115625,
+          "TotalNRXMktShare": 112931
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Atlanta E GA",
+          "TotalTRX": 13571,
+          "TotalNRX": 5298,
+          "TotalTRXMktShare": 119440,
+          "TotalNRXMktShare": 116160
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "San Jose CA",
+          "TotalTRX": 13522,
+          "TotalNRX": 6039,
+          "TotalTRXMktShare": 100572,
+          "TotalNRXMktShare": 97779
+        },
+        {
+          "RegionName": "Northeast",
+          "TerritoryName": "N Boston MA",
+          "TotalTRX": 13506,
+          "TotalNRX": 5289,
+          "TotalTRXMktShare": 128504,
+          "TotalNRXMktShare": 127407
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "Cincinnati OH",
+          "TotalTRX": 13411,
+          "TotalNRX": 5505,
+          "TotalTRXMktShare": 107778,
+          "TotalNRXMktShare": 105355
+        },
+        {
+          "RegionName": "Northeast",
+          "TerritoryName": "W Hartford CT",
+          "TotalTRX": 12970,
+          "TotalNRX": 5272,
+          "TotalTRXMktShare": 98879,
+          "TotalNRXMktShare": 97830
+        },
+        {
+          "RegionName": "Northeast",
+          "TerritoryName": "N Brooklyn NY",
+          "TotalTRX": 12886,
+          "TotalNRX": 5611,
+          "TotalTRXMktShare": 70532,
+          "TotalNRXMktShare": 66242
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "Los Angeles S CA",
+          "TotalTRX": 12191,
+          "TotalNRX": 5005,
+          "TotalTRXMktShare": 88878,
+          "TotalNRXMktShare": 85851
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "Los Angeles N CA",
+          "TotalTRX": 12002,
+          "TotalNRX": 4887,
+          "TotalTRXMktShare": 82070,
+          "TotalNRXMktShare": 76578
+        },
+        {
+          "RegionName": "Northeast",
+          "TerritoryName": "Triborough 1",
+          "TotalTRX": 11722,
+          "TotalNRX": 5102,
+          "TotalTRXMktShare": 42830,
+          "TotalNRXMktShare": 39905
+        },
+        {
+          "RegionName": "Southeast",
+          "TerritoryName": "Miami RSS",
+          "TotalTRX": 11413,
+          "TotalNRX": 5110,
+          "TotalTRXMktShare": 96937,
+          "TotalNRXMktShare": 95909
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "Milwaukee WI",
+          "TotalTRX": 11273,
+          "TotalNRX": 4628,
+          "TotalTRXMktShare": 85377,
+          "TotalNRXMktShare": 84108
+        },
+        {
+          "RegionName": "Northeast",
+          "TerritoryName": "N Manhattan NY",
+          "TotalTRX": 11237,
+          "TotalNRX": 4635,
+          "TotalTRXMktShare": 54441,
+          "TotalNRXMktShare": 52565
+        },
+        {
+          "RegionName": "Northeast",
+          "TerritoryName": "E Hartford CT",
+          "TotalTRX": 11218,
+          "TotalNRX": 4634,
+          "TotalTRXMktShare": 100475,
+          "TotalNRXMktShare": 98956
+        },
+        {
+          "RegionName": "Tri-state",
+          "TerritoryName": "New Jersey RSS",
+          "TotalTRX": 10432,
+          "TotalNRX": 5250,
+          "TotalTRXMktShare": 129204,
+          "TotalNRXMktShare": 127488
+        },
+        {
+          "RegionName": "Southwest",
+          "TerritoryName": "Denver S CO",
+          "TotalTRX": 10046,
+          "TotalNRX": 3959,
+          "TotalTRXMktShare": 78790,
+          "TotalNRXMktShare": 77592
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "Los Angeles RSS",
+          "TotalTRX": 8339,
+          "TotalNRX": 3457,
+          "TotalTRXMktShare": 94094,
+          "TotalNRXMktShare": 89071
+        },
+        {
+          "RegionName": "West",
+          "TerritoryName": "Riverside CA",
+          "TotalTRX": 8174,
+          "TotalNRX": 3407,
+          "TotalTRXMktShare": 69765,
+          "TotalNRXMktShare": 67554
+        },
+        {
+          "RegionName": "Midwest",
+          "TerritoryName": "Grand Rapids MI",
+          "TotalTRX": 7671,
+          "TotalNRX": 2974,
+          "TotalTRXMktShare": 79220,
+          "TotalNRXMktShare": 76208
+        },
+        {
+          "RegionName": "Tri-state",
+          "TerritoryName": "Tele-Sales 1 - Tri-State",
+          "TotalTRX": 7496,
+          "TotalNRX": 2915,
+          "TotalTRXMktShare": 105292,
+          "TotalNRXMktShare": 102498
+        }
+      ],
+      "row_count": 89,
+      "execution_time": 0.12175130844116211,
+      "metadata": {
+        "columns": [
+          "RegionName",
+          "TerritoryName",
+          "TotalTRX",
+          "TotalNRX",
+          "TotalTRXMktShare",
+          "TotalNRXMktShare"
+        ],
+        "was_sampled": false,
+        "job_id": null
+      },
+      "sql_executed": "SELECT TOP 100 \n    po.[RegionName], \n    po.[TerritoryName], \n    SUM(ISNULL(po.[TRX(C QTD)], 0)) AS TotalTRX, \n    SUM(ISNULL(po.[NRX(C QTD)], 0)) AS TotalNRX, \n    SUM(ISNULL(po.[TRXMktShareQTD], 0)) AS TotalTRXMktShare, \n    SUM(ISNULL(po.[NRXMktShareQTD], 0)) AS TotalNRXMktShare\nFROM dbo.Reporting_BI_PrescriberOverview po\nWHERE po.[FlectorTargetFlag] = 'Y' \n   OR po.[LicartTargetFlag] = 'Y' \n   OR po.[TirosintTargetFlag] = 'Y'\nGROUP BY po.[RegionName], po.[TerritoryName]\nORDER BY TotalTRX DESC, TotalNRX DESC",
+      "execution_attempt": 1,
+      "status": "completed"
+    },
+    "4_intelligent_viz_planning": {
+      "status": "completed",
+      "visualization_plan": {
+        "layout_type": "comparison",
+        "query_type": "User wants to compare TRX vs NRX share performance across different products and regions, making a comparison layout the most suitable.",
+        "kpis": [
+          {
+            "title": "Total TRX",
+            "value_column": "TotalTRX",
+            "calculation": "sum",
+            "trend": false,
+            "trend_comparison": null,
+            "status_thresholds": null,
+            "format": "number",
+            "icon": "trendingUp",
+            "sparkline": true
+          },
+          {
+            "title": "Total NRX",
+            "value_column": "TotalNRX",
+            "calculation": "sum",
+            "trend": false,
+            "trend_comparison": null,
+            "status_thresholds": null,
+            "format": "number",
+            "icon": "trendingUp",
+            "sparkline": true
+          },
+          {
+            "title": "TRX Market Share",
+            "value_column": "TotalTRXMktShare",
+            "calculation": "mean",
+            "trend": false,
+            "trend_comparison": null,
+            "status_thresholds": null,
+            "format": "percentage",
+            "icon": "activity",
+            "sparkline": false
+          },
+          {
+            "title": "NRX Market Share",
+            "value_column": "TotalNRXMktShare",
+            "calculation": "mean",
+            "trend": false,
+            "trend_comparison": null,
+            "status_thresholds": null,
+            "format": "percentage",
+            "icon": "activity",
+            "sparkline": false
+          }
+        ],
+        "primary_chart": {
+          "type": "bar",
+          "title": "Comparison of TRX vs NRX Performance",
+          "x_axis": "TerritoryName",
+          "y_axis": "TotalTRX, TotalNRX",
+          "style": "grouped",
+          "aggregation": "sum",
+          "color_scheme": "categorical",
+          "interactive_features": [
+            "hover",
+            "zoom"
+          ]
+        },
+        "timeline": null,
+        "breakdown": {
+          "enabled": true,
+          "category_column": "RegionName",
+          "value_column": "TotalTRX, TotalNRX",
+          "layout": "grid",
+          "show_icons": true,
+          "max_categories": 10
+        },
+        "layout_structure": [
+          {
+            "row": 1,
+            "type": "kpi_row",
+            "columns": 4,
+            "height": "120px",
+            "components": null
+          },
+          {
+            "row": 2,
+            "type": "main_chart",
+            "columns": 1,
+            "height": "400px",
+            "components": null
+          },
+          {
+            "row": 3,
+            "type": "breakdown",
+            "columns": 1,
+            "height": "300px",
+            "components": null
+          }
+        ],
+        "metadata": {
+          "data_profile": {
+            "row_count": 89,
+            "column_count": 6,
+            "columns": [
+              "RegionName",
+              "TerritoryName",
+              "TotalTRX",
+              "TotalNRX",
+              "TotalTRXMktShare",
+              "TotalNRXMktShare"
+            ],
+            "numeric_columns": [
+              "TotalTRX",
+              "TotalNRX",
+              "TotalTRXMktShare",
+              "TotalNRXMktShare"
+            ],
+            "categorical_columns": [
+              "RegionName",
+              "TerritoryName"
+            ],
+            "temporal_columns": [],
+            "has_temporal": false,
+            "has_numeric": true,
+            "has_categorical": true,
+            "data_density": 534,
+            "value_distributions": {
+              "RegionName": {
+                "unique_count": 7,
+                "top_values": {
+                  "Southwest": 15,
+                  "Midwest": 13,
+                  "West": 13,
+                  "Southeast": 13,
+                  "Midatlantic": 12
+                }
+              },
+              "TerritoryName": {
+                "unique_count": 89,
+                "top_values": {
+                  "Tele-Sales 2 - Mid-Atlantic": 1,
+                  "Philadelphia N PA": 1,
+                  "Chicago C IL": 1,
+                  "Boston MA": 1,
+                  "Tele-Sales 6 - Southeast": 1
+                }
+              }
+            }
+          },
+          "llm_reasoning": "User wants to compare TRX vs NRX share performance across different products and regions, making a comparison layout the most suitable."
+        }
+      },
+      "summary": "Created comparison layout with 4 KPIs"
+    }
+  },
+  "progress": 1.0,
+  "task_executor_used": true,
+  "execution_method": "enhanced_orchestration"
+}

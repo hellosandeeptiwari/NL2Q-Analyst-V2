@@ -14,6 +14,7 @@ import EnhancedTable from './EnhancedTable';
 import ChartCustomizer from './ChartCustomizer';
 import ProgressIndicator from './ProgressIndicator';
 import IncrementalResults from './IncrementalResults';
+import AdaptiveLayout from './visualizations/AdaptiveLayout';
 import { downloadChartAsPNG, downloadChartAsPDF, downloadChartAsSVG, applyChartColors, convertChartType } from '../utils/chartUtils';
 
 // Types
@@ -2098,11 +2099,18 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                   key.includes('insights') && result?.insights !== undefined
                 );
 
+                // NEW: Check for intelligent visualization planning
+                const intelligentVizStep = Object.entries(resultsData || {}).find(([key, result]: [string, any]) => 
+                  key.includes('intelligent_viz_planning') && result?.visualization_plan !== undefined
+                );
+                
                 // Debug visualization data
                 console.log('🎨 Visualization debug:', {
                   visualizationStepFound: !!visualizationStep,
+                  intelligentVizStepFound: !!intelligentVizStep,
                   allSteps: Object.keys(resultsData || {}),
                   visualizationData: visualizationStep ? visualizationStep[1] : null,
+                  intelligentVizData: intelligentVizStep ? intelligentVizStep[1] : null,
                   rawVisualizationStep: resultsData?.['8_visualization_builder'],
                   chartsFound: visualizationStep ? (visualizationStep[1] as any)?.charts?.length : 0,
                   chartTypes: visualizationStep ? (visualizationStep[1] as any)?.charts?.map((c: any) => c.type) : []
@@ -2110,6 +2118,7 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
 
                 const executionResult = executionStep ? executionStep[1] as any : null;
                 const visualizationResult = visualizationStep ? visualizationStep[1] as any : null;
+                const intelligentVizResult = intelligentVizStep ? intelligentVizStep[1] as any : null;
                 const insightsResult = insightsStep ? insightsStep[1] as any : null;
 
                 // Also check if any step has results, not just execution
@@ -2133,8 +2142,22 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                 const stepResult: any = {
                   results: executionResult?.results || allResults || [],
                   sql_query: executionResult?.sql_query || sqlQuery || '',
-                  charts: visualizationResult?.charts || allCharts || []
+                  charts: visualizationResult?.charts || allCharts || [],
+                  // NEW: Add intelligent visualization planning data
+                  intelligentVisualization: intelligentVizResult?.visualization_plan || null
                 };
+
+                console.log('🎨🎨🎨 INTELLIGENT VIZ DEBUG:', {
+                  intelligentVizResult: intelligentVizResult,
+                  hasVisualizationPlan: !!intelligentVizResult?.visualization_plan,
+                  visualizationPlanKeys: intelligentVizResult?.visualization_plan ? Object.keys(intelligentVizResult.visualization_plan) : null,
+                  layoutType: intelligentVizResult?.visualization_plan?.layout_type,
+                  temporalContext: intelligentVizResult?.visualization_plan?.temporal_context,
+                  temporalContextKeys: intelligentVizResult?.visualization_plan?.temporal_context ? Object.keys(intelligentVizResult.visualization_plan.temporal_context) : null,
+                  comparisonPeriods: intelligentVizResult?.visualization_plan?.temporal_context?.comparison_periods,
+                  comparisonPeriodsLength: intelligentVizResult?.visualization_plan?.temporal_context?.comparison_periods?.length,
+                  fullIntelligentVizResult: JSON.stringify(intelligentVizResult, null, 2)
+                });
 
                 console.log('🎨 Chart extraction debug:', {
                   visualizationResult: visualizationResult,
@@ -2155,8 +2178,8 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                   }))
                 });
 
-                // Create fallback chart ONLY if no visualization pipeline worked
-                if (stepResult.results.length > 0 && stepResult.charts.length === 0) {
+                // Create fallback chart ONLY if no visualization pipeline worked AND no intelligent viz
+                if (stepResult.results.length > 0 && stepResult.charts.length === 0 && !stepResult.intelligentVisualization) {
                   console.log('🎨 No charts found, creating fallback chart from execution data');
                   // Try to create a simple chart from the results
                   const results = stepResult.results;
@@ -2369,14 +2392,49 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                       return null;
                     })}
                     
-                    {/* Side-by-side layout for charts and tables - Only show when there's actual data */}
-                    {(stepResult.charts?.length > 0 || stepResult.results?.length > 0) && (
+                    {/* NEW: Intelligent Visualization - Use AdaptiveLayout Component */}
+                    {stepResult.intelligentVisualization && stepResult.intelligentVisualization.layout_type && (
+                      <div style={{ 
+                        marginBottom: '20px',
+                        background: '#ffffff',
+                        padding: '16px',
+                        borderRadius: '8px',
+                        border: '1px solid #e5e7eb',
+                        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)'
+                      }}>
+                        {/* Use AdaptiveLayout Component */}
+                        <AdaptiveLayout 
+                          plan={stepResult.intelligentVisualization} 
+                          data={stepResult.results || []}
+                        />
+                      </div>
+                    )}
+                    
+                    {/* Data table - Always show when there are results */}
+                    {stepResult.results && stepResult.results.length > 0 && (
+                      <div className="data-container" style={{ marginBottom: '20px' }}>
+                        <h5 className="section-header">
+                          📋 Data ({stepResult.results.length} rows)
+                        </h5>
+                        <div className="data-table-wrapper">
+                          <EnhancedTable 
+                            data={stepResult.results}
+                            title=""
+                            description=""
+                            maxHeight="320px"
+                          />
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Side-by-side layout for charts ONLY - Only show when NO intelligent visualization */}
+                    {!stepResult.intelligentVisualization && stepResult.charts?.length > 0 && (
                       <div className="results-grid-container" style={{ 
-                        display: stepResult.charts?.length > 0 && stepResult.results?.length > 0 ? 'grid' : 'block',
-                        gridTemplateColumns: stepResult.charts?.length > 0 && stepResult.results?.length > 0 ? '1fr 1fr' : '1fr',
+                        display: 'block',
+                        gridTemplateColumns: '1fr',
                       }}>
                         
-                        {/* Left side: Charts - Only show if there are actual charts */}
+                        {/* Charts - Only show if there are actual charts and NO intelligent viz */}
                         {stepResult.charts && stepResult.charts.length > 0 && (
                           <div className="chart-container">
                             <h5 className="section-header">
@@ -2683,23 +2741,6 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                                   </div>
                                 );
                               })}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Right side: Data Table - Only show if there are actual results */}
-                        {stepResult.results && stepResult.results.length > 0 && (
-                          <div className="data-container">
-                            <h5 className="section-header">
-                              📋 Data ({stepResult.results.length} rows)
-                            </h5>
-                            <div className="data-table-wrapper">
-                              <EnhancedTable 
-                                data={stepResult.results}
-                                title=""
-                                description=""
-                                maxHeight="320px"
-                              />
                             </div>
                           </div>
                         )}
@@ -3143,7 +3184,7 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
         {/* Chat History */}
         <div className="chat-history-section">
           <div className="chat-history-header">
-            <h3>Recent Conversations</h3>
+            <h3>Recent Analysis</h3>
             <div className="chat-history-buttons">
               <button 
                 className={`clear-chat-btn ${!activeConversation ? 'disabled' : ''}`}
@@ -3265,14 +3306,6 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
                       {formatTimestamp(conversation.last_activity)}
                     </span>
                   </div>
-                  
-                  {conversation.therapeutic_area && (
-                    <div className="therapeutic-tags">
-                      <span className="therapeutic-tag">
-                        {conversation.therapeutic_area}
-                      </span>
-                    </div>
-                  )}
                 </div>
               ))}
           </div>

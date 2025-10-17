@@ -578,22 +578,59 @@ async def agent_query(request: Request):
         print(f"🔍 Final plan_dict type: {type(plan_dict)}")
         print(f"🔍 Plan_dict keys: {list(plan_dict.keys()) if isinstance(plan_dict, dict) else 'Not a dict'}")
         
+        # ENHANCED DEBUG: Check context structure before serialization
+        if isinstance(plan_dict, dict) and 'context' in plan_dict:
+            print(f"\n{'='*80}")
+            print(f"🔍 DEBUG: Checking context before JSON serialization")
+            print(f"{'='*80}")
+            print(f"Context type: {type(plan_dict['context'])}")
+            print(f"Context keys: {list(plan_dict['context'].keys()) if isinstance(plan_dict['context'], dict) else 'Not a dict'}")
+            
+            if 'intelligent_visualization_planning' in plan_dict['context']:
+                print(f"✅ intelligent_visualization_planning found in context!")
+                ivp = plan_dict['context']['intelligent_visualization_planning']
+                print(f"   Type: {type(ivp)}")
+                if isinstance(ivp, dict):
+                    print(f"   Keys: {list(ivp.keys())}")
+                    if 'visualization_plan' in ivp:
+                        print(f"   ✅ Has visualization_plan")
+                        vp = ivp['visualization_plan']
+                        print(f"      Type: {type(vp)}")
+                        if isinstance(vp, dict):
+                            print(f"      Keys: {list(vp.keys())[:5]}...")  # First 5 keys
+            else:
+                print(f"❌ intelligent_visualization_planning NOT found in context")
+                print(f"   Available keys: {list(plan_dict['context'].keys())}")
+            print(f"{'='*80}\n")
+        
         # Apply conversion to prevent JSON serialization issues
         try:
             import json
             # Apply conversion to all data BEFORE testing JSON serialization
+            print("🔄 Converting non-serializable objects...")
             converted_plan_dict = _convert_non_serializable(plan_dict)
             
             # Test JSON serialization
+            print("🔄 Testing JSON serialization...")
             json_test = json.dumps(converted_plan_dict)
-            print("✅ JSON serialization test passed")
+            print(f"✅ JSON serialization test passed ({len(json_test)} chars)")
             plan_dict = converted_plan_dict  # Use the converted version
+            
+            # FINAL CHECK: Verify context still has intelligent_visualization_planning
+            if isinstance(plan_dict, dict) and 'context' in plan_dict:
+                if 'intelligent_visualization_planning' in plan_dict['context']:
+                    print(f"✅ FINAL CHECK: intelligent_visualization_planning still present after conversion")
+                else:
+                    print(f"❌ FINAL CHECK: intelligent_visualization_planning LOST during conversion!")
             
         except Exception as json_error:
             print(f"❌ JSON serialization still failed after conversion: {json_error}")
+            import traceback
+            traceback.print_exc()
             # This should not happen if our conversion is working properly
             return JSONResponse(status_code=500, content={"error": f"JSON serialization error: {json_error}"})
             
+        print(f"📤 Sending response to frontend with {len(plan_dict)} top-level keys")
         return JSONResponse(content=plan_dict)
     except Exception as e:
         report_error("agent_query", str(e))
@@ -603,9 +640,12 @@ def _convert_non_serializable(obj):
     """Convert non-JSON-serializable objects to serializable ones"""
     import numpy as np
     from decimal import Decimal
+    import datetime
     
     if isinstance(obj, Decimal):
         return float(obj)
+    elif isinstance(obj, (datetime.date, datetime.datetime)):
+        return obj.isoformat()
     elif isinstance(obj, set):
         return list(obj)
     elif isinstance(obj, np.ndarray):
@@ -620,7 +660,12 @@ def _convert_non_serializable(obj):
     elif isinstance(obj, np.floating):
         return float(obj)
     elif isinstance(obj, dict):
-        return {k: _convert_non_serializable(v) for k, v in obj.items()}
+        # Convert both keys AND values - keys might be Decimals too!
+        return {
+            _convert_non_serializable(k) if not isinstance(k, (str, int, float, bool, type(None))) else k: 
+            _convert_non_serializable(v) 
+            for k, v in obj.items()
+        }
     elif isinstance(obj, list):
         return [_convert_non_serializable(item) for item in obj]
     elif isinstance(obj, tuple):

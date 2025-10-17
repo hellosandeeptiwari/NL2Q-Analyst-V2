@@ -9,6 +9,7 @@ interface ProgressStep {
   startTime?: number;
   endTime?: number;
   progress?: number;
+  description?: string;  // Added for showing task details (e.g., email recipients)
 }
 
 interface ProgressIndicatorProps {
@@ -114,6 +115,10 @@ const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
               
               <div className="step-content">
                 <div className="step-name">{step.name}</div>
+                
+                {step.description && step.status === 'completed' && (
+                  <div className="step-description">{step.description}</div>
+                )}
                 
                 {step.status === 'running' && stepProgress > 0 && (
                   <div className="step-progress">

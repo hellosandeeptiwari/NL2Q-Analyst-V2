@@ -27,6 +27,15 @@ except ImportError:
     INTELLIGENT_PLANNING_AVAILABLE = False
     print("⚠️ Intelligent Query Planning not available - using legacy table selection")
 
+# Import Intelligent Visualization Planner
+try:
+    from backend.agents.visualization_planner import VisualizationPlanner
+    VISUALIZATION_PLANNER_AVAILABLE = True
+    print("✅ Intelligent Visualization Planner loaded")
+except ImportError:
+    VISUALIZATION_PLANNER_AVAILABLE = False
+    print("⚠️ Visualization Planner not available - using basic chart generation")
+
 # Global reference to progress callback - will be set by main.py
 _progress_callback = None
 
@@ -103,9 +112,11 @@ class TaskType(Enum):
     QUERY_GENERATION = "query_generation"
     VALIDATION = "validation"
     EXECUTION = "execution"
+    INTELLIGENT_VISUALIZATION_PLANNING = "intelligent_visualization_planning"  # NEW: LLM-driven viz planning
     PYTHON_GENERATION = "python_generation"
     VISUALIZATION_BUILDER = "visualization_builder"
     USER_INTERACTION = "user_interaction"
+    EMAIL_AGENT = "email_agent"
 
 @dataclass
 @dataclass
@@ -471,6 +482,16 @@ class DynamicAgentOrchestrator:
                 cost_factor=0.2,
                 reliability_score=0.88,
                 specialized_domains=["chart_execution", "plotly", "matplotlib", "rendering"]
+            ),
+            
+            "email_agent": AgentCapability(
+                agent_name="email_agent",
+                description="Sends analysis results, data, and visualizations via email",
+                input_types=["analysis_summary", "query_results", "charts", "recipient_emails"],
+                output_types=["email_status", "delivery_confirmation", "error_details"],
+                cost_factor=0.1,
+                reliability_score=0.95,
+                specialized_domains=["email", "reporting", "communication", "sharing"]
             )
         }
     
@@ -484,6 +505,27 @@ class DynamicAgentOrchestrator:
         # ENHANCED: Get intelligent planning context from Pinecone schema intelligence
         schema_context = ""
         follow_up_context = ""
+        temporal_context = ""
+        
+        # 🕒 ENHANCED TEMPORAL INTELLIGENCE: Detect temporal query patterns
+        temporal_intent = self._detect_temporal_query_intent(user_query)
+        if temporal_intent['is_temporal_query']:
+            print(f"⏰ Temporal query detected: {temporal_intent['temporal_patterns']}")
+            temporal_context = f"""
+
+⏰ TEMPORAL QUERY INTELLIGENCE DETECTED:
+- Query involves time-based analysis: {', '.join(temporal_intent['temporal_patterns'])}
+- Time period: {temporal_intent.get('time_period', 'Not specified')}
+- Comparison type: {temporal_intent.get('comparison_type', 'Not specified')}
+- Aggregation period: {temporal_intent.get('aggregation_period', 'Not specified')}
+
+TEMPORAL PLANNING GUIDANCE:
+- Ensure schema_discovery identifies date/time columns and their characteristics
+- Query generation should leverage temporal columns for time-based filtering and aggregation
+- Consider using date functions (YEAR(), MONTH(), DATE_TRUNC()) based on aggregation period
+- For trend analysis, ORDER BY temporal column and consider window functions
+- For comparisons, use LAG/LEAD window functions or self-joins for period-over-period analysis
+"""
         
         # Get intelligent schema context for better planning decisions
         intelligent_context = await self._get_intelligent_planning_context(user_query)
@@ -553,7 +595,7 @@ FOLLOW-UP PLANNING LOGIC:
         
         planning_prompt = f"""You are an intelligent **Query Orchestrator** for pharmaceutical data analysis. You plan the sequence of tasks needed to fulfill the user's request and output them as a structured JSON plan.
 
-USER QUERY: "{user_query}"{schema_context}{follow_up_context}
+USER QUERY: "{user_query}"{schema_context}{temporal_context}{follow_up_context}
 
 === ROLE & GOAL ===
 You are a highly reliable planning agent ("brilliant new analyst") that:
@@ -591,39 +633,69 @@ Available capabilities:
      * "show chart of this data" → visualization_builder only (reuse previous SQL)
      * "explain that result" → interpretation only
 5. **FOLLOW-UP DATA VALIDATION:**
-   - If follow-up requests chart/visualization BUT no actual data available from previous queries
-   - Fall back to complete workflow: schema_discovery → query_generation → execution → python_generation → visualization_builder
-   - Look for "PREVIOUS QUERY RESULTS" section - if missing or empty, treat as new query
+   - ⚠️ **CRITICAL**: Even if previous data exists, if the query is IDENTICAL or very similar to previous query, ALWAYS run full workflow
+   - Previous query results shown are only SAMPLES (5-10 rows), not complete datasets
+   - For identical queries: schema_discovery → query_generation → execution (ALWAYS get fresh data!)
+   - Only skip database execution for truly analytical follow-ups like "explain that", "show insights", "what does this mean"
 6. For follow-up queries about "this/that/above data" requesting visualization:
-   - If previous query context available, you may need to re-run similar SQL first
-   - Then add python_generation → visualization_builder for the chart request
+   - If user explicitly references "above/this/that data" AND it's NOT the same query → use existing data
+   - Otherwise, run complete workflow to get fresh full dataset
 7. For follow-up data clarification (no visualization request):
-   - Focus on refined query_generation without visualization steps
+   - If query is DIFFERENT (filtering, sorting, grouping) → run complete workflow
+   - Only reuse data for pure analytical questions about existing results
 
 **WORKFLOW PATTERNS:**
 8. Simple data retrieval → schema_discovery → query_generation → execution
-9. EXPLICIT visualization → schema_discovery → query_generation → execution → python_generation → visualization_builder
+9. EXPLICIT visualization → schema_discovery → query_generation → execution
 10. **CRITICAL: When schema intelligence is available (INTELLIGENT SCHEMA CONTEXT provided), NEVER use user_interaction**
 11. Queries with schema intelligence → schema_discovery → query_generation → execution (skip user_interaction)
 12. Only use user_interaction if NO schema intelligence and query is completely unclear
-11. **FOLLOW-UP insight generation** → python_generation ONLY (NO schema_discovery)
-12. **FOLLOW-UP visualization WITH data** → python_generation → visualization_builder ONLY (reuse context)
-13. **FOLLOW-UP visualization WITHOUT data** → schema_discovery → query_generation → execution → python_generation → visualization_builder (complete workflow)
-14. **FOLLOW-UP data clarification** → query_generation → execution ONLY (refine previous query)=== CRITICAL CONSTRAINTS ===
+13. **IDENTICAL or SIMILAR queries** → schema_discovery → query_generation → execution (ALWAYS get fresh full data!)
+14. **FOLLOW-UP analytical questions** (e.g., "explain that", "insights") → python_generation ONLY (use existing data)
+15. **FOLLOW-UP with explicit data reference** (e.g., "chart the above") → python_generation ONLY (use existing data)
+16. **DEFAULT for any data query** → schema_discovery → query_generation → execution (get fresh data)
+
+**EMAIL SENDING INTELLIGENCE:**
+15. **EMAIL DETECTION**: Add email_agent ONLY if user explicitly requests email/mail/send results:
+   - Keywords: "email", "send", "mail", "share via email", "email to", "send to"
+   - Email pattern: user provides email addresses (john@example.com, user@domain.com)
+   - Email is ALWAYS the LAST step - simply append email_agent to the end of your normal workflow
+16. **EMAIL WORKFLOW** (ADD email_agent as final step):
+   - If normal workflow is: schema_discovery → query_generation → execution
+   - Then with email, add: ... → execution → email_agent
+   - If with visualization: ... → visualization_builder → email_agent
+   - DON'T repeat earlier steps - just ADD email_agent at the end!
+17. **EMAIL VALIDATION**: Only add email_agent if recipient email addresses are mentioned or implied
+
+=== CRITICAL CONSTRAINTS ===
 - NO hardcoded visualization steps unless user explicitly asks for charts/graphs/plots
 - Use conversation context to understand follow-up intent
 - Always output structured JSON — NO natural language commentary outside the JSON
 - Let the LLM (you) decide based on query intent, not keywords
+- 🚨 **NO DUPLICATE TASKS**: Each task_type should appear ONLY ONCE in the plan
 
-=== OUTPUT FORMAT ===
-Output ONLY a JSON array of task objects, each with `task_id` and `task_type`, in execution order. Example:
-
+=== DUPLICATE PREVENTION RULES ===
+❌ WRONG (has duplicate query_generation):
 [
   {{"task_id": "1_schema_discovery", "task_type": "schema_discovery"}},
   {{"task_id": "2_query_generation", "task_type": "query_generation"}},
-  {{"task_id": "3_execution", "task_type": "execution"}}
+  {{"task_id": "3_execution", "task_type": "execution"}},
+  {{"task_id": "4_query_generation", "task_type": "query_generation"}},  ← DUPLICATE!
+  {{"task_id": "5_email_agent", "task_type": "email_agent"}}
 ]
 
+✅ CORRECT (each task_type appears once):
+[
+  {{"task_id": "1_schema_discovery", "task_type": "schema_discovery"}},
+  {{"task_id": "2_query_generation", "task_type": "query_generation"}},
+  {{"task_id": "3_execution", "task_type": "execution"}},
+  {{"task_id": "4_email_agent", "task_type": "email_agent"}}
+]
+
+=== OUTPUT FORMAT ===
+Output ONLY a JSON array of task objects, each with `task_id` and `task_type`, in execution order.
+
+⚠️  VERIFY: Scan your output and ensure each task_type appears EXACTLY ONCE.
 No explanations or extra text."""
         
         try:
@@ -836,10 +908,61 @@ No explanations or extra text."""
                 if isinstance(tasks_data, list):
                     for i, task in enumerate(tasks_data):
                         print(f"  Task {i+1}: {task}")
+                    
+                    # 🚨 CRITICAL: Check for duplicates in o3-mini response BEFORE conversion
+                    task_types_in_plan = [task.get('task_type') for task in tasks_data if task.get('task_type')]
+                    duplicate_types = [t for t in task_types_in_plan if task_types_in_plan.count(t) > 1]
+                    
+                    if duplicate_types:
+                        print(f"\n⚠️  ⚠️  ⚠️  WARNING: o3-mini returned DUPLICATE task types!")
+                        print(f"🚨 Duplicate types found: {set(duplicate_types)}")
+                        print(f"📋 Full task type list: {task_types_in_plan}")
+                        print(f"🔧 These duplicates will be removed during conversion to AgentTask objects")
+                        print(f"💡 This suggests the o3-mini prompt may need refinement\n")
                 
                 if isinstance(tasks_data, list) and len(tasks_data) > 0:
                     print(f"✅ o3-mini planning successful: {len(tasks_data)} tasks")
-                    return self._convert_to_agent_tasks(tasks_data, user_query)
+                    converted_tasks = self._convert_to_agent_tasks(tasks_data, user_query)
+                    
+                    # CRITICAL FIX: Add intelligent visualization planning task after o3-mini plan
+                    if VISUALIZATION_PLANNER_AVAILABLE and converted_tasks:
+                        # Check if there's an execution, python_generation, OR visualization_builder task
+                        has_execution = any(task.task_type == TaskType.EXECUTION for task in converted_tasks)
+                        has_python_gen = any(task.task_type == TaskType.PYTHON_GENERATION for task in converted_tasks)
+                        has_viz_builder = any(task.task_type == TaskType.VISUALIZATION_BUILDER for task in converted_tasks)
+                        
+                        # Add intelligent viz planning for ANY data-producing task (execution, python_generation, or viz_builder)
+                        if has_execution or has_python_gen or has_viz_builder:
+                            print("🎨 Adding intelligent visualization planning task to o3-mini plan")
+                            next_task_id = len(converted_tasks) + 1
+                            
+                            # Determine dependencies based on what tasks exist
+                            if has_execution:
+                                # NEW query with execution - depend on execution task
+                                dependencies = [task.task_id for task in converted_tasks if task.task_type == TaskType.EXECUTION]
+                                input_source = "from_execution"
+                            elif has_python_gen:
+                                # Follow-up query with python_generation - depend on python_generation task
+                                dependencies = [task.task_id for task in converted_tasks if task.task_type == TaskType.PYTHON_GENERATION]
+                                input_source = "from_python_generation"
+                            else:
+                                # Follow-up query with viz_builder - depend on python_generation (fallback)
+                                dependencies = [task.task_id for task in converted_tasks if task.task_type == TaskType.PYTHON_GENERATION]
+                                input_source = "from_python_generation"
+                            
+                            viz_task = AgentTask(
+                                task_id=f"{next_task_id}_intelligent_viz_planning",
+                                task_type=TaskType.INTELLIGENT_VISUALIZATION_PLANNING,
+                                input_data={"results": input_source, "original_query": user_query},
+                                required_output={"visualization_plan": "comprehensive_viz_plan"},
+                                constraints={"llm_driven": True},
+                                dependencies=dependencies
+                            )
+                            converted_tasks.append(viz_task)
+                            print(f"✅ Intelligent visualization planning task added (ID: {viz_task.task_id})")
+                            print(f"   Dependencies: {dependencies}")
+                    
+                    return converted_tasks
                 else:
                     print(f"❌ Invalid task data structure from o3-mini")
                     print(f"📊 Data: {tasks_data}")
@@ -919,6 +1042,7 @@ No explanations or extra text."""
         """Convert JSON task data to AgentTask objects"""
         print(f"🔄 Converting {len(tasks_data)} tasks to AgentTask objects...")
         tasks = []
+        seen_task_types = set()  # Track task types to prevent duplicates
         
         for i, task_data in enumerate(tasks_data):
             print(f"📋 Processing task {i+1}: {task_data}")
@@ -943,6 +1067,14 @@ No explanations or extra text."""
                     print(f"  📋 Valid task types: {[t.value for t in TaskType]}")
                     continue
                 
+                # DEDUPLICATION: Skip duplicate task types (except python_generation which can appear multiple times)
+                if task_type in seen_task_types and task_type != TaskType.PYTHON_GENERATION:
+                    print(f"  ⚠️ Duplicate task type '{task_type.value}' detected - skipping")
+                    print(f"  💡 Already have: {[t.value for t in seen_task_types]}")
+                    continue
+                
+                seen_task_types.add(task_type)
+                
                 task = AgentTask(
                     task_id=task_id,
                     task_type=task_type,
@@ -959,7 +1091,7 @@ No explanations or extra text."""
                 print(f"  🔍 Task data: {task_data}")
                 continue
         
-        print(f"✅ Successfully converted {len(tasks)} out of {len(tasks_data)} tasks")
+        print(f"✅ Successfully converted {len(tasks)} out of {len(tasks_data)} tasks (removed {len(tasks_data) - len(tasks)} duplicates)")
         return tasks
     
     async def _get_intelligent_planning_context(self, user_query: str) -> str:
@@ -1003,6 +1135,15 @@ No explanations or extra text."""
                         context_parts.append(f"   Available columns: {', '.join(columns[:10])}")  # Show first 10 columns
                         if len(columns) > 10:
                             context_parts.append(f"   ... and {len(columns) - 10} more columns")
+                    
+                    # 🕒 ENHANCED: Add temporal intelligence detection
+                    temporal_info = self._detect_temporal_columns(table_details.get('columns', []))
+                    if temporal_info['has_temporal']:
+                        context_parts.append(f"   ⏰ Temporal columns detected: {', '.join(temporal_info['temporal_columns'])}")
+                        if temporal_info['supports_time_series']:
+                            context_parts.append(f"   📈 Supports time-series analysis (granularity: {temporal_info['granularities']})")
+                        if temporal_info['fiscal_periods']:
+                            context_parts.append(f"   📅 Contains fiscal period data")
                     
                     # Add business context if available
                     if table_details and table_details.get('description'):
@@ -1179,12 +1320,29 @@ Be intelligent but concise. Focus on actionable database insights."""
             )
         ]
         
-        # Add visualization tasks only if needed
-        if needs_visualization:
-            print("📊 Adding Python generation and visualization builder tasks based on query intent")
+        # NEW: Always add intelligent visualization planning after execution (if available)
+        if VISUALIZATION_PLANNER_AVAILABLE:
+            print("🎨 Adding intelligent visualization planning task (LLM-driven)")
             tasks.append(
                 AgentTask(
-                    task_id="7_python_generation",
+                    task_id="7_intelligent_viz_planning",
+                    task_type=TaskType.INTELLIGENT_VISUALIZATION_PLANNING,
+                    input_data={"results": "from_task_6", "original_query": user_query},
+                    required_output={"visualization_plan": "comprehensive_viz_plan"},
+                    constraints={"llm_driven": True},
+                    dependencies=["6_query_execution"]
+                )
+            )
+        else:
+            print("⚠️ Intelligent visualization planner not available - skipping")
+        
+        # Add legacy visualization tasks only if needed (now with adjusted IDs)
+        if needs_visualization:
+            print("📊 Adding legacy Python generation and visualization builder tasks")
+            next_task_id = len(tasks) + 1
+            tasks.append(
+                AgentTask(
+                    task_id=f"{next_task_id}_python_generation",
                     task_type=TaskType.PYTHON_GENERATION,
                     input_data={"results": "from_task_6", "original_query": user_query, "schema_context": "from_task_1"},
                     required_output={"python_code": "generated_python_code", "analysis_plan": "code_explanation"},
@@ -1192,18 +1350,19 @@ Be intelligent but concise. Focus on actionable database insights."""
                     dependencies=["6_query_execution"]
                 )
             )
+            next_task_id += 1
             tasks.append(
                 AgentTask(
-                    task_id="8_visualization_builder",
+                    task_id=f"{next_task_id}_visualization_builder",
                     task_type=TaskType.VISUALIZATION_BUILDER,
-                    input_data={"python_code": "from_task_7", "results": "from_task_6", "original_query": user_query},
+                    input_data={"python_code": f"from_task_{next_task_id-1}", "results": "from_task_6", "original_query": user_query},
                     required_output={"charts": "interactive_charts", "summary": "narrative_summary", "chart_metadata": "visualization_info"},
                     constraints={"interactive": True, "safe_execution": True},
-                    dependencies=["7_python_generation"]
+                    dependencies=[f"{next_task_id-1}_python_generation"]
                 )
             )
         else:
-            print("📋 Skipping visualization - query appears to be simple data retrieval")
+            print("📋 Skipping legacy visualization - query appears to be simple data retrieval")
         
         print(f"✅ Created dynamic plan with {len(tasks)} tasks (visualization: {needs_visualization})")
         return tasks
@@ -1269,15 +1428,28 @@ Be intelligent but concise. Focus on actionable database insights."""
                             tasks.extend(missing_tasks)
                             total_tasks = len(tasks)
                     
-                    # Broadcast task completion
-                    await async_broadcast_progress({
+                    # Broadcast task completion with description (if available)
+                    progress_data = {
                         "stage": "task_completed",
                         "currentStep": task.task_id,
                         "stepName": task.task_type.value.replace('_', ' ').title(),
                         "completedSteps": len(completed_tasks),
                         "totalSteps": total_tasks,
                         "progress": (len(completed_tasks) / total_tasks) * 100
-                    })
+                    }
+                    
+                    # Add description from task result's summary field (e.g., email recipients)
+                    if isinstance(task_result, dict):
+                        print(f"🔍 Task result keys: {list(task_result.keys())}")
+                        if 'summary' in task_result:
+                            progress_data["description"] = task_result['summary']
+                            print(f"📝 Added description to progress: {task_result['summary'][:100]}...")
+                        else:
+                            print(f"⚠️  No 'summary' field in task result for {task.task_type.value}")
+                    else:
+                        print(f"⚠️  Task result is not a dict: {type(task_result)}")
+                    
+                    await async_broadcast_progress(progress_data)
                     
                 except Exception as e:
                     print(f"❌ Task {task.task_id} failed: {e}")
@@ -1337,10 +1509,14 @@ Be intelligent but concise. Focus on actionable database insights."""
             return await self._execute_query_generation(resolved_input)
         elif task.task_type == TaskType.EXECUTION:
             return await self._execute_query_execution(resolved_input)
+        elif task.task_type == TaskType.INTELLIGENT_VISUALIZATION_PLANNING:
+            return await self._execute_intelligent_visualization_planning(resolved_input)
         elif task.task_type == TaskType.PYTHON_GENERATION:
             return await self._execute_python_generation(resolved_input)
         elif task.task_type == TaskType.VISUALIZATION_BUILDER:
             return await self._execute_visualization_builder(resolved_input)
+        elif task.task_type == TaskType.EMAIL_AGENT:
+            return await self._execute_email_agent(resolved_input)
         else:
             raise ValueError(f"Unknown task type: {task.task_type}")
     
@@ -1353,8 +1529,10 @@ Be intelligent but concise. Focus on actionable database insights."""
             TaskType.USER_INTERACTION: "user_verifier",
             TaskType.QUERY_GENERATION: "query_builder",
             TaskType.EXECUTION: "query_executor",
+            TaskType.INTELLIGENT_VISUALIZATION_PLANNING: "visualization_planner",
             TaskType.PYTHON_GENERATION: "python_generator",
-            TaskType.VISUALIZATION_BUILDER: "visualization_builder"
+            TaskType.VISUALIZATION_BUILDER: "visualization_builder",
+            TaskType.EMAIL_AGENT: "email_agent"
         }
         return agent_mapping.get(task_type, "schema_discoverer")
     
@@ -2005,6 +2183,12 @@ Be intelligent but concise. Focus on actionable database insights."""
             # Discover available context
             available_context = self._gather_available_context(inputs)
             
+            # 🔍 DYNAMIC FILTER RESOLUTION: Query database for actual filter values
+            resolved_filters = await self._resolve_filter_values(query, available_context)
+            if resolved_filters:
+                available_context['resolved_filters'] = resolved_filters
+                print(f"✅ Resolved {len(resolved_filters)} filter(s) dynamically from database")
+            
             # Determine target tables
             confirmed_tables = await self._determine_target_tables(available_context, query)
             print(f"📊 Target tables: {confirmed_tables}")
@@ -2420,11 +2604,171 @@ Be intelligent but concise. Focus on actionable database insights."""
                         
                         # 🎯 INTELLIGENT DATA RETRIEVAL STRATEGIES - Progressive optimization for 8/10 score
                         if len(data) == 0:
-                            print(f"� INTELLIGENT RETRIEVAL: No rows returned, activating progressive optimization...")
+                            print(f"🔄 INTELLIGENT RETRIEVAL: No rows returned, activating progressive optimization...")
                             
-                            # 📊 Strategy 1: Intelligent WHERE clause analysis and optimization
+                            # 📊 Strategy 3: Multi-Table Preview - Show sample data from EACH filtered table (PRIORITY 1)
+                            print(f"🎯 Strategy 3 (Priority 1): Multi-table preview activation - analyzing filtered tables...")
+                            try:
+                                # Extract all tables from the original SQL query
+                                tables_with_filters = await self._extract_filtered_tables(sql_query)
+                                
+                                if tables_with_filters and len(tables_with_filters) > 0:
+                                    print(f"📋 Found {len(tables_with_filters)} table(s) with filters: {[t['table'] for t in tables_with_filters]}")
+                                    
+                                    # Collect preview data from each filtered table
+                                    multi_table_previews = []
+                                    total_preview_rows = 0
+                                    
+                                    for table_info in tables_with_filters:
+                                        table_name = table_info['table']
+                                        filters = table_info.get('filters', [])
+                                        
+                                        try:
+                                            # Build preview query for this table
+                                            # Get top 10 rows without filters to show what data exists
+                                            preview_query = f"SELECT TOP 10 * FROM {table_name}"
+                                            
+                                            print(f"🔍 Fetching preview from {table_name}...")
+                                            preview_result = await sql_runner.execute_query(preview_query, user_id=user_id)
+                                            
+                                            if preview_result and hasattr(preview_result, 'success') and preview_result.success:
+                                                preview_data = preview_result.data if hasattr(preview_result, 'data') and preview_result.data is not None else []
+                                                
+                                                if len(preview_data) > 0:
+                                                    multi_table_previews.append({
+                                                        'table_name': table_name,
+                                                        'data': preview_data,
+                                                        'row_count': len(preview_data),
+                                                        'columns': getattr(preview_result, 'columns', []) or [],
+                                                        'filters_applied': filters,
+                                                        'message': f"Sample data from {table_name} (filters were too restrictive)"
+                                                    })
+                                                    total_preview_rows += len(preview_data)
+                                                    print(f"✅ Retrieved {len(preview_data)} preview rows from {table_name}")
+                                                else:
+                                                    print(f"⚠️ No data in {table_name}")
+                                            else:
+                                                print(f"⚠️ Preview query failed for {table_name}")
+                                                
+                                        except Exception as table_error:
+                                            print(f"⚠️ Error fetching preview from {table_name}: {table_error}")
+                                            continue
+                                    
+                                    # If we successfully got preview data from at least one table
+                                    if multi_table_previews and total_preview_rows > 0:
+                                        print(f"✅ Strategy 3 success: Retrieved previews from {len(multi_table_previews)} table(s), {total_preview_rows} total rows")
+                                        
+                                        # Combine all preview data with clear table separation
+                                        combined_preview_data = []
+                                        table_summary = []
+                                        
+                                        for preview in multi_table_previews:
+                                            # Add table identifier to each row
+                                            for row in preview['data']:
+                                                row['_preview_table'] = preview['table_name']
+                                                row['_preview_message'] = preview['message']
+                                                combined_preview_data.append(row)
+                                            
+                                            table_summary.append({
+                                                'table': preview['table_name'],
+                                                'rows': preview['row_count'],
+                                                'filters': preview['filters_applied']
+                                            })
+                                        
+                                        return {
+                                            "results": combined_preview_data,
+                                            "row_count": total_preview_rows,
+                                            "execution_time": 0,
+                                            "metadata": {
+                                                "columns": [],  # Mixed columns from multiple tables
+                                                "was_sampled": True,
+                                                "job_id": None,
+                                                "multi_table_preview": True,
+                                                "preview_strategy": "multi_table_filtered_preview",
+                                                "tables_previewed": len(multi_table_previews),
+                                                "table_summary": table_summary,
+                                                "original_query": sql_query
+                                            },
+                                            "sql_executed": "MULTI_TABLE_PREVIEW_QUERIES",
+                                            "execution_attempt": attempt,
+                                            "status": "partial",
+                                            "warning": f"⚠️ No results matched your filters. Showing sample data from {len(multi_table_previews)} filtered table(s): {', '.join([p['table_name'] for p in multi_table_previews])}",
+                                            "table_previews": multi_table_previews  # Full preview details for each table
+                                        }
+                                    else:
+                                        print(f"⚠️ Strategy 3: No preview data retrieved from any table")
+                                else:
+                                    print(f"⚠️ Strategy 3: Could not extract filtered tables from query")
+                                    
+                            except Exception as multi_table_error:
+                                print(f"⚠️ Strategy 3 failed: {multi_table_error}")
+                                import traceback
+                                traceback.print_exc()
+                            
+                            # 🔗 Strategy 2: Intelligent JOIN analysis and single-table optimization (PRIORITY 2)
+                            if 'JOIN' in sql_query.upper():
+                                print(f"🧠 Strategy 2 (Priority 2): Intelligent JOIN analysis and optimization...")
+                                try:
+                                    # Smart table priority selection based on semantic analysis
+                                    primary_tables = ['Reporting_BI_PrescriberOverview', 'Reporting_BI_PrescriberProfile', 'Reporting_BI_NGD']
+                                    user_query_from_inputs = inputs.get('user_query', '').lower()
+                                    
+                                    # Intelligent table selection based on query semantics
+                                    selected_table = 'Reporting_BI_PrescriberOverview'  # Default
+                                    selected_columns = ['PrescriberName', 'TerritoryName', 'RegionName']  # Default
+                                    
+                                    # Context-aware table and column selection
+                                    if any(term in user_query_from_inputs for term in ['profile', 'detail', 'information']):
+                                        selected_table = 'Reporting_BI_PrescriberProfile'
+                                        selected_columns = ['PrescriberName', 'Specialty', 'StateProvinceName']
+                                    elif any(term in user_query_from_inputs for term in ['volume', 'prescription', 'ngd', 'activity']):
+                                        selected_table = 'Reporting_BI_NGD'
+                                        selected_columns = ['PrescriberName', 'ProductName', 'Volume']
+                                    elif any(term in user_query_from_inputs for term in ['territory', 'region', 'area']):
+                                        selected_table = 'Reporting_BI_PrescriberOverview'
+                                        selected_columns = ['PrescriberName', 'TerritoryName', 'RegionName', 'CallPlanName']
+                                    
+                                    # Build intelligent single-table query
+                                    intelligent_query = f"SELECT TOP 15 {', '.join(selected_columns)} FROM {selected_table}"
+                                    
+                                    # Add intelligent ORDER BY for meaningful results
+                                    if 'Volume' in selected_columns:
+                                        intelligent_query += " ORDER BY Volume DESC"
+                                    elif 'PrescriberName' in selected_columns:
+                                        intelligent_query += " ORDER BY PrescriberName"
+                                    
+                                    print(f"🔧 Intelligent table selection: {selected_table}")
+                                    print(f"🔧 Context-aware query: {intelligent_query}")
+                                    
+                                    single_result = await sql_runner.execute_query(intelligent_query, user_id=user_id)
+                                    if single_result and hasattr(single_result, 'success') and single_result.success:
+                                        single_data = single_result.data if hasattr(single_result, 'data') and single_result.data is not None else []
+                                        if len(single_data) > 0:
+                                            print(f"✅ Strategy 2 success: {len(single_data)} rows from intelligent table selection")
+                                            return {
+                                                "results": single_data,
+                                                "row_count": len(single_data),
+                                                "execution_time": getattr(single_result, 'execution_time', 0) or 0,
+                                                "metadata": {
+                                                    "columns": getattr(single_result, 'columns', []) or [],
+                                                    "was_sampled": getattr(single_result, 'was_sampled', False),
+                                                    "job_id": getattr(single_result, 'job_id', None),
+                                                    "intelligent_fallback": True,
+                                                    "optimization_strategy": "intelligent_table_selection",
+                                                    "selected_table": selected_table,
+                                                    "context_keywords": [term for term in ['profile', 'volume', 'territory'] if term in user_query_from_inputs],
+                                                    "original_query": sql_query
+                                                },
+                                                "sql_executed": intelligent_query,
+                                                "execution_attempt": attempt,
+                                                "status": "completed"
+                                            }
+                                except Exception as single_table_error:
+                                    print(f"⚠️ Strategy 2 failed: {single_table_error}")
+                                    
+                            # 📊 Strategy 1: Intelligent WHERE clause analysis and optimization (PRIORITY 3)
                             if 'WHERE' in sql_query.upper():
-                                print(f"� Strategy 1: Removing WHERE clause...")
+                                print(f"📋 Strategy 1 (Priority 3): Removing WHERE clause...")
                                 try:
                                     # Create a simpler query without WHERE clause
                                     base_query = sql_query.split('WHERE')[0].strip()
@@ -2516,7 +2860,7 @@ Be intelligent but concise. Focus on actionable database insights."""
                                                     "context_keywords": [term for term in ['profile', 'volume', 'territory'] if term in user_query_from_inputs],
                                                     "original_query": sql_query
                                                 },
-                                                "sql_executed": single_table_query,
+                                                "sql_executed": intelligent_query,
                                                 "execution_attempt": attempt,
                                                 "status": "completed"
                                             }
@@ -3885,6 +4229,121 @@ Focus on catching issues that would cause runtime errors or produce incorrect vi
                 "status": "failed"
             }
 
+    async def _execute_intelligent_visualization_planning(self, inputs: Dict) -> Dict[str, Any]:
+        """
+        NEW: LLM-driven intelligent visualization planning
+        Analyzes query and data to create comprehensive, adaptive visualization specifications
+        """
+        try:
+            print("\n" + "="*80)
+            print("🎨 ===== INTELLIGENT VISUALIZATION PLANNING =====")
+            print("="*80)
+            
+            # Check if planner is available
+            print(f"📦 Visualization Planner available: {VISUALIZATION_PLANNER_AVAILABLE}")
+            if not VISUALIZATION_PLANNER_AVAILABLE:
+                print("⚠️ Visualization Planner not available - skipping intelligent planning")
+                return {"status": "skipped", "reason": "planner_unavailable"}
+            
+            user_query = inputs.get('original_query', '')
+            print(f"📊 Planning visualization for: '{user_query[:60]}...'")
+            
+            print(f"\n🔍 DEBUGGING INPUTS:")
+            print(f"   - All input keys: {list(inputs.keys())}")
+            print(f"   - Looking for execution results...")
+            
+            # Get execution results - check both execution AND python_generation
+            exec_result = self._find_task_result_by_type(inputs, "execution")
+            
+            print(f"   - exec_result from _find_task_result_by_type: {exec_result is not None}")
+            if exec_result:
+                print(f"   - exec_result keys: {list(exec_result.keys())}")
+                print(f"   - exec_result['results'] length: {len(exec_result.get('results', []))}")
+            
+            # CRITICAL FIX: For follow-up queries, also check python_generation results
+            if not exec_result or not exec_result.get("results"):
+                print("🔍 No execution results, checking python_generation...")
+                python_gen_result = self._find_task_result_by_type(inputs, "python_generation")
+                
+                print(f"   - python_gen_result: {python_gen_result is not None}")
+                if python_gen_result:
+                    print(f"   - python_gen_result keys: {list(python_gen_result.keys())}")
+                    print(f"   - python_gen_result['data'] length: {len(python_gen_result.get('data', []))}")
+                
+                if python_gen_result and python_gen_result.get("data"):
+                    print(f"✅ Found python_generation data: {len(python_gen_result.get('data', []))} rows")
+                    exec_result = {
+                        "results": python_gen_result.get("data", []),
+                        "metadata": {"columns": list(python_gen_result.get("data", [{}])[0].keys()) if python_gen_result.get("data") else []}
+                    }
+                else:
+                    print("⚠️ No execution or python_generation results found - skipping visualization planning")
+                    print(f"   - Inputs contained: {list(inputs.keys())}")
+                    return {"status": "skipped", "reason": "no_data"}
+            
+            results = exec_result.get("results", [])
+            columns = exec_result.get("metadata", {}).get("columns", [])
+            
+            print(f"📈 Data profile: {len(results)} rows, {len(columns)} columns")
+            
+            # Convert to pandas DataFrame for analysis
+            import pandas as pd
+            
+            if not results:
+                print("⚠️ Empty result set - skipping visualization planning")
+                return {"status": "skipped", "reason": "empty_data"}
+            
+            # Handle different data formats
+            if isinstance(results[0], dict):
+                df = pd.DataFrame(results)
+            elif isinstance(results[0], (list, tuple)):
+                df = pd.DataFrame(results, columns=columns if columns else None)
+            else:
+                print(f"⚠️ Unexpected data format: {type(results[0])}")
+                return {"status": "skipped", "reason": "invalid_data_format"}
+            
+            print(f"✅ DataFrame created: {df.shape}")
+            
+            # Initialize planner and generate plan
+            planner = VisualizationPlanner()
+            
+            print("🤖 Invoking LLM for visualization planning...")
+            viz_plan = await planner.plan_visualization(
+                query=user_query,
+                data=df,
+                metadata={
+                    "execution_time": exec_result.get("execution_time", 0),
+                    "sql_query": self._find_sql_query(inputs),
+                    "row_count": len(results)
+                }
+            )
+            
+            print(f"✅ Visualization plan created:")
+            print(f"   Layout: {viz_plan.layout_type}")
+            print(f"   KPIs: {len(viz_plan.kpis)}")
+            print(f"   Chart: {viz_plan.primary_chart.type} - {viz_plan.primary_chart.title}")
+            print(f"   Timeline: {viz_plan.timeline.enabled if viz_plan.timeline else False}")
+            print(f"   Breakdown: {viz_plan.breakdown.enabled if viz_plan.breakdown else False}")
+            
+            # Convert to dict for JSON serialization
+            plan_dict = planner.plan_to_dict(viz_plan)
+            
+            return {
+                "status": "completed",
+                "visualization_plan": plan_dict,
+                "summary": f"Created {viz_plan.layout_type} layout with {len(viz_plan.kpis)} KPIs"
+            }
+            
+        except Exception as e:
+            print(f"❌ Intelligent visualization planning failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                "status": "failed",
+                "error": str(e),
+                "fallback": "Using basic chart generation"
+            }
+
     async def _execute_python_generation(self, inputs: Dict) -> Dict[str, Any]:
         """Generate Python visualization code without executing it"""
         try:
@@ -4174,6 +4633,128 @@ Focus on catching issues that would cause runtime errors or produce incorrect vi
                 "error": error_msg,
                 "status": "failed"
             }
+
+    async def _execute_email_agent(self, inputs: Dict) -> Dict[str, Any]:
+        """Execute email sending with analysis results"""
+        try:
+            from agents.email_agent import EmailAgent
+            import re
+            
+            # Extract email recipients from user query
+            original_query = inputs.get('original_query', '')
+            email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+            recipients = re.findall(email_pattern, original_query)
+            
+            if not recipients:
+                return {
+                    "error": "No recipient email addresses found in the query",
+                    "status": "failed",
+                    "message": "Please provide recipient email addresses (e.g., john@example.com)"
+                }
+            
+            print(f"📧 Preparing to send email to: {', '.join(recipients)}")
+            
+            # Gather analysis data from previous tasks
+            execution_result = self._find_task_result_by_type(inputs, "execution")
+            visualization_result = self._find_task_result_by_type(inputs, "visualization_builder")
+            python_result = self._find_task_result_by_type(inputs, "python_generation")
+            query_result = self._find_task_result_by_type(inputs, "query_generation")
+            
+            # Prepare email content
+            data = None
+            charts = None
+            sql_query = None
+            
+            if execution_result and execution_result.get('results'):
+                data = execution_result['results']
+                print(f"📊 Including {len(data)} rows of data")
+            
+            if visualization_result and visualization_result.get('charts'):
+                charts = visualization_result['charts']
+                print(f"📈 Including {len(charts)} charts")
+            
+            if query_result and query_result.get('sql'):
+                sql_query = query_result['sql']
+                print(f"💾 Including SQL query")
+            
+            # Generate analysis summary
+            analysis_summary = self._generate_email_summary(original_query, data, charts, sql_query)
+            
+            # Send email
+            email_agent = EmailAgent()
+            email_result = email_agent.send_analysis_email(
+                recipients=recipients,
+                subject=f"Analysis Results: {original_query[:50]}...",
+                analysis_summary=analysis_summary,
+                data=data,
+                charts=charts,
+                sql_query=sql_query
+            )
+            
+            # Create user-friendly summary for UI display (always show recipients)
+            recipient_list = ', '.join(recipients)
+            data_summary = f"{len(data)} rows" if data else "no data"
+            charts_summary = f"{len(charts)} chart(s)" if charts else "no charts"
+            
+            if email_result.get('status') == 'success':
+                print(f"✅ Email sent successfully to {len(recipients)} recipient(s)")
+                
+                return {
+                    "status": "success",
+                    "recipients": recipients,
+                    "message": f"Analysis results successfully emailed to {', '.join(recipients)}",
+                    "summary": f"📧 Email sent to: {recipient_list}\n📊 Content: {data_summary}, {charts_summary}",
+                    "email_details": email_result
+                }
+            else:
+                # Email failed - show error and intended recipients
+                error = email_result.get('error') or email_result.get('message') or 'Unknown error'
+                error_short = error[:80] + '...' if len(error) > 80 else error
+                print(f"❌ Email sending failed: {error}")
+                
+                return {
+                    "status": "failed",
+                    "error": error,
+                    "recipients": recipients,
+                    "summary": f"❌ Email failed: {error_short}\n📧 Intended for: {recipient_list}\n📊 Would have sent: {data_summary}, {charts_summary}"
+                }
+                
+        except Exception as e:
+            error_msg = f"Email agent error: {str(e)}"
+            print(f"❌ Email agent failed: {error_msg}")
+            
+            # Try to extract recipients for error summary
+            try:
+                import re
+                email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+                recipients = re.findall(email_pattern, inputs.get('original_query', ''))
+                recipient_info = f"\n📧 Intended recipients: {', '.join(recipients)}" if recipients else ""
+            except:
+                recipient_info = ""
+            
+            return {
+                "error": error_msg,
+                "status": "failed",
+                "summary": f"❌ Email sending failed: {str(e)[:100]}{recipient_info}"
+            }
+    
+    def _generate_email_summary(self, query: str, data: List[Dict], charts: List, sql_query: str) -> str:
+        """Generate a summary for the email"""
+        summary_parts = [f"Query: {query}"]
+        
+        if data:
+            summary_parts.append(f"Retrieved {len(data)} records from the database")
+            if data:
+                columns = list(data[0].keys()) if data else []
+                summary_parts.append(f"Columns: {', '.join(columns)}")
+        
+        if charts:
+            summary_parts.append(f"Generated {len(charts)} visualization(s)")
+        
+        if sql_query:
+            summary_parts.append("SQL query is included in the email")
+        
+        return "\n".join(summary_parts)
 
     def _generate_python_from_chart_spec(self, chart_spec, data: List[Dict]) -> str:
         """Generate Python code from chart specification"""
@@ -4974,11 +5555,10 @@ WRONG Examples (DO NOT USE):
             "- Explain in comments why full temporal analysis cannot be performed",
             "",
             "🎯 INTELLIGENT COLUMN INTERPRETATION:",
-            "- TirosintTargetFlag = 'Y' means prescribers targeted for Tirosint product",
-            "- Flag columns use 'Y'/'N' values, not 0/1 integers",
-            "- 'Patients with Tirosint target flag' means prescribers with TirosintTargetFlag = 'Y'",
             "- Be creative and intelligent with column name interpretation",
             "- Use semantic understanding to map concepts to available columns",
+            "- Filter values are automatically resolved from the database (check for 'DYNAMICALLY RESOLVED FILTER VALUES' section)",
+            "- Always use the exact filter values provided in the resolved filters section",
             "",
             f"Generate precise SQL that leverages the schema intelligence above and STRICTLY follows {db_engine.upper().replace('-', ' ')} syntax rules.",
             f"IMPORTANT: Always generate SQL - use intelligent interpretation of available columns.",
@@ -5243,6 +5823,69 @@ WRONG Examples (DO NOT USE):
                 import traceback
                 traceback.print_exc()
             
+            # Build context object for frontend compatibility
+            context = {}
+            
+            print(f"\n{'='*80}")
+            print(f"🔍 DEBUG: Building context for frontend")
+            print(f"{'='*80}")
+            print(f"📋 Total task results to process: {len(results)}")
+            print(f"📋 Task IDs: {list(results.keys())}")
+            
+            # Map task results to frontend expected structure
+            for task_id, task_result in results.items():
+                print(f"\n🔍 Processing task: {task_id}")
+                print(f"   Type: {type(task_result)}")
+                if isinstance(task_result, dict):
+                    print(f"   Keys: {list(task_result.keys())}")
+                
+                if 'intelligent_viz_planning' in task_id:
+                    # Map intelligent visualization planning to expected location
+                    context['intelligent_visualization_planning'] = task_result
+                    print(f"✅ Mapped intelligent viz planning to context.intelligent_visualization_planning")
+                    print(f"   Status: {task_result.get('status', 'unknown')}")
+                    if 'visualization_plan' in task_result:
+                        print(f"   Has visualization_plan: YES")
+                        print(f"   Layout type: {task_result['visualization_plan'].get('layout_type', 'unknown')}")
+                    else:
+                        print(f"   ⚠️  Has visualization_plan: NO")
+                elif 'query_generation' in task_id and isinstance(task_result, dict):
+                    # Map SQL query
+                    if 'sql_query' in task_result:
+                        context['generated_sql'] = task_result['sql_query']
+                        print(f"✅ Mapped SQL query to context.generated_sql")
+                elif 'execution' in task_id and isinstance(task_result, dict):
+                    # Map query results
+                    if 'results' in task_result:
+                        context['query_results'] = {
+                            'data': task_result['results'],
+                            'columns': task_result.get('columns', [])
+                        }
+                        # Also provide data at top level for backward compatibility
+                        context['data'] = task_result['results']
+                        print(f"✅ Mapped execution results to context.query_results")
+                        print(f"   Rows: {len(task_result['results'])}")
+            
+            print(f"\n{'='*80}")
+            print(f"📊 FINAL CONTEXT STRUCTURE:")
+            print(f"{'='*80}")
+            print(f"Context keys: {list(context.keys())}")
+            if 'intelligent_visualization_planning' in context:
+                print(f"✅ intelligent_visualization_planning: PRESENT")
+                viz_plan = context['intelligent_visualization_planning']
+                if isinstance(viz_plan, dict):
+                    print(f"   Keys: {list(viz_plan.keys())}")
+                    if 'visualization_plan' in viz_plan:
+                        print(f"   visualization_plan keys: {list(viz_plan['visualization_plan'].keys())}")
+            else:
+                print(f"❌ intelligent_visualization_planning: MISSING")
+            print(f"{'='*80}\n")
+            
+            # If no specific mappings found, preserve all results
+            if not context:
+                context = results
+                print(f"⚠️  No context mappings found, using raw results")
+            
             return {
                 "plan_id": plan_id,
                 "user_query": user_query,
@@ -5250,7 +5893,9 @@ WRONG Examples (DO NOT USE):
                 "estimated_execution_time": f"{len(tasks) * 2 if tasks_created else 2}s",
                 "tasks": [{"task_type": task.task_type.value, "agent": "dynamic"} for task in tasks] if tasks_created else [{"task_type": workflow_decision['workflow_type'], "agent": "dynamic"}],
                 "status": "completed" if "error" not in results else "failed",
-                "results": results
+                "context": context,
+                "results": results,  # Keep raw results for debugging
+                "progress": 1.0  # 100% complete
             }
             
         except Exception as e:
@@ -5824,6 +6469,310 @@ Respond with exactly one word: insights or visualization"""
                 "error": f"Data reuse workflow failed: {e}",
                 "status": "failed"
             }
+    
+    def _detect_temporal_columns(self, columns: List[str]) -> Dict[str, Any]:
+        """
+        Detect temporal columns and their characteristics for intelligent query planning
+        Returns temporal intelligence to enhance planning context
+        """
+        temporal_info = {
+            'has_temporal': False,
+            'temporal_columns': [],
+            'supports_time_series': False,
+            'granularities': set(),
+            'fiscal_periods': False,
+            'temporal_contexts': []
+        }
+        
+        if not columns:
+            return temporal_info
+        
+        # Temporal column name patterns
+        date_patterns = ['date', 'timestamp', 'datetime', 'time', 'year', 'month', 'quarter', 'week', 'day']
+        fiscal_patterns = ['fiscal', 'fy', 'fq', 'fm']
+        time_series_patterns = ['transaction', 'created', 'modified', 'recorded', 'period', 'reported']
+        
+        for col_name in columns:
+            col_lower = col_name.lower() if isinstance(col_name, str) else str(col_name).lower()
+            
+            # Check if it's a temporal column
+            is_temporal = any(pattern in col_lower for pattern in date_patterns)
+            
+            if is_temporal:
+                temporal_info['has_temporal'] = True
+                temporal_info['temporal_columns'].append(col_name)
+                
+                # Determine granularity
+                if any(term in col_lower for term in ['year', 'yyyy', 'yr', 'annual']):
+                    temporal_info['granularities'].add('year')
+                elif any(term in col_lower for term in ['quarter', 'qtr', 'q1', 'q2', 'q3', 'q4']):
+                    temporal_info['granularities'].add('quarter')
+                elif any(term in col_lower for term in ['month', 'mm', 'mon', 'monthly']):
+                    temporal_info['granularities'].add('month')
+                elif any(term in col_lower for term in ['week', 'wk', 'weekly']):
+                    temporal_info['granularities'].add('week')
+                elif any(term in col_lower for term in ['day', 'dd', 'daily', 'date']):
+                    temporal_info['granularities'].add('day')
+                elif 'timestamp' in col_lower or 'datetime' in col_lower:
+                    temporal_info['granularities'].add('hour')
+                
+                # Check for fiscal periods
+                if any(pattern in col_lower for pattern in fiscal_patterns):
+                    temporal_info['fiscal_periods'] = True
+                
+                # Check if supports time-series
+                if any(pattern in col_lower for pattern in time_series_patterns):
+                    temporal_info['supports_time_series'] = True
+                
+                # Determine temporal context
+                if 'transaction' in col_lower:
+                    temporal_info['temporal_contexts'].append('transactions')
+                elif 'report' in col_lower or 'period' in col_lower:
+                    temporal_info['temporal_contexts'].append('reporting')
+                elif 'created' in col_lower:
+                    temporal_info['temporal_contexts'].append('creation')
+                elif 'modified' in col_lower or 'updated' in col_lower:
+                    temporal_info['temporal_contexts'].append('modification')
+        
+        # Convert granularities set to string for display
+        temporal_info['granularities'] = ', '.join(sorted(temporal_info['granularities'])) if temporal_info['granularities'] else 'day'
+        
+        return temporal_info
+    
+    def _detect_temporal_query_intent(self, user_query: str) -> Dict[str, Any]:
+        """
+        Detect temporal query patterns in user queries for intelligent planning
+        Returns temporal intent information to guide query generation
+        """
+        query_lower = user_query.lower()
+        
+        temporal_intent = {
+            'is_temporal_query': False,
+            'temporal_patterns': [],
+            'time_period': None,
+            'comparison_type': None,
+            'aggregation_period': None
+        }
+        
+        # Detect temporal query patterns
+        trend_keywords = ['trend', 'over time', 'change', 'growth', 'decline', 'increase', 'decrease', 'progression']
+        comparison_keywords = ['compare', 'vs', 'versus', 'difference', 'year-over-year', 'yoy', 'month-over-month', 'mom', 'quarter-over-quarter', 'qoq']
+        period_keywords = ['last', 'past', 'previous', 'recent', 'since', 'until', 'between', 'during', 'current', 'this']
+        
+        # Check for trend analysis
+        if any(keyword in query_lower for keyword in trend_keywords):
+            temporal_intent['is_temporal_query'] = True
+            temporal_intent['temporal_patterns'].append('trend_analysis')
+        
+        # Check for comparisons
+        if any(keyword in query_lower for keyword in comparison_keywords):
+            temporal_intent['is_temporal_query'] = True
+            temporal_intent['temporal_patterns'].append('temporal_comparison')
+            
+            # Identify comparison type
+            if 'year-over-year' in query_lower or 'yoy' in query_lower:
+                temporal_intent['comparison_type'] = 'year_over_year'
+            elif 'month-over-month' in query_lower or 'mom' in query_lower:
+                temporal_intent['comparison_type'] = 'month_over_month'
+            elif 'quarter-over-quarter' in query_lower or 'qoq' in query_lower:
+                temporal_intent['comparison_type'] = 'quarter_over_quarter'
+        
+        # Check for time period specifications
+        if any(keyword in query_lower for keyword in period_keywords):
+            temporal_intent['is_temporal_query'] = True
+            temporal_intent['temporal_patterns'].append('time_period_filter')
+            
+            # Extract specific time periods
+            if 'last 7 days' in query_lower or 'past week' in query_lower:
+                temporal_intent['time_period'] = 'last_7_days'
+            elif 'last 30 days' in query_lower or 'past month' in query_lower:
+                temporal_intent['time_period'] = 'last_30_days'
+            elif 'last 90 days' in query_lower or 'past quarter' in query_lower:
+                temporal_intent['time_period'] = 'last_90_days'
+            elif 'last year' in query_lower or 'past year' in query_lower:
+                temporal_intent['time_period'] = 'last_year'
+            elif 'year to date' in query_lower or 'ytd' in query_lower:
+                temporal_intent['time_period'] = 'year_to_date'
+            elif 'current month' in query_lower or 'this month' in query_lower:
+                temporal_intent['time_period'] = 'current_month'
+            elif 'current quarter' in query_lower or 'this quarter' in query_lower:
+                temporal_intent['time_period'] = 'current_quarter'
+        
+        # Detect aggregation period
+        aggregation_patterns = {
+            'daily': ['daily', 'per day', 'by day', 'each day'],
+            'weekly': ['weekly', 'per week', 'by week', 'each week'],
+            'monthly': ['monthly', 'per month', 'by month', 'each month'],
+            'quarterly': ['quarterly', 'per quarter', 'by quarter', 'each quarter'],
+            'yearly': ['yearly', 'annually', 'per year', 'by year', 'each year']
+        }
+        
+        for period, patterns in aggregation_patterns.items():
+            if any(pattern in query_lower for pattern in patterns):
+                temporal_intent['aggregation_period'] = period
+                temporal_intent['is_temporal_query'] = True
+                temporal_intent['temporal_patterns'].append(f'{period}_aggregation')
+                break
+        
+        return temporal_intent
+
+    async def _extract_filtered_tables(self, sql_query: str) -> List[Dict[str, Any]]:
+        """
+        Extract all tables that have filters applied in the WHERE clause.
+        Returns list of tables with their associated filters.
+        """
+        try:
+            import re
+            
+            tables_with_filters = []
+            
+            # Extract all table names from FROM and JOIN clauses
+            # Pattern matches: FROM table, FROM schema.table, FROM [table], JOIN table
+            table_pattern = r'(?:FROM|JOIN)\s+(?:\[?(\w+)\]?\.)?(?:\[?(\w+)\]?\.)?(?:\[?(\w+)\]?)'
+            table_matches = re.finditer(table_pattern, sql_query, re.IGNORECASE)
+            
+            all_tables = set()
+            for match in table_matches:
+                # Get the last non-None group (the actual table name)
+                table_name = match.group(3) or match.group(2) or match.group(1)
+                if table_name:
+                    all_tables.add(table_name)
+            
+            print(f"🔍 Extracted tables from SQL: {all_tables}")
+            
+            # Extract WHERE clause to analyze filters
+            where_match = re.search(r'WHERE\s+(.+?)(?:GROUP BY|ORDER BY|LIMIT|TOP|;|$)', sql_query, re.IGNORECASE | re.DOTALL)
+            
+            if where_match and all_tables:
+                where_clause = where_match.group(1).strip()
+                print(f"🔍 WHERE clause: {where_clause[:200]}...")
+                
+                # For each table, check if it has filters in WHERE clause
+                for table_name in all_tables:
+                    # Look for table_name.column or [table_name].column patterns in WHERE
+                    # or if WHERE clause exists for this query
+                    table_filter_pattern = rf'(?:{re.escape(table_name)}\.|\[{re.escape(table_name)}\]\.)'
+                    has_table_filters = re.search(table_filter_pattern, where_clause, re.IGNORECASE)
+                    
+                    # Extract specific filter conditions for this table
+                    filters = []
+                    if has_table_filters:
+                        # Extract column = value patterns for this table
+                        filter_pattern = rf'{re.escape(table_name)}\.(\w+)\s*[=<>!]+\s*[\'"]?([^\s\'"]+)[\'"]?'
+                        filter_matches = re.finditer(filter_pattern, where_clause, re.IGNORECASE)
+                        for fm in filter_matches:
+                            filters.append({
+                                'column': fm.group(1),
+                                'value': fm.group(2)
+                            })
+                    
+                    # If no table-specific filters found but WHERE exists, assume all tables are filtered
+                    if not has_table_filters and where_clause:
+                        # Generic filter applies to all tables
+                        filters.append({'column': 'generic', 'value': 'multiple_conditions'})
+                    
+                    if filters:
+                        tables_with_filters.append({
+                            'table': table_name,
+                            'filters': filters
+                        })
+                        print(f"✅ Table {table_name} has {len(filters)} filter(s)")
+            else:
+                # If WHERE exists but couldn't parse, include all tables
+                if 'WHERE' in sql_query.upper():
+                    for table_name in all_tables:
+                        tables_with_filters.append({
+                            'table': table_name,
+                            'filters': [{'column': 'unknown', 'value': 'filters_applied'}]
+                        })
+                    print(f"⚠️ WHERE clause exists but couldn't parse - including all {len(all_tables)} tables")
+            
+            return tables_with_filters
+            
+        except Exception as e:
+            print(f"⚠️ Error extracting filtered tables: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+    
+    async def _resolve_filter_values(self, query: str, context: Dict) -> Dict[str, List]:
+        """
+        Dynamically resolve filter values by querying the database.
+        No hardcoding - learns actual values from database.
+        """
+        try:
+            from tools.filter_value_resolver import get_filter_resolver
+            
+            # Get schema context
+            schema_context = await self._get_schema_context_for_resolver(context)
+            
+            if not schema_context:
+                return {}
+            
+            # Create resolver and resolve filters
+            resolver = get_filter_resolver(self.db_connector)
+            resolved_filters = resolver.resolve_filter_values(query, schema_context)
+            
+            if resolved_filters:
+                print(f"\n🎯 DYNAMICALLY RESOLVED FILTERS:")
+                for column, matches in resolved_filters.items():
+                    for match in matches:
+                        print(f"  • {column} = '{match.actual_value}' "
+                              f"(from user: '{match.user_value}', "
+                              f"confidence: {match.confidence:.0%}, "
+                              f"type: {match.match_type})")
+            
+            return resolved_filters
+            
+        except Exception as e:
+            print(f"⚠️ Filter resolution failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return {}
+    
+    async def _get_schema_context_for_resolver(self, context: Dict) -> Dict:
+        """Get schema information for filter resolver"""
+        try:
+            schema_context = {'tables': []}
+            
+            # Get tables from Pinecone if available
+            if hasattr(self, 'pinecone_store') and self.pinecone_store:
+                # Get recent query tables or all tables
+                table_names = context.get('relevant_tables', [])
+                
+                if not table_names:
+                    # Get top tables from recent queries
+                    recent_queries = context.get('recent_queries', [])
+                    if recent_queries:
+                        for q in recent_queries[-3:]:  # Last 3 queries
+                            table_names.extend(q.get('tables_used', []))
+                
+                # If still no tables, get all tables (expensive but works)
+                if not table_names:
+                    # Query database for table list
+                    result = self.db_connector.run("""
+                        SELECT TOP 20 TABLE_NAME 
+                        FROM INFORMATION_SCHEMA.TABLES 
+                        WHERE TABLE_TYPE = 'BASE TABLE'
+                        ORDER BY TABLE_NAME
+                    """)
+                    if not result.error:
+                        table_names = [row[0] for row in result.rows]
+                
+                # Get schema for each table
+                for table_name in table_names[:10]:  # Limit to 10 tables for performance
+                    table_info = await self.pinecone_store.get_table_details(table_name)
+                    if table_info:
+                        schema_context['tables'].append({
+                            'name': table_name,
+                            'columns': table_info.get('columns', [])
+                        })
+            
+            return schema_context
+            
+        except Exception as e:
+            print(f"⚠️ Schema context fetch failed: {e}")
+            return {'tables': []}
 
     async def _handle_data_enhancement(self, query: str, context: Dict, decision: Dict) -> Dict[str, Any]:
         """Handle queries that enhance/modify previous queries"""

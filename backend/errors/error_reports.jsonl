@@ -46,3 +46,4 @@
 {"error": "agent_query", "context": "DynamicAgentOrchestrator.process_query() got an unexpected keyword argument 'upstream_intent'", "user": "anonymous", "timestamp": "2025-09-12T09:48:55.160523"}
 {"error": "name 'refresh_schema_cache' is not defined", "context": {"nl": "show me top 5 tirosint sales by territory", "job_id": null}, "user": "anonymous", "timestamp": "2025-10-01T00:15:10.792267"}
 {"error": "name 'refresh_schema_cache' is not defined", "context": {"nl": "show me top 5 tirosint sales by territory", "job_id": null}, "user": "anonymous", "timestamp": "2025-10-01T00:15:53.052266"}
+{"error": "agent_query", "context": "Expecting property name enclosed in double quotes: line 1 column 2 (char 1)", "user": "anonymous", "timestamp": "2025-10-09T11:51:28.302433"}

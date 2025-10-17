@@ -94,14 +94,18 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .chat-history-header h3 {
-  font-size: 14px;
-  font-weight: 500;
-  color: #374151;
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
   margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .chat-history-buttons {
@@ -313,14 +317,20 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border: none;
   border-radius: 4px;
   background: transparent;
   cursor: pointer;
   transition: all 0.2s;
-  color: #6b7280;
+  color: #9ca3af;
+  padding: 0;
+}
+
+.action-btn svg {
+  width: 12px;
+  height: 12px;
 }
 
 .action-btn:hover {

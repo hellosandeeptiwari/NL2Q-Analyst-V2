@@ -229,6 +229,18 @@
   margin-top: 2px;
 }
 
+.step-description {
+  font-size: 0.85rem;
+  color: #475569;
+  margin-top: 6px;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-left: 3px solid #10b981;
+  border-radius: 4px;
+  white-space: pre-line;
+  line-height: 1.5;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
   .progress-indicator {
