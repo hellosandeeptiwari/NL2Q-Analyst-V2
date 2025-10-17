@@ -91,3 +91,6 @@ tmp/
 # *.csv
 # *.json
 # *.xlsx
+
+# Executive presentations (separate project)
+executive-presentations/
