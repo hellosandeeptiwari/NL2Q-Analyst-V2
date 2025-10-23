@@ -189,7 +189,8 @@ class PineconeSchemaVectorStore:
         table_schema = table_info.get("schema", "public")
         
         # 1. Comprehensive table overview chunk - includes all context
-        table_description = table_info.get("description", f"Table containing {table_name.replace('_', ' ').lower()} data")
+        table_comment = table_info.get("comment", "")  # Get table-level comment/description
+        table_description = table_comment if table_comment else table_info.get("description", f"Table containing {table_name.replace('_', ' ').lower()} data")
         columns = table_info.get("columns", {})
         column_names = list(columns.keys()) if columns else []
         column_types = [f"{col}: {info.get('data_type', 'unknown')}" for col, info in columns.items()] if columns else []
@@ -204,6 +205,7 @@ class PineconeSchemaVectorStore:
         relationship_summary = f"Primary Keys: {len(primary_keys)}, Foreign Keys: {len(foreign_keys)}"
         join_capability = "Can JOIN with other tables" if (primary_keys or foreign_keys) else "Limited JOIN capability"
         
+        # Build table overview with optional table comment
         table_chunk_content = f"""Table: {table_name}
 Schema: {table_schema}
 Description: {table_description}
@@ -250,7 +252,7 @@ Table Size: {"Large table" if isinstance(row_count, int) and row_count > 1000000
                 if not group_columns:
                     continue
                     
-                # Include ALL column details with PK/FK indicators - NO DATA LOSS
+                # Include ALL column details with PK/FK indicators AND COMMENTS - NO DATA LOSS
                 column_details = []
                 for col, info in group_columns.items():
                     col_detail = f"{col} ({info.get('data_type', 'unknown')})"
@@ -258,10 +260,16 @@ Table Size: {"Large table" if isinstance(row_count, int) and row_count > 1000000
                         col_detail += " 🔑 PRIMARY KEY"
                     if info.get('foreign_key_ref'):
                         col_detail += f" 🔗 FK→{info.get('foreign_key_ref')}"
+                    # Add column comment/description if available
+                    if info.get('comment'):
+                        col_detail += f" - {info.get('comment')}"
                     column_details.append(col_detail)
                 
+                # Build column details string (one per line for better readability)
+                column_details_text = '\n'.join([f"  • {detail}" for detail in column_details])
+                
                 group_content = f"""Table: {table_name} - {group_name} Columns
-{', '.join(column_details)}
+{column_details_text}
 Column Group: {group_name}
 Table Context: {table_description}
 Business Purpose: {self._infer_table_purpose(table_name, column_names)}"""
@@ -720,6 +728,7 @@ JOIN Data Type Compatibility:
                     {
                         "table_name": chunk.table_name,
                         "chunk_type": chunk.chunk_type,
+                        "content": chunk.content[:1000] if chunk.content else "",  # ← STORE CONTENT! (truncated to 1000 chars for Pinecone limit)
                         "metadata": json.dumps(chunk.metadata)
                     }
                 ))
@@ -762,67 +771,70 @@ JOIN Data Type Compatibility:
     async def _get_table_info(self, db_adapter, table_name: str) -> Dict[str, Any]:
         """Get table information with enhanced schema including PK/FK relationships"""
         try:
-            # Try to get enhanced schema information first
-            try:
-                from backend.db.enhanced_schema import get_enhanced_schema_cache
-                enhanced_schema = get_enhanced_schema_cache()
-                
-                if enhanced_schema and 'tables' in enhanced_schema:
-                    tables = enhanced_schema['tables']
-                    table_metadata = None
-                    
-                    # Find the table metadata in the list
-                    for table in tables:
-                        if table.get('name') == table_name:
-                            table_metadata = table
-                            break
-                    
-                    if table_metadata:
-                        # Convert enhanced table metadata to our format
-                        columns = {}
-                        for col in table_metadata.get('columns', []):
-                            col_name = col.get('name')
-                            if col_name:
-                                data_type = col.get('data_type', 'unknown')
-                                
-                                # Apply datatype inference if unknown
-                                if data_type == 'unknown':
-                                    data_type = self._infer_datatype_from_column_name(col_name, table_name)
-                                
-                                columns[col_name] = {
-                                    "data_type": data_type,
-                                    "nullable": col.get('nullable', True),
-                                    "description": col.get('description'),
-                                    "is_primary_key": col.get('is_primary_key', False),
-                                    "foreign_key_ref": col.get('foreign_key_ref')
-                                }
-                        
-                        # Include relationship information in the table metadata
-                        primary_keys = table_metadata.get('primary_keys', [])
-                        foreign_keys = table_metadata.get('foreign_keys', [])
-                        
-                        table_info = {
-                            "name": table_name,
-                            "schema": table_metadata.get('schema_name', get_database_config()['schema']),
-                            "table_type": table_metadata.get('table_type', 'table'),
-                            "columns": columns,
-                            "row_count": table_metadata.get('row_count'),
-                            "description": table_metadata.get('description') or f"Table containing {table_name.replace('_', ' ').lower()} data",
-                            "primary_keys": primary_keys,
-                            "foreign_keys": foreign_keys,
-                            "relationships": {
-                                "has_primary_keys": bool(primary_keys),
-                                "has_foreign_keys": bool(foreign_keys),
-                                "pk_count": len(primary_keys) if primary_keys else 0,
-                                "fk_count": len(foreign_keys) if foreign_keys else 0
-                            }
-                        }
-                        
-                        print(f"✅ Enhanced schema info for {table_name}: PKs={table_info['relationships']['pk_count']}, FKs={table_info['relationships']['fk_count']}")
-                        return table_info
-                        
-            except Exception as enhanced_error:
-                print(f"⚠️ Enhanced schema failed for {table_name}: {enhanced_error}, falling back to basic info")
+            # DISABLED: Enhanced schema cache doesn't include SQL comments from MS_Description
+            # Always use fresh database queries to get comments from extended_properties
+            # 
+            # # Try to get enhanced schema information first
+            # try:
+            #     from backend.db.enhanced_schema import get_enhanced_schema_cache
+            #     enhanced_schema = get_enhanced_schema_cache()
+            #     
+            #     if enhanced_schema and 'tables' in enhanced_schema:
+            #         tables = enhanced_schema['tables']
+            #         table_metadata = None
+            #         
+            #         # Find the table metadata in the list
+            #         for table in tables:
+            #             if table.get('name') == table_name:
+            #                 table_metadata = table
+            #                 break
+            #         
+            #         if table_metadata:
+            #             # Convert enhanced table metadata to our format
+            #             columns = {}
+            #             for col in table_metadata.get('columns', []):
+            #                 col_name = col.get('name')
+            #                 if col_name:
+            #                     data_type = col.get('data_type', 'unknown')
+            #                     
+            #                     # Apply datatype inference if unknown
+            #                     if data_type == 'unknown':
+            #                         data_type = self._infer_datatype_from_column_name(col_name, table_name)
+            #                     
+            #                     columns[col_name] = {
+            #                         "data_type": data_type,
+            #                         "nullable": col.get('nullable', True),
+            #                         "description": col.get('description'),
+            #                         "is_primary_key": col.get('is_primary_key', False),
+            #                         "foreign_key_ref": col.get('foreign_key_ref')
+            #                     }
+            #             
+            #             # Include relationship information in the table metadata
+            #             primary_keys = table_metadata.get('primary_keys', [])
+            #             foreign_keys = table_metadata.get('foreign_keys', [])
+            #             
+            #             table_info = {
+            #                 "name": table_name,
+            #                 "schema": table_metadata.get('schema_name', get_database_config()['schema']),
+            #                 "table_type": table_metadata.get('table_type', 'table'),
+            #                 "columns": columns,
+            #                 "row_count": table_metadata.get('row_count'),
+            #                 "description": table_metadata.get('description') or f"Table containing {table_name.replace('_', ' ').lower()} data",
+            #                 "primary_keys": primary_keys,
+            #                 "foreign_keys": foreign_keys,
+            #                 "relationships": {
+            #                     "has_primary_keys": bool(primary_keys),
+            #                     "has_foreign_keys": bool(foreign_keys),
+            #                     "pk_count": len(primary_keys) if primary_keys else 0,
+            #                     "fk_count": len(foreign_keys) if foreign_keys else 0
+            #                 }
+            #             }
+            #             
+            #             print(f"✅ Enhanced schema info for {table_name}: PKs={table_info['relationships']['pk_count']}, FKs={table_info['relationships']['fk_count']}")
+            #             return table_info
+            #             
+            # except Exception as enhanced_error:
+            #     print(f"⚠️ Enhanced schema failed for {table_name}: {enhanced_error}, falling back to basic info")
             
             # Fallback to basic table information if enhanced schema fails
             # Check if we should include row counts from environment settings
@@ -831,6 +843,18 @@ JOIN Data Type Compatibility:
             # FIXED: Use database adapter's get_table_schema method instead of hardcoded Snowflake DESCRIBE
             # This works for all database types (Snowflake, Azure SQL, PostgreSQL, etc.)
             print(f"🔍 Getting table schema for {table_name} using database adapter")
+            
+            # Get table metadata (includes comment if available)
+            tables_list = await db_adapter.get_table_names()
+            table_metadata = None
+            table_comment = None
+            for tbl in tables_list:
+                if tbl.get('name') == table_name:
+                    table_metadata = tbl
+                    table_comment = tbl.get('comment')
+                    break
+            
+            # Get column information with comments
             columns_task = asyncio.create_task(
                 db_adapter.get_table_schema(table_name)
             )
@@ -842,22 +866,29 @@ JOIN Data Type Compatibility:
                     asyncio.to_thread(db_adapter.run, f"SELECT COUNT(*) FROM [{table_name}]", False)
                 )
             
-            # get_table_schema returns a list of column names directly
+            # get_table_schema returns a list of column dictionaries with name, type, nullable, comment
             columns_list = await columns_task
             count_result = None
             if count_task:
                 count_result = await count_task
             
             columns = {}
-            if columns_list:  # columns_list is a simple list of column names
-                print(f"✅ Got {len(columns_list)} columns for {table_name}: {columns_list[:5]}...")
-                for col_name in columns_list:
-                    # Infer datatype from column name since we don't have detailed type info
-                    inferred_type = self._infer_datatype_from_column_name(col_name, table_name)
+            if columns_list:  # columns_list is now a list of dicts with 'name', 'type', 'nullable', 'comment'
+                print(f"✅ Got {len(columns_list)} columns for {table_name}")
+                for col_info in columns_list:
+                    col_name = col_info.get('name')
+                    col_type = col_info.get('type', 'unknown')
+                    col_comment = col_info.get('comment')  # Get column comment
+                    
+                    # Infer datatype from column name if type is unknown
+                    if col_type == 'unknown':
+                        col_type = self._infer_datatype_from_column_name(col_name, table_name)
+                    
                     columns[col_name] = {
-                        "data_type": inferred_type, 
-                        "nullable": True,  # Default assumption
-                        "description": None,
+                        "data_type": col_type,
+                        "nullable": col_info.get('nullable', True),
+                        "comment": col_comment,  # Store column comment
+                        "description": col_comment,  # Also set as description for compatibility
                         "is_primary_key": False,  # Unknown in basic mode
                         "foreign_key_ref": None   # Unknown in basic mode
                     }
@@ -872,13 +903,17 @@ JOIN Data Type Compatibility:
                 # If row count was requested but failed, set to "Unknown"
                 row_count = "Unknown"
             
+            # Use table comment if available, otherwise generate description
+            table_description = table_comment if table_comment else f"Table containing {table_name.replace('_', ' ').lower()} data"
+            
             return {
                 "name": table_name,
                 "schema": get_database_config()['schema'],
                 "table_type": "table",
                 "columns": columns,
                 "row_count": row_count,
-                "description": f"Table containing {table_name.replace('_', ' ').lower()} data",
+                "comment": table_comment,  # Include table comment
+                "description": table_description,  # Use comment as description
                 "primary_keys": [],  # Unknown in basic mode
                 "foreign_keys": [],  # Unknown in basic mode
                 "relationships": {
@@ -934,14 +969,36 @@ JOIN Data Type Compatibility:
             include_metadata=True
         )
         
-        table_details = {"table_name": table_name, "chunks": {}, "metadata": {}, "columns": []}
+        table_details = {
+            "table_name": table_name, 
+            "chunks": {}, 
+            "metadata": {}, 
+            "columns": [],
+            "table_comment": None,  # Extract table-level comment
+            "column_comments": {}   # Map of column_name -> comment
+        }
         all_columns = []
         
         for match in results.matches:
             chunk_type = match.metadata.get("chunk_type")
             metadata = match.metadata
             
-            # Process column_group chunks to extract actual columns
+            # CRITICAL: Extract chunk content which contains comments!
+            # Content is now stored directly in metadata (not nested)
+            chunk_content = metadata.get("content", "")
+            
+            # Extract table comment from table_overview chunk
+            if chunk_type == "table_overview" and chunk_content:
+                # Parse table description/comment from content
+                for line in chunk_content.split('\n'):
+                    if line.startswith('Description:'):
+                        table_comment = line.replace('Description:', '').strip()
+                        table_details["table_comment"] = table_comment
+                        table_details["metadata"]["description"] = table_comment
+                        print(f"📝 Extracted table comment: {table_comment[:100]}...")
+                        break
+            
+            # Process column_group chunks to extract columns AND their comments
             if chunk_type == "column_group":
                 # Check if columns are in direct metadata
                 columns = metadata.get("columns", [])
@@ -959,12 +1016,31 @@ JOIN Data Type Compatibility:
                 
                 if columns:
                     all_columns.extend(columns)
+                
+                # CRITICAL: Parse column comments from chunk content
+                if chunk_content:
+                    for line in chunk_content.split('\n'):
+                        if '•' in line or '-' in line:
+                            # Format: "  • ColumnName (type) - comment"
+                            parts = line.strip().lstrip('•').lstrip('-').strip().split(' - ', 1)
+                            if len(parts) == 2:
+                                col_with_type = parts[0].strip()
+                                comment = parts[1].strip()
+                                # Extract column name (before parenthesis)
+                                col_name = col_with_type.split('(')[0].strip()
+                                if col_name:
+                                    table_details["column_comments"][col_name] = comment
+                                    print(f"💬 Extracted comment for {col_name}: {comment[:50]}...")
             
-            table_details["chunks"][chunk_type] = {"metadata": metadata}
+            # Store chunk with both metadata AND content
+            table_details["chunks"][chunk_type] = {
+                "metadata": metadata,
+                "content": chunk_content  # ← NOW INCLUDES CONTENT!
+            }
         
         # Store all found columns
         table_details["columns"] = all_columns
-        # print(f"✅ Total columns found for {table_name}: {len(all_columns)} - {all_columns}")
+        print(f"✅ Total columns: {len(all_columns)}, Table comment: {'Yes' if table_details['table_comment'] else 'No'}, Column comments: {len(table_details['column_comments'])}")
         
         return table_details
 

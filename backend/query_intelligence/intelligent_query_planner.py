@@ -515,11 +515,35 @@ class IntelligentQueryPlanner:
         query_semantics: Dict[str, Any], 
         table_semantics: Dict[str, Any]
     ) -> float:
-        """Enhanced relevance scoring with multi-factor analysis"""
-        score = 0.0
-        total_weight = 0.0
+        """
+        Enhanced relevance scoring with multi-factor analysis.
         
-        # 🎯 1. Entity matching (highest weight) + Pharmaceutical Intelligence
+        🎯 CRITICAL: Pinecone score is the PRIMARY signal - it represents semantic similarity
+        from vector embeddings which already encodes deep understanding of table relevance.
+        Other factors should ENHANCE but NOT OVERRIDE the Pinecone score.
+        """
+        
+        # 🚀 CRITICAL: Use Pinecone score as base if available (HIGHEST PRIORITY)
+        pinecone_score = table_semantics.get('pinecone_score', 0.0)
+        
+        if pinecone_score > 0:
+            # Pinecone score is already a strong signal of semantic relevance
+            # Use it as the BASE score with 70% weight
+            base_score = pinecone_score
+            base_weight = 0.7
+            print(f"   🎯 Using Pinecone score {pinecone_score:.3f} as PRIMARY base signal (70% weight)")
+        else:
+            # No Pinecone score available, fall back to heuristic scoring
+            base_score = 0.0
+            base_weight = 0.0
+            print(f"   ⚠️ No Pinecone score available, using heuristic scoring only")
+        
+        # Additional heuristic scoring (30% weight) to enhance Pinecone score
+        heuristic_score = 0.0
+        heuristic_weight = 0.3
+        total_heuristic_weight = 0.0
+        
+        # 🎯 1. Entity matching (within heuristic scoring)
         entity_weight = 0.35
         entity_score = 0.0
         
@@ -548,8 +572,8 @@ class IntelligentQueryPlanner:
         if any(term in query_text for term in ['patient', 'prescriber', 'analysis']) and 'prescriber' in table_name_lower:
             entity_score = max(entity_score, 0.7)
         
-        score += entity_score * entity_weight
-        total_weight += entity_weight
+        heuristic_score += entity_score * entity_weight
+        total_heuristic_weight += entity_weight
         
         # 🎯 2. Table name semantic matching (high weight)
         name_weight = 0.25
@@ -558,8 +582,8 @@ class IntelligentQueryPlanner:
         name_matches = sum(1 for term in query_terms if term in table_name)
         if name_matches > 0:
             name_score = min(1.0, name_matches / max(len(query_terms), 1))
-            score += name_score * name_weight
-        total_weight += name_weight
+            heuristic_score += name_score * name_weight
+        total_heuristic_weight += name_weight
         
         # 🎯 3. Relationship pattern matching (medium weight)
         relationship_weight = 0.2
@@ -567,8 +591,8 @@ class IntelligentQueryPlanner:
             rel_overlap = len(set(query_semantics['relationships']) & set(table_semantics['relationship_types']))
             if rel_overlap > 0:
                 rel_score = rel_overlap / max(len(query_semantics['relationships']), 1)
-                score += rel_score * relationship_weight
-        total_weight += relationship_weight
+                heuristic_score += rel_score * relationship_weight
+        total_heuristic_weight += relationship_weight
         
         # 🎯 4. Data capability matching (medium weight)
         capability_weight = 0.15
@@ -580,8 +604,8 @@ class IntelligentQueryPlanner:
             
             if supports_aggregation or len(numeric_columns) > 0:
                 capability_score = 0.8 if supports_aggregation else 0.5
-                score += capability_score * capability_weight
-        total_weight += capability_weight
+                heuristic_score += capability_score * capability_weight
+        total_heuristic_weight += capability_weight
         
         # 🎯 5. Business context bonus (low weight but important)
         context_weight = 0.05
@@ -590,11 +614,20 @@ class IntelligentQueryPlanner:
         context_matches = sum(1 for term in query_context_terms if term in business_purpose)
         if context_matches > 0:
             context_score = min(1.0, context_matches / len(query_context_terms))
-            score += context_score * context_weight
-        total_weight += context_weight
+            heuristic_score += context_score * context_weight
+        total_heuristic_weight += context_weight
         
-        # Normalize and apply confidence scaling
-        final_score = score / total_weight if total_weight > 0 else 0.0
+        # Normalize heuristic score
+        normalized_heuristic = heuristic_score / total_heuristic_weight if total_heuristic_weight > 0 else 0.0
+        
+        # Combine Pinecone score (70%) with heuristic enhancements (30%)
+        if pinecone_score > 0:
+            final_score = (base_score * base_weight) + (normalized_heuristic * heuristic_weight)
+            print(f"   ✅ Combined score: {final_score:.3f} = Pinecone({base_score:.3f} × 70%) + Heuristic({normalized_heuristic:.3f} × 30%)")
+        else:
+            # No Pinecone score, use normalized heuristic only
+            final_score = normalized_heuristic
+            print(f"   ✅ Heuristic-only score: {final_score:.3f}")
         
         # 🚀 Confidence boost for high-quality matches
         if final_score > 0.7:
@@ -885,8 +918,11 @@ class IntelligentQueryPlanner:
             # Step 3: Get table metadata for optimized tables
             table_metadata = self._extract_table_metadata(context, optimized_tables)
             
-            # Step 4: Build comprehensive schema context
-            schema_context = self._build_schema_context(table_metadata, query_semantics)
+            # Step 4: Build comprehensive schema context with resolved filters
+            resolved_filters = context.get('resolved_filters', {})
+            print(f"🔍 DEBUG: resolved_filters extracted from context: {resolved_filters}")
+            schema_context = self._build_schema_context(table_metadata, query_semantics, resolved_filters)
+            print(f"🔍 DEBUG: schema_context after building: resolved_filters = {schema_context.get('resolved_filters')}")
             
             # Step 5: Generate optimized SQL with business logic understanding
             sql_result = await self._generate_intelligent_sql(
@@ -962,7 +998,8 @@ class IntelligentQueryPlanner:
                             real_columns.append({
                                 'column_name': col['column_name'],
                                 'data_type': col['data_type'],
-                                'is_nullable': col.get('is_nullable', True)
+                                'is_nullable': col.get('is_nullable', True),
+                                'description': col.get('comment')  # Include SQL comment as description
                             })
                         
                     except Exception as e:
@@ -1119,16 +1156,18 @@ class IntelligentQueryPlanner:
     def _build_schema_context(
         self, 
         table_metadata: Dict[str, Any], 
-        query_semantics: Dict[str, Any]
+        query_semantics: Dict[str, Any],
+        resolved_filters: Dict[str, Any] = None
     ) -> Dict[str, Any]:
-        """Build comprehensive schema context for query generation"""
+        """Build comprehensive schema context for query generation INCLUDING COMMENTS AND RESOLVED FILTERS"""
         
         schema_context = {
             'tables': {},
             'join_paths': [],
             'business_rules': [],
             'semantic_mappings': {},
-            'constraint_awareness': {}
+            'constraint_awareness': {},
+            'resolved_filters': resolved_filters or {}  # ✅ ADD RESOLVED FILTERS!
         }
         
         # Build table context
@@ -1140,14 +1179,24 @@ class IntelligentQueryPlanner:
             if not isinstance(semantic_profile, dict):
                 semantic_profile = {}
             
+            # ENHANCED: Extract table comment/description
+            table_description = metadata.get('table_info', {}).get('table_comment') or \
+                              metadata.get('business_context', {}).get('description') or \
+                              semantic_profile.get('business_purpose', '')
+            
             schema_context['tables'][table_name] = {
                 'columns': self._analyze_columns_for_generation(columns),
                 'primary_keys': self._identify_primary_keys(columns),
                 'foreign_keys': self._identify_foreign_keys(columns),
                 'business_purpose': semantic_profile.get('business_purpose', ''),
                 'domain_entities': semantic_profile.get('domain_entities', []),
-                'data_types': semantic_profile.get('data_types', [])
+                'data_types': semantic_profile.get('data_types', []),
+                'table_description': table_description  # ← ADD TABLE DESCRIPTION/COMMENT!
             }
+            
+            # 🎯 NEW: Enrich columns with sample values if they lack descriptions
+            if self.db_adapter:
+                self._enrich_columns_with_samples(table_name, schema_context['tables'][table_name])
         
         # Identify join paths between tables
         if len(table_metadata) > 1:
@@ -1159,7 +1208,7 @@ class IntelligentQueryPlanner:
         return schema_context
     
     def _analyze_columns_for_generation(self, columns: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Analyze columns with generation-specific metadata"""
+        """Analyze columns with generation-specific metadata INCLUDING COMMENTS"""
         
         analyzed_columns = []
         
@@ -1169,19 +1218,23 @@ class IntelligentQueryPlanner:
                 col_name = column
                 col_data_type = 'varchar'  # Default assumption
                 col_nullable = True
+                col_description = None  # No description for string-only columns
             elif isinstance(column, dict):
-                col_name = column.get('column_name', str(column))
+                col_name = column.get('column_name', column.get('name', str(column)))
                 col_data_type = column.get('data_type', 'varchar')
-                col_nullable = column.get('is_nullable', True)
+                col_nullable = column.get('is_nullable', column.get('nullable', True))
+                col_description = column.get('description')  # ← EXTRACT COMMENT/DESCRIPTION!
             else:
                 col_name = str(column)
                 col_data_type = 'varchar'
                 col_nullable = True
+                col_description = None
             
             col_analysis = {
                 'name': col_name,
                 'data_type': col_data_type,
                 'nullable': col_nullable,
+                'description': col_description,  # ← INCLUDE DESCRIPTION/COMMENT!
                 'semantic_type': self.schema_analyzer._classify_column_semantic_type(col_name),
                 'aggregatable': self._is_aggregatable_safe(col_data_type),
                 'filterable': True,  # Most columns can be filtered
@@ -1190,6 +1243,112 @@ class IntelligentQueryPlanner:
             analyzed_columns.append(col_analysis)
         
         return analyzed_columns
+    
+    def _enrich_columns_with_samples(self, table_name: str, table_context: Dict[str, Any]) -> None:
+        """
+        Enrich columns with sample values if they lack descriptions.
+        Focuses on categorical/text columns that might have coded values (like TimePeriod: 'C WK', 'C4 WK')
+        """
+        try:
+            columns = table_context.get('columns', [])
+            
+            for col in columns:
+                col_name = col.get('name')
+                col_description = col.get('description')
+                col_data_type = col.get('data_type', '').lower()
+                semantic_type = col.get('semantic_type', '').lower()
+                
+                # Only fetch samples for columns that:
+                # 1. Have NO description/comment
+                # 2. Are categorical (text/varchar) OR temporal
+                # 3. Are likely to have discrete values
+                should_fetch_samples = (
+                    not col_description  # No SQL comment
+                    and (
+                        'period' in col_name.lower() or
+                        'time' in col_name.lower() or
+                        'date' in col_name.lower() or
+                        'status' in col_name.lower() or
+                        'type' in col_name.lower() or
+                        'category' in col_name.lower() or
+                        'flag' in col_name.lower() or
+                        semantic_type in ['temporal', 'categorical', 'identifier']
+                    )
+                    and 'char' in col_data_type or 'text' in col_data_type or 'varchar' in col_data_type
+                )
+                
+                if should_fetch_samples:
+                    # Fetch sample values from database
+                    sample_values = self._fetch_column_samples(table_name, col_name, limit=10)
+                    
+                    if sample_values:
+                        # Add sample values to column metadata
+                        col['sample_values'] = sample_values
+                        print(f"   📊 Enriched {table_name}.{col_name} with {len(sample_values)} sample values: {sample_values[:5]}...")
+        
+        except Exception as e:
+            print(f"⚠️  Error enriching columns with samples for {table_name}: {e}")
+    
+    def _fetch_column_samples(self, table_name: str, column_name: str, limit: int = 10) -> List[str]:
+        """Fetch distinct sample values from a column"""
+        try:
+            if not self.db_adapter:
+                return []
+            
+            # Query for distinct values
+            sql = f"""
+                SELECT DISTINCT TOP {limit} [{column_name}]
+                FROM {table_name}
+                WHERE [{column_name}] IS NOT NULL
+                ORDER BY [{column_name}] DESC
+            """
+            
+            result = self.db_adapter.run(sql, dry_run=False)
+            
+            if result.error or not result.rows:
+                return []
+            
+            # Extract values and convert to strings
+            values = [str(row[0]) for row in result.rows if row[0] is not None]
+            return values
+        
+        except Exception as e:
+            print(f"⚠️  Error fetching samples for {table_name}.{column_name}: {e}")
+            return []
+    
+    def _format_sample_values_section(self, tables: Dict[str, Any]) -> str:
+        """
+        Format sample values section for LLM prompt.
+        Shows actual database values for columns that have sample_values in metadata.
+        This helps the LLM map natural language (e.g., 'current week') to database codes (e.g., 'C WK').
+        """
+        lines = []
+        lines.append("")
+        lines.append("SAMPLE VALUES FOR KEY COLUMNS:")
+        
+        has_samples = False
+        for table_name, table_analysis in tables.items():
+            columns = table_analysis.get('columns', [])
+            for col in columns:
+                if isinstance(col, dict):
+                    col_name = col.get('name', '')
+                    sample_values = col.get('sample_values', [])
+                    if sample_values:
+                        has_samples = True
+                        # Show up to 8 sample values
+                        samples_str = ', '.join([f"'{v}'" for v in sample_values[:8]])
+                        if len(sample_values) > 8:
+                            samples_str += f", ... ({len(sample_values)} total)"
+                        lines.append(f"  {table_name}.{col_name}: {samples_str}")
+        
+        if not has_samples:
+            lines.append("  (No sample values available)")
+        
+        lines.append("")
+        lines.append("USE SAMPLE VALUES: If user says 'current week' and TimePeriod has 'C WK', use 'C WK'")
+        lines.append("")
+        
+        return "\n".join(lines)
     
     def _is_aggregatable(self, column: Dict[str, Any]) -> bool:
         """Check if column can be used in aggregations"""
@@ -1414,7 +1573,7 @@ class IntelligentQueryPlanner:
             
             # Create comprehensive schema prompt from semantic analysis
             try:
-                schema_prompt = self._format_semantic_analysis_for_llm(semantic_analysis, query)
+                schema_prompt = self._format_semantic_analysis_for_llm(semantic_analysis, query, schema_context)
             except Exception as e:
                 import traceback
                 error_trace = traceback.format_exc()
@@ -1686,8 +1845,12 @@ class IntelligentQueryPlanner:
             print(f"🔍 DEBUG: About to join {len(prompt_parts)} prompt parts")
             
             # 🎯 DYNAMIC FILTER GUIDANCE: Use actual database values (no hardcoding!)
+            print(f"🔍 DEBUG: Checking for resolved_filters in schema_context...")
+            print(f"   schema_context keys: {list(schema_context.keys())}")
+            print(f"   resolved_filters in context: {schema_context.get('resolved_filters')}")
+            
             if schema_context.get('resolved_filters'):
-                from tools.filter_value_resolver import FilterValueResolver
+                from backend.tools.filter_value_resolver import FilterValueResolver
                 
                 resolved_filters = schema_context['resolved_filters']
                 print(f"✅ Adding {len(resolved_filters)} dynamically resolved filters to prompt")
@@ -2795,10 +2958,12 @@ INNER JOIN {secondary_table} t2 ON {join_condition};
                 real_name = real_col['column_name']
                 data_type = real_col.get('data_type', 'varchar')
                 is_nullable = real_col.get('is_nullable', True)
+                description = real_col.get('description')  # Preserve SQL comment
             elif isinstance(real_col, str):
                 real_name = real_col
                 data_type = 'varchar'
                 is_nullable = True
+                description = None
             else:
                 print(f"   ⚠️ Skipping unknown real column format: {type(real_col)} - {real_col}")
                 continue
@@ -2808,7 +2973,8 @@ INNER JOIN {secondary_table} t2 ON {join_condition};
             enhanced_col = {
                 'column_name': real_name,  # Use REAL column name
                 'data_type': data_type,
-                'is_nullable': is_nullable
+                'is_nullable': is_nullable,
+                'description': description  # Include SQL comment as description
             }
             
             # Try to find matching Pinecone intelligence
@@ -2931,7 +3097,7 @@ INNER JOIN {secondary_table} t2 ON {join_condition};
             }
         }
     
-    def _format_semantic_analysis_for_llm(self, semantic_analysis: Dict[str, Any], query: str) -> str:
+    def _format_semantic_analysis_for_llm(self, semantic_analysis: Dict[str, Any], query: str, schema_context: Dict[str, Any] = None) -> str:
         """Format complete semantic analysis for LLM prompt with query-intent driven intelligence"""
         
         # 🔧 CRITICAL FIX: Validate input types to prevent 'str' object has no attribute 'get' error
@@ -3165,10 +3331,20 @@ INNER JOIN {secondary_table} t2 ON {join_condition};
         for table_name, table_analysis in tables.items():
             prompt_parts.append(f"📋 TABLE: {table_name}")
             
-            # Add domain intelligence
+            # ENHANCED: Add table description/comment if available
+            table_description = None
             table_semantics = table_analysis.get('table_semantics', {})
-            domain = table_semantics.get('primary_domain', 'general')
-            entities = table_semantics.get('business_entities', [])
+            
+            # Try to get table description from multiple sources
+            if isinstance(table_semantics, dict):
+                table_description = table_semantics.get('description') or table_semantics.get('table_comment')
+            
+            if table_description:
+                prompt_parts.append(f"  💬 DESCRIPTION: {table_description}")
+            
+            # Add domain intelligence
+            domain = table_semantics.get('primary_domain', 'general') if isinstance(table_semantics, dict) else 'general'
+            entities = table_semantics.get('business_entities', []) if isinstance(table_semantics, dict) else []
             if domain != 'general' or entities:
                 prompt_parts.append(f"  🏢 DOMAIN: {domain} | ENTITIES: {', '.join(entities)}")
             
@@ -3191,9 +3367,11 @@ INNER JOIN {secondary_table} t2 ON {join_condition};
                         col_type = self._infer_datatype_from_column_name(col)
                         semantic_type = ''
                         is_key = False
+                        col_comment = None  # No comment for string-only columns
                     elif isinstance(col, dict):
                         col_name = col.get('name', str(col))
                         col_type = col.get('data_type', 'VARCHAR')
+                        col_comment = col.get('description')  # ← EXTRACT COMMENT/DESCRIPTION!
                         # 🔧 FIX DATATYPE DISCOVERY: If datatype is unknown, infer from column name
                         if col_type == 'unknown' or not col_type:
                             col_type = self._infer_datatype_from_column_name(col_name)
@@ -3205,6 +3383,7 @@ INNER JOIN {secondary_table} t2 ON {join_condition};
                         col_type = self._infer_datatype_from_column_name(str(col))
                         semantic_type = ''
                         is_key = False
+                        col_comment = None
                 except Exception as col_error:
                     print(f"⚠️ Error processing column {col}: {col_error}")
                     # Fallback: treat as string
@@ -3212,6 +3391,7 @@ INNER JOIN {secondary_table} t2 ON {join_condition};
                     col_type = 'VARCHAR'
                     semantic_type = ''
                     is_key = False
+                    col_comment = None
                 
                 # Simple relevance scoring based on query terms (no hardcoded patterns)
                 relevance_score = 0
@@ -3239,6 +3419,10 @@ INNER JOIN {secondary_table} t2 ON {join_condition};
                     col_desc += " 🔢 [CAN USE: SUM/AVG/MIN/MAX/arithmetic]"
                 elif is_text:
                     col_desc += " 📝 [TEXT - NO SUM/AVG! Use for: SELECT/WHERE/GROUP BY/COUNT only]"
+                
+                # ← ADD COMMENT/DESCRIPTION HERE!
+                if col_comment:
+                    col_desc += f" 💬 \"{col_comment}\""
                 
                 if semantic_type:
                     col_desc += f" [{semantic_type}]"
@@ -3305,9 +3489,11 @@ INNER JOIN {secondary_table} t2 ON {join_condition};
                 if len(text_cols) > 10:
                     prompt_parts.append(f"    ... and {len(text_cols) - 10} more text columns")
         
-        prompt_parts.append("")
+        # Add sample values section using helper method
+        sample_values_section = self._format_sample_values_section(tables)
+        prompt_parts.append(sample_values_section)
         
-        # �🔗 INTELLIGENT JOIN RECOMMENDATIONS
+        # INTELLIGENT JOIN RECOMMENDATIONS
         relationships = semantic_analysis.get('cross_table_relationships', {})
         if relationships and len(tables) > 1:
             prompt_parts.append("🔗 INTELLIGENT JOIN STRATEGY:")
@@ -3493,6 +3679,38 @@ INNER JOIN {secondary_table} t2 ON {join_condition};
         prompt_parts.append("10. ✅ Did I use TOP (not LIMIT) - Azure SQL syntax?")
         prompt_parts.append("11. ✅ Did I only use columns that exist in the specified tables?")
         prompt_parts.append("")
+        
+        # 🔧 CRITICAL: Inject dynamically resolved filter values from database
+        print(f"🔍 DEBUG: Checking for resolved_filters in schema_context...")
+        if schema_context:
+            print(f"   schema_context keys: {list(schema_context.keys())}")
+            print(f"   resolved_filters in context: {schema_context.get('resolved_filters')}")
+            
+            if schema_context.get('resolved_filters'):
+                from backend.tools.filter_value_resolver import FilterMatch
+                
+                resolved_filters = schema_context['resolved_filters']
+                print(f"✅ Adding {len(resolved_filters)} dynamically resolved filters to prompt")
+                prompt_parts.append("\n" + "=" * 80)
+                prompt_parts.append("🎯 DYNAMICALLY RESOLVED FILTER VALUES (USE THESE EXACT VALUES):")
+                prompt_parts.append("=" * 80)
+                prompt_parts.append("  The following filter values were resolved from the actual database:")
+                prompt_parts.append("  🚨 CRITICAL: Use the ACTUAL VALUES shown below, not the user's original terms!")
+                prompt_parts.append("")
+                for column_name, matches in resolved_filters.items():
+                    for match in matches:
+                        if match.confidence >= 0.8:
+                            prompt_parts.append(
+                                f"  ✅ {column_name} = '{match.actual_value}' "
+                                f"(from user: '{match.user_value}', confidence: {match.confidence:.0%}, type: {match.match_type})"
+                            )
+                prompt_parts.append("")
+                prompt_parts.append("  ⚠️  CRITICAL: Use the ACTUAL VALUES shown above, not the user's original terms!")
+                prompt_parts.append("=" * 80)
+                prompt_parts.append("")
+        else:
+            print("⚠️  No schema_context provided to _format_semantic_analysis_for_llm")
+        
         prompt_parts.append("🎯 NOW GENERATE: Executable SQL optimized for the query's semantic intent")
         prompt_parts.append("=" * 80)
         

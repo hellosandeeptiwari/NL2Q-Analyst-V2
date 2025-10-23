@@ -1,11 +1,915 @@
 [
   {
-    "nl": "\"Compare prescribers with PDRP flag enabled vs disabled, show the difference in TRX and NRX performance for Tirosint products, and calculate the impact of lunch & learn activities on prescription growth\"\n",
-    "sql": "WITH pdrp_metrics AS (\n    SELECT TOP 100\n        pp.[PDRPFlag],\n        SUM(TRY_CAST(pp.[TRX] AS DECIMAL(18,2))) AS TotalTRX,\n        SUM(pp.[NRX]) AS TotalNRX,\n        SUM(pp.[LunchLearn]) AS TotalLunchLearn\n    FROM dbo.Reporting_BI_PrescriberProfile pp\n    WHERE pp.[TirosintTargetFlag] = 'Y'\n    GROUP BY pp.[PDRPFlag]\n),\naverages AS (\n    SELECT\n        AVG(CAST(TotalTRX AS FLOAT)) AS AvgTRX,\n        AVG(CAST(TotalNRX AS FLOAT)) AS AvgNRX,\n        AVG(CAST(TotalLunchLearn AS FLOAT)) AS AvgLunchLearn\n    FROM pdrp_metrics\n)\nSELECT TOP 100\n    pm.[PDRPFlag],\n    pm.TotalTRX,\n    pm.TotalNRX,\n    pm.TotalLunchLearn,\n    (pm.TotalTRX - a.AvgTRX) AS TRXImpact,\n    (pm.TotalNRX - a.AvgNRX) AS NRXImpact\nFROM pdrp_metrics pm\nCROSS JOIN averages a\nORDER BY pm.TotalTRX DESC",
-    "job_id": "plan_8679954859491662748_conv_1",
+    "nl": "What is the total number of previous Synthroid prescriptions written in Territory 10006099?",
+    "sql": "SELECT TOP 100 \n    SUM(ISNULL([PreviousTRX], 0)) AS TotalPreviousSynthroidPrescriptions\nFROM dbo.Reporting_BI_TerritoryPerformanceSummary\nWHERE [TerritoryId] = '10006099'\n  AND [ProductGroupName] = 'Synthroid'\n  AND [ProductFamily] = 'Synthroid'",
+    "job_id": "plan_-1374180108094725287_conv_1",
     "user": "default_user",
-    "timestamp": "2025-10-10T16:06:59.945871",
+    "timestamp": "2025-10-23T10:36:05.448314",
     "results": [
       {
-        "PDRPFlag": "NO",
-        "TotalTRX": 
+        "TotalPreviousSynthroidPrescriptions": null
+      }
+    ],
+    "columns": [],
+    "row_count": 1
+  },
+  {
+    "nl": "Can you provide the sample summary data for the current week, focusing on my target accounts within overlay territories?",
+    "sql": "SELECT TOP 100 \n    [RegionName], \n    [TerritoryName], \n    [HcpName], \n    SUM([HcpCalls]) AS TotalHcpCalls, \n    SUM([SampleCalls]) AS TotalSampleCalls, \n    SUM([TotalSamples]) AS TotalSamples, \n    SUM([TotalNRX]) AS TotalNRX \nFROM dbo.Reporting_BI_Nrx_SampleSummary \nWHERE [TimePeriod] = 'Current Week' \n    AND [MyTarget] = 1 \n    AND [CNXTerritoryRole] = 'Overlay' \nGROUP BY [RegionName], [TerritoryName], [HcpName] \nORDER BY TotalNRX DESC",
+    "job_id": "plan_6501362751031775622_conv_1",
+    "user": "default_user",
+    "timestamp": "2025-10-23T10:38:50.175842",
+    "results": [
+      {
+        "AccountId": "                  ",
+        "RegionId": "100010",
+        "RegionName": "Northeast",
+        "TerritoryId": "10001001",
+        "TerritoryName": "Boston MA",
+        "HcpName": "AILEEN REN",
+        "SpecialtyDescription": "INTERNAL MEDICINE",
+        "HcpCalls": 0,
+        "TimePeriod": "Q1 2025",
+        "PDRPOptOut": "NO",
+        "SampleCalls": 0,
+        "Sample/NRX": 0,
+        "TotalSamples": 0,
+        "TotalNRX": 1,
+        "Samples/Call": 0,
+        "Tirosint Caps NRX": 1,
+        "Tirosint Caps Samples": 0,
+        "Tirosint Sol NRX": 0,
+        "Tirosint Sol Samples": 0,
+        "Flector NRX": 0,
+        "Flector Samples": 0,
+        "Licart NRX": 0,
+        "Licart Samples": 0,
+        "Sample/NQTY": 0,
+        "TotalNQTY": 1,
+        "Tirosint Caps NQTY": 1,
+        "Tirosint Sol NQTY": 0,
+        "Flector NQTY": 0,
+        "Licart NQTY": 0,
+        "Sample/NRX PDRP": "0",
+        "Total NRX PDRP": "1",
+        "Tirosint Caps NRX PDRP": "1",
+        "Tirosint Sol NRX PDRP": "0",
+        "Flector NRX PDRP": "0",
+        "Licart NRX PDRP": "0",
+        "Sample/NQTY PDRP": "0",
+        "Total NQTY PDRP": "1",
+        "Tirosint Caps NQTY PDRP": "1",
+        "Tirosint Sol NQTY PDRP": "0",
+        "Flector NQTY PDRP": "0",
+        "Licart NQTY PDRP": "0",
+        "Tirosint Caps Samples/Tirosint Caps NRX": 0,
+        "Tirosint Sol Samples/Tirosint Sol NRX": 0,
+        "Flector Samples/Flector NRX": 0,
+        "Licart Samples/Licart NRX": 0,
+        "Tirosint Caps Samples/Tirosint Caps NRX PDRP": "0",
+        "Tirosint Sol Samples/Tirosint Sol NRX PDRP": "0",
+        "Flector Samples/Flector NRX PDRP": "0",
+        "Licart Samples/Licart NRX PDRP": "0",
+        "Tirosint Caps Samples/Tirosint Caps NQTY": 0,
+        "Tirosint Sol Samples/Tirosint Sol NQTY": 0,
+        "Flector Samples/Flector NQTY": 0,
+        "Licart Samples/Licart NQTY": 0,
+        "Tirosint Caps Samples/Tirosint Caps NQTY PDRP": "0",
+        "Tirosint Sol Samples/Tirosint Sol NQTY PDRP": "0",
+        "Flector Samples/Flector NQTY PDRP": "0",
+        "Licart Samples/Licart NQTY PDRP": "0",
+        "SortingOrder": 4,
+        "MyTarget": 0,
+        "CNXTerritoryRole": "Core",
+        "BiInclude": null,
+        "_preview_table": "Reporting_BI_Nrx_SampleSummary",
+        "_preview_message": "Sample data from Reporting_BI_Nrx_SampleSummary (filters were too restrictive)"
+      },
+      {
+        "AccountId": "                  ",
+        "RegionId": "100010",
+        "RegionName": "Northeast",
+        "TerritoryId": "10001001",
+        "TerritoryName": "Boston MA",
+        "HcpName": "ALISON VALSKY",
+        "SpecialtyDescription": "NURSE PRACTITIONER",
+        "HcpCalls": 0,
+        "TimePeriod": "Q1 2025",
+        "PDRPOptOut": "NO",
+        "SampleCalls": 0,
+        "Sample/NRX": 0,
+        "TotalSamples": 0,
+        "TotalNRX": 0,
+        "Samples/Call": 0,
+        "Tirosint Caps NRX": 0,
+        "Tirosint Caps Samples": 0,
+        "Tirosint Sol NRX": 0,
+        "Tirosint Sol Samples": 0,
+        "Flector NRX": 0,
+        "Flector Samples": 0,
+        "Licart NRX": 0,
+        "Licart Samples": 0,
+        "Sample/NQTY": 0,
+        "TotalNQTY": 0,
+        "Tirosint Caps NQTY": 0,
+        "Tirosint Sol NQTY": 0,
+        "Flector NQTY": 0,
+        "Licart NQTY": 0,
+        "Sample/NRX PDRP": "0",
+        "Total NRX PDRP": "0",
+        "Tirosint Caps NRX PDRP": "0",
+        "Tirosint Sol NRX PDRP": "0",
+        "Flector NRX PDRP": "0",
+        "Licart NRX PDRP": "0",
+        "Sample/NQTY PDRP": "0",
+        "Total NQTY PDRP": "0",
+        "Tirosint Caps NQTY PDRP": "0",
+        "Tirosint Sol NQTY PDRP": "0",
+        "Flector NQTY PDRP": "0",
+        "Licart NQTY PDRP": "0",
+        "Tirosint Caps Samples/Tirosint Caps NRX": 0,
+        "Tirosint Sol Samples/Tirosint Sol NRX": 0,
+        "Flector Samples/Flector NRX": 0,
+        "Licart Samples/Licart NRX": 0,
+        "Tirosint Caps Samples/Tirosint Caps NRX PDRP": "0",
+        "Tirosint Sol Samples/Tirosint Sol NRX PDRP": "0",
+        "Flector Samples/Flector NRX PDRP": "0",
+        "Licart Samples/Licart NRX PDRP": "0",
+        "Tirosint Caps Samples/Tirosint Caps NQTY": 0,
+        "Tirosint Sol Samples/Tirosint Sol NQTY": 0,
+        "Flector Samples/Flector NQTY": 0,
+        "Licart Samples/Licart NQTY": 0,
+        "Tirosint Caps Samples/Tirosint Caps NQTY PDRP": "0",
+        "Tirosint Sol Samples/Tirosint Sol NQTY PDRP": "0",
+        "Flector Samples/Flector NQTY PDRP": "0",
+        "Licart Samples/Licart NQTY PDRP": "0",
+        "SortingOrder": 4,
+        "MyTarget": 0,
+        "CNXTerritoryRole": "Core",
+        "BiInclude": null,
+        "_preview_table": "Reporting_BI_Nrx_SampleSummary",
+        "_preview_message": "Sample data from Reporting_BI_Nrx_SampleSummary (filters were too restrictive)"
+      },
+      {
+        "AccountId": "001f200001pACntAAG",
+        "RegionId": "100010",
+        "RegionName": "Northeast",
+        "TerritoryId": "10001001",
+        "TerritoryName": "Boston MA",
+        "HcpName": "ANDREA HAAS",
+        "SpecialtyDescription": "ENDOCRINOLOGY, DIABETES & METABOLISM",
+        "HcpCalls": 1,
+        "TimePeriod": "Q1 2025",
+        "PDRPOptOut": "NO",
+        "SampleCalls": 0,
+        "Sample/NRX": 0,
+        "TotalSamples": 0,
+        "TotalNRX": 0,
+        "Samples/Call": 0,
+        "Tirosint Caps NRX": 0,
+        "Tirosint Caps Samples": 0,
+        "Tirosint Sol NRX": 0,
+        "Tirosint Sol Samples": 0,
+        "Flector NRX": 0,
+        "Flector Samples": 0,
+        "Licart NRX": 0,
+        "Licart Samples": 0,
+        "Sample/NQTY": 0,
+        "TotalNQTY": 0,
+        "Tirosint Caps NQTY": 0,
+        "Tirosint Sol NQTY": 0,
+        "Flector NQTY": 0,
+        "Licart NQTY": 0,
+        "Sample/NRX PDRP": "0",
+        "Total NRX PDRP": "0",
+        "Tirosint Caps NRX PDRP": "0",
+        "Tirosint Sol NRX PDRP": "0",
+        "Flector NRX PDRP": "0",
+        "Licart NRX PDRP": "0",
+        "Sample/NQTY PDRP": "0",
+        "Total NQTY PDRP": "0",
+        "Tirosint Caps NQTY PDRP": "0",
+        "Tirosint Sol NQTY PDRP": "0",
+        "Flector NQTY PDRP": "0",
+        "Licart NQTY PDRP": "0",
+        "Tirosint Caps Samples/Tirosint Caps NRX": 0,
+        "Tirosint Sol Samples/Tirosint Sol NRX": 0,
+        "Flector Samples/Flector NRX": 0,
+        "Licart Samples/Licart NRX": 0,
+        "Tirosint Caps Samples/Tirosint Caps NRX PDRP": "0",
+        "Tirosint Sol Samples/Tirosint Sol NRX PDRP": "0",
+        "Flector Samples/Flector NRX PDRP": "0",
+        "Licart Samples/Licart NRX PDRP": "0",
+        "Tirosint Caps Samples/Tirosint Caps NQTY": 0,
+        "Tirosint Sol Samples/Tirosint Sol NQTY": 0,
+        "Flector Samples/Flector NQTY": 0,
+        "Licart Samples/Licart NQTY": 0,
+        "Tirosint Caps Samples/Tirosint Caps NQTY PDRP": "0",
+        "Tirosint Sol Samples/Tirosint Sol NQTY PDRP": "0",
+        "Flector Samples/Flector NQTY PDRP": "0",
+        "Licart Samples/Licart NQTY PDRP": "0",
+        "SortingOrder": 4,
+        "MyTarget": 1,
+        "CNXTerritoryRole": "Core",
+        "BiInclude": true,
+        "_preview_table": "Reporting_BI_Nrx_SampleSummary",
+        "_preview_message": "Sample data from Reporting_BI_Nrx_SampleSummary (filters were too restrictive)"
+      },
+      {
+        "AccountId": "                  ",
+        "RegionId": "100010",
+        "RegionName": "Northeast",
+        "TerritoryId": "10001001",
+        "TerritoryName": "Boston MA",
+        "HcpName": "ASHLEY LARANJO",
+        "SpecialtyDescription": "PHYSICIAN ASSISTANT",
+        "HcpCalls": 0,
+        "TimePeriod": "Q1 2025",
+        "PDRPOptOut": "NO",
+        "SampleCalls": 0,
+        "Sample/NRX": 0,
+        "TotalSamples": 0,
+        "TotalNRX": 2,
+        "Samples/Call": 0,
+        "Tirosint Caps NRX": 2,
+        "Tirosint Caps Samples": 0,
+        "Tirosint Sol NRX": 0,
+        "Tirosint Sol Samples": 0,
+        "Flector NRX": 0,
+        "Flector Samples": 0,
+        "Licart NRX": 0,
+        "Licart Samples": 0,
+        "Sample/NQTY": 0,
+        "TotalNQTY": 4,
+        "Tirosint Caps NQTY": 4,
+        "Tirosint Sol NQTY": 0,
+        "Flector NQTY": 0,
+        "Licart NQTY": 0,
+        "Sample/NRX PDRP": "0",
+        "Total NRX PDRP": "2",
+        "Tirosint Caps NRX PDRP": "2",
+        "Tirosint Sol NRX PDRP": "0",
+        "Flector NRX PDRP": "0",
+        "Licart NRX PDRP": "0",
+        "Sample/NQTY PDRP": "0",
+        "Total NQTY PDRP": "4",
+        "Tirosint Caps NQTY PDRP": "4",
+        "Tirosint Sol NQTY PDRP": "0",
+        "Flector NQTY PDRP": "0",
+        "Licart NQTY PDRP": "0",
+        "Tirosint Caps Samples/Tirosint Caps NRX": 0,
+        "Tirosint Sol Samples/Tirosint Sol NRX": 0,
+        "Flector Samples/Flector NRX": 0,
+        "Licart Samples/Licart NRX": 0,
+        "Tirosint Caps Samples/Tirosint Caps NRX PDRP": "0",
+        "Tirosint Sol Samples/Tirosint Sol NRX PDRP": "0",
+        "Flector Samples/Flector NRX PDRP": "0",
+        "Licart Samples/Licart NRX PDRP": "0",
+        "Tirosint Caps Samples/Tirosint Caps NQTY": 0,
+        "Tirosint Sol Samples/Tirosint Sol NQTY": 0,
+        "Flector Samples/Flector NQTY": 0,
+        "Licart Samples/Licart NQTY": 0,
+        "Tirosint Caps Samples/Tirosint Caps NQTY PDRP": "0",
+        "Tirosint Sol Samples/Tirosint Sol NQTY PDRP": "0",
+        "Flector Samples/Flector NQTY PDRP": "0",
+        "Licart Samples/Licart NQTY PDRP": "0",
+        "SortingOrder": 4,
+        "MyTarget": 0,
+        "CNXTerritoryRole": "Core",
+        "BiInclude": null,
+        "_preview_table": "Reporting_BI_Nrx_SampleSummary",
+        "_preview_message": "Sample data from Reporting_BI_Nrx_SampleSummary (filters were too restrictive)"
+      },
+      {
+        "AccountId": "                  ",
+        "RegionId": "100010",
+        "RegionName": "Northeast",
+        "TerritoryId": "10001001",
+        "TerritoryName": "Boston MA",
+        "HcpName": "BETTY YU",
+        "SpecialtyDescription": "NURSE PRACTITIONER",
+        "HcpCalls": 0,
+        "TimePeriod": "Q1 2025",
+        "PDRPOptOut": "NO",
+        "SampleCalls": 0,
+        "Sample/NRX": 0,
+        "TotalSamples": 0,
+        "TotalNRX": 1,
+        "Samples/Call": 0,
+        "Tirosint Caps NRX": 0,
+        "Tirosint Caps Samples": 0,
+        "Tirosint Sol NRX": 1,
+        "Tirosint Sol Samples": 0,
+        "Flector NRX": 0,
+        "Flector Samples": 0,
+        "Licart NRX": 0,
+        "Licart Samples": 0,
+        "Sample/NQTY": 0,
+        "TotalNQTY": 1,
+        "Tirosint Caps NQTY": 0,
+        "Tirosint Sol NQTY": 1,
+        "Flector NQTY": 0,
+        "Licart NQTY": 0,
+        "Sample/NRX PDRP": "0",
+        "Total NRX PDRP": "1",
+        "Tirosint Caps NRX PDRP": "0",
+        "Tirosint Sol NRX PDRP": "1",
+        "Flector NRX PDRP": "0",
+        "Licart NRX PDRP": "0",
+        "Sample/NQTY PDRP": "0",
+        "Total NQTY PDRP": "1",
+        "Tirosint Caps NQTY PDRP": "0",
+        "Tirosint Sol NQTY PDRP": "1",
+        "Flector NQTY PDRP": "0",
+        "Licart NQTY PDRP": "0",
+        "Tirosint Caps Samples/Tirosint Caps NRX": 0,
+        "Tirosint Sol Samples/Tirosint Sol NRX": 0,
+        "Flector Samples/Flector NRX": 0,
+        "Licart Samples/Licart NRX": 0,
+        "Tirosint Caps Samples/Tirosint Caps NRX PDRP": "0",
+        "Tirosint Sol Samples/Tirosint Sol NRX PDRP": "0",
+        "Flector Samples/Flector NRX PDRP": "0",
+        "Licart Samples/Licart NRX PDRP": "0",
+        "Tirosint Caps Samples/Tirosint Caps NQTY": 0,
+        "Tirosint Sol Samples/Tirosint Sol NQTY": 0,
+        "Flector Samples/Flector NQTY": 0,
+        "Licart Samples/Licart NQTY": 0,
+        "Tirosint Caps Samples/Tirosint Caps NQTY PDRP": "0",
+        "Tirosint Sol Samples/Tirosint Sol NQTY PDRP": "0",
+        "Flector Samples/Flector NQTY PDRP": "0",
+        "Licart Samples/Licart NQTY PDRP": "0",
+        "SortingOrder": 4,
+        "MyTarget": 0,
+        "CNXTerritoryRole": "Core",
+        "BiInclude": null,
+        "_preview_table": "Reporting_BI_Nrx_SampleSummary",
+        "_preview_message": "Sample data from Reporting_BI_Nrx_SampleSummary (filters were too restrictive)"
+      }
+    ],
+    "columns": [],
+    "row_count": 10
+  },
+  {
+    "nl": "Can you provide the sample summary data for the current week, focusing on my target accounts within overlay territories?",
+    "sql": "SELECT TOP 100 \n    [RegionName], \n    [TerritoryName], \n    [HcpName], \n    [HcpCalls], \n    [SampleCalls], \n    [TotalSamples], \n    [TotalNRX], \n    [TimePeriod]\nFROM dbo.Reporting_BI_Nrx_SampleSummary\nWHERE [TimePeriod] = 'C WK' \n    AND [CNXTerritoryRole] = 'Overlay'\nORDER BY [TotalNRX] DESC",
+    "job_id": "plan_7082537841183807495_conv_1",
+    "user": "default_user",
+    "timestamp": "2025-10-23T10:57:51.543639",
+    "results": [
+      {
+        "RegionName": "Southeast",
+        "TerritoryName": "Miami RSS",
+        "HcpName": "ELIUD SIFONTE RODRIGUEZ",
+        "HcpCalls": 0,
+        "SampleCalls": 0,
+        "TotalSamples": 0,
+        "TotalNRX": 4,
+        "TimePeriod": "C WK"
+      },
+      {
+        "RegionName": "Southeast",
+        "TerritoryName": "Miami RSS",
+        "HcpName": "SONIA GIBSON",
+        "HcpCalls": 0,
+        "SampleCalls": 0,
+        "TotalSamples": 0,
+        "TotalNRX": 4,
+        "TimePeriod": "C WK"
+      },
+      {
+        "RegionName": "Midwest",
+        "TerritoryName": "Chicago IL",
+        "HcpName": "TANVI PARIKH",
+        "HcpCalls": 0,
+        "SampleCalls": 0,
+        "TotalSamples": 0,
+        "TotalNRX": 2,
+        "TimePeriod": "C WK"
+      },
+      {
+        "RegionName": "Southwest",
+        "TerritoryName": "Houston RSS",
+        "HcpName": "SHILKA BABU",
+        "HcpCalls": 1,
+        "SampleCalls": 0,
+        "TotalSamples": 0,
+        "TotalNRX": 2,
+        "TimePeriod": "C WK"
+      },
+      {
+        "RegionName": "Midwest",
+        "TerritoryName": "Chicago IL",
+        "HcpName": "JOHN DEMASK",
+        "HcpCalls": 0,
+        "SampleCalls": 0,
+        "TotalSamples": 0,
+        "TotalNRX": 2,
+        "TimePeriod": "C WK"
+      }
+    ],
+    "columns": [],
+    "row_count": 100
+  },
+  {
+    "nl": "\"How does the total number of calls for Flector in Q2 2022 vary across different regions?\"\n",
+    "sql": "SELECT TOP 100 \n    [RegionName], \n    SUM([HcpCalls]) AS TotalHcpCalls, \n    SUM([SampleCalls]) AS TotalSampleCalls, \n    SUM([Flector NRX]) AS TotalFlectorNRX, \n    SUM([Flector Samples]) AS TotalFlectorSamples\nFROM dbo.Reporting_BI_Nrx_SampleSummary\nWHERE [TimePeriod] = 'Q2 2025'\nGROUP BY [RegionName]\nORDER BY TotalHcpCalls DESC",
+    "job_id": "plan_1737904909003347931_conv_1",
+    "user": "default_user",
+    "timestamp": "2025-10-23T11:01:12.980552",
+    "results": [
+      {
+        "RegionName": "Midwest",
+        "TotalHcpCalls": 5718,
+        "TotalSampleCalls": 917,
+        "TotalFlectorNRX": 81,
+        "TotalFlectorSamples": 1297
+      },
+      {
+        "RegionName": "Southwest",
+        "TotalHcpCalls": 5552,
+        "TotalSampleCalls": 1153,
+        "TotalFlectorNRX": 146,
+        "TotalFlectorSamples": 2074
+      },
+      {
+        "RegionName": "West",
+        "TotalHcpCalls": 5310,
+        "TotalSampleCalls": 1112,
+        "TotalFlectorNRX": 231,
+        "TotalFlectorSamples": 2023
+      },
+      {
+        "RegionName": "Northeast",
+        "TotalHcpCalls": 5290,
+        "TotalSampleCalls": 945,
+        "TotalFlectorNRX": 322,
+        "TotalFlectorSamples": 1757
+      },
+      {
+        "RegionName": "Midatlantic",
+        "TotalHcpCalls": 5152,
+        "TotalSampleCalls": 659,
+        "TotalFlectorNRX": 122,
+        "TotalFlectorSamples": 997
+      }
+    ],
+    "columns": [],
+    "row_count": 7
+  },
+  {
+    "nl": "\"How does the total number of calls for Flector in Q2 2022 vary across different regions?\"\n",
+    "sql": "SELECT TOP 100 \n    [RegionName], \n    SUM([HcpCalls]) AS TotalHcpCalls, \n    SUM([SampleCalls]) AS TotalSampleCalls, \n    SUM([Flector NRX]) AS TotalFlectorNRX, \n    SUM([Flector Samples]) AS TotalFlectorSamples\nFROM dbo.Reporting_BI_Nrx_SampleSummary\nWHERE [TimePeriod] = 'Q2 2025'\nGROUP BY [RegionName]\nORDER BY TotalFlectorNRX DESC",
+    "job_id": "plan_-2550459395367458761_conv_1",
+    "user": "default_user",
+    "timestamp": "2025-10-23T11:07:56.788855",
+    "results": [
+      {
+        "RegionName": "Northeast",
+        "TotalHcpCalls": 5290,
+        "TotalSampleCalls": 945,
+        "TotalFlectorNRX": 322,
+        "TotalFlectorSamples": 1757
+      },
+      {
+        "RegionName": "West",
+        "TotalHcpCalls": 5310,
+        "TotalSampleCalls": 1112,
+        "TotalFlectorNRX": 231,
+        "TotalFlectorSamples": 2023
+      },
+      {
+        "RegionName": "Tri-State",
+        "TotalHcpCalls": 4588,
+        "TotalSampleCalls": 1123,
+        "TotalFlectorNRX": 171,
+        "TotalFlectorSamples": 2301
+      },
+      {
+        "RegionName": "Southwest",
+        "TotalHcpCalls": 5552,
+        "TotalSampleCalls": 1153,
+        "TotalFlectorNRX": 146,
+        "TotalFlectorSamples": 2074
+      },
+      {
+        "RegionName": "Midatlantic",
+        "TotalHcpCalls": 5152,
+        "TotalSampleCalls": 659,
+        "TotalFlectorNRX": 122,
+        "TotalFlectorSamples": 997
+      }
+    ],
+    "columns": [],
+    "row_count": 7
+  },
+  {
+    "nl": "\"How does the total number of calls for Flector in Q2 2022 vary across different regions?\"\n",
+    "sql": "SELECT TOP 100 \n    [RegionName], \n    SUM([HcpCalls]) AS TotalHcpCalls, \n    SUM([SampleCalls]) AS TotalSampleCalls, \n    SUM([Flector NRX]) AS TotalFlectorNRX, \n    SUM([Flector Samples]) AS TotalFlectorSamples\nFROM dbo.Reporting_BI_Nrx_SampleSummary\nWHERE [TimePeriod] = 'Q2 2025'\nGROUP BY [RegionName]\nORDER BY TotalFlectorNRX DESC",
+    "job_id": "plan_-2550459395367458761_conv_1",
+    "user": "default_user",
+    "timestamp": "2025-10-23T11:12:14.559916",
+    "results": [
+      {
+        "RegionName": "Northeast",
+        "TotalHcpCalls": 5290,
+        "TotalSampleCalls": 945,
+        "TotalFlectorNRX": 322,
+        "TotalFlectorSamples": 1757
+      },
+      {
+        "RegionName": "West",
+        "TotalHcpCalls": 5310,
+        "TotalSampleCalls": 1112,
+        "TotalFlectorNRX": 231,
+        "TotalFlectorSamples": 2023
+      },
+      {
+        "RegionName": "Tri-State",
+        "TotalHcpCalls": 4588,
+        "TotalSampleCalls": 1123,
+        "TotalFlectorNRX": 171,
+        "TotalFlectorSamples": 2301
+      },
+      {
+        "RegionName": "Southwest",
+        "TotalHcpCalls": 5552,
+        "TotalSampleCalls": 1153,
+        "TotalFlectorNRX": 146,
+        "TotalFlectorSamples": 2074
+      },
+      {
+        "RegionName": "Midatlantic",
+        "TotalHcpCalls": 5152,
+        "TotalSampleCalls": 659,
+        "TotalFlectorNRX": 122,
+        "TotalFlectorSamples": 997
+      }
+    ],
+    "columns": [],
+    "row_count": 7
+  },
+  {
+    "nl": "\"How does the total number of calls for Flector in Q2 2022 vary across different regions?\"\n'",
+    "sql": "SELECT TOP 100 \n    [RegionName], \n    SUM([HcpCalls]) AS TotalHcpCalls, \n    SUM([SampleCalls]) AS TotalSampleCalls, \n    SUM([Flector NRX]) AS TotalFlectorNRX, \n    SUM([Flector Samples]) AS TotalFlectorSamples\nFROM dbo.Reporting_BI_Nrx_SampleSummary\nWHERE [TimePeriod] = 'Q2 2025'\nGROUP BY [RegionName]\nORDER BY TotalFlectorNRX DESC",
+    "job_id": "plan_6216898916747486689_conv_1",
+    "user": "default_user",
+    "timestamp": "2025-10-23T11:19:28.367490",
+    "results": [
+      {
+        "RegionName": "Northeast",
+        "TotalHcpCalls": 5290,
+        "TotalSampleCalls": 945,
+        "TotalFlectorNRX": 322,
+        "TotalFlectorSamples": 1757
+      },
+      {
+        "RegionName": "West",
+        "TotalHcpCalls": 5310,
+        "TotalSampleCalls": 1112,
+        "TotalFlectorNRX": 231,
+        "TotalFlectorSamples": 2023
+      },
+      {
+        "RegionName": "Tri-State",
+        "TotalHcpCalls": 4588,
+        "TotalSampleCalls": 1123,
+        "TotalFlectorNRX": 171,
+        "TotalFlectorSamples": 2301
+      },
+      {
+        "RegionName": "Southwest",
+        "TotalHcpCalls": 5552,
+        "TotalSampleCalls": 1153,
+        "TotalFlectorNRX": 146,
+        "TotalFlectorSamples": 2074
+      },
+      {
+        "RegionName": "Midatlantic",
+        "TotalHcpCalls": 5152,
+        "TotalSampleCalls": 659,
+        "TotalFlectorNRX": 122,
+        "TotalFlectorSamples": 997
+      }
+    ],
+    "columns": [],
+    "row_count": 7
+  },
+  {
+    "nl": "\"How does the total number of calls for Flector in Q2 2022 vary across different regions?\" '\n",
+    "sql": "SELECT TOP 100 \n    [RegionName], \n    SUM([HcpCalls]) AS TotalHcpCalls, \n    SUM([SampleCalls]) AS TotalSampleCalls \nFROM dbo.Reporting_BI_Nrx_SampleSummary \nWHERE [TimePeriod] = 'Q2 2025' \nGROUP BY [RegionName] \nORDER BY TotalHcpCalls DESC",
+    "job_id": "plan_1064983066441007325_conv_1",
+    "user": "default_user",
+    "timestamp": "2025-10-23T11:25:57.351890",
+    "results": [
+      {
+        "RegionName": "Midwest",
+        "TotalHcpCalls": 5718,
+        "TotalSampleCalls": 917
+      },
+      {
+        "RegionName": "Southwest",
+        "TotalHcpCalls": 5552,
+        "TotalSampleCalls": 1153
+      },
+      {
+        "RegionName": "West",
+        "TotalHcpCalls": 5310,
+        "TotalSampleCalls": 1112
+      },
+      {
+        "RegionName": "Northeast",
+        "TotalHcpCalls": 5290,
+        "TotalSampleCalls": 945
+      },
+      {
+        "RegionName": "Midatlantic",
+        "TotalHcpCalls": 5152,
+        "TotalSampleCalls": 659
+      }
+    ],
+    "columns": [],
+    "row_count": 7
+  },
+  {
+    "nl": "\"How does the total number of calls for Flector in Q2 2022 vary across different regions?\" '\n",
+    "sql": "SELECT TOP 100 \n    [RegionName], \n    SUM([HcpCalls]) AS TotalHcpCalls, \n    SUM([SampleCalls]) AS TotalSampleCalls, \n    SUM([Flector NRX]) AS TotalFlectorNRX\nFROM dbo.Reporting_BI_Nrx_SampleSummary\nWHERE [TimePeriod] = 'Q2 2025'\nGROUP BY [RegionName]\nORDER BY TotalHcpCalls DESC",
+    "job_id": "plan_4799532478703889607_conv_1",
+    "user": "default_user",
+    "timestamp": "2025-10-23T11:29:19.134560",
+    "results": [
+      {
+        "RegionName": "Midwest",
+        "TotalHcpCalls": 5718,
+        "TotalSampleCalls": 917,
+        "TotalFlectorNRX": 81
+      },
+      {
+        "RegionName": "Southwest",
+        "TotalHcpCalls": 5552,
+        "TotalSampleCalls": 1153,
+        "TotalFlectorNRX": 146
+      },
+      {
+        "RegionName": "West",
+        "TotalHcpCalls": 5310,
+        "TotalSampleCalls": 1112,
+        "TotalFlectorNRX": 231
+      },
+      {
+        "RegionName": "Northeast",
+        "TotalHcpCalls": 5290,
+        "TotalSampleCalls": 945,
+        "TotalFlectorNRX": 322
+      },
+      {
+        "RegionName": "Midatlantic",
+        "TotalHcpCalls": 5152,
+        "TotalSampleCalls": 659,
+        "TotalFlectorNRX": 122
+      }
+    ],
+    "columns": [],
+    "row_count": 7
+  },
+  {
+    "nl": "\"How does the total number of calls for Flector in Q2 2022 vary across different regions?\"\n",
+    "sql": "SELECT TOP 100\n    [RegionName],\n    SUM([HcpCalls]) AS TotalHcpCalls,\n    SUM([SampleCalls]) AS TotalSampleCalls,\n    SUM([Flector NRX]) AS TotalFlectorNRX\nFROM dbo.Reporting_BI_Nrx_SampleSummary\nWHERE [TimePeriod] = 'Q2 2025'\nGROUP BY [RegionName]\nORDER BY TotalHcpCalls DESC",
+    "job_id": "plan_6253333462434487006_conv_1",
+    "user": "default_user",
+    "timestamp": "2025-10-23T11:31:24.404685",
+    "results": [
+      {
+        "RegionName": "Midwest",
+        "TotalHcpCalls": 5718,
+        "TotalSampleCalls": 917,
+        "TotalFlectorNRX": 81
+      },
+      {
+        "RegionName": "Southwest",
+        "TotalHcpCalls": 5552,
+        "TotalSampleCalls": 1153,
+        "TotalFlectorNRX": 146
+      },
+      {
+        "RegionName": "West",
+        "TotalHcpCalls": 5310,
+        "TotalSampleCalls": 1112,
+        "TotalFlectorNRX": 231
+      },
+      {
+        "RegionName": "Northeast",
+        "TotalHcpCalls": 5290,
+        "TotalSampleCalls": 945,
+        "TotalFlectorNRX": 322
+      },
+      {
+        "RegionName": "Midatlantic",
+        "TotalHcpCalls": 5152,
+        "TotalSampleCalls": 659,
+        "TotalFlectorNRX": 122
+      }
+    ],
+    "columns": [],
+    "row_count": 7
+  },
+  {
+    "nl": "\"How does the total number of calls for Flector in Q2 2022 vary across different regions?\"\n",
+    "sql": "SELECT TOP 100 \n    [RegionName], \n    SUM([HcpCalls]) AS TotalHcpCalls, \n    SUM([SampleCalls]) AS TotalSampleCalls \nFROM dbo.Reporting_BI_Nrx_SampleSummary \nWHERE [TimePeriod] = 'Q2 2025' \n    AND [Flector NRX] IS NOT NULL \nGROUP BY [RegionName] \nORDER BY TotalHcpCalls DESC",
+    "job_id": "plan_7958103955720358474_conv_1",
+    "user": "default_user",
+    "timestamp": "2025-10-23T11:34:17.275932",
+    "results": [
+      {
+        "RegionName": "Midwest",
+        "TotalHcpCalls": 5718,
+        "TotalSampleCalls": 917
+      },
+      {
+        "RegionName": "Southwest",
+        "TotalHcpCalls": 5552,
+        "TotalSampleCalls": 1153
+      },
+      {
+        "RegionName": "West",
+        "TotalHcpCalls": 5310,
+        "TotalSampleCalls": 1112
+      },
+      {
+        "RegionName": "Northeast",
+        "TotalHcpCalls": 5290,
+        "TotalSampleCalls": 945
+      },
+      {
+        "RegionName": "Midatlantic",
+        "TotalHcpCalls": 5152,
+        "TotalSampleCalls": 659
+      }
+    ],
+    "columns": [],
+    "row_count": 7
+  },
+  {
+    "nl": "\"How does the total number of calls for Flector in Q2 2022 vary across different regions?\"\n",
+    "sql": "SELECT TOP 100 \n    [RegionName], \n    SUM([HcpCalls]) AS TotalHcpCalls, \n    SUM([SampleCalls]) AS TotalSampleCalls, \n    SUM([Flector NRX]) AS TotalFlectorNRX\nFROM dbo.Reporting_BI_Nrx_SampleSummary\nWHERE [TimePeriod] = 'Q2 2025'\nGROUP BY [RegionName]\nORDER BY TotalHcpCalls DESC",
+    "job_id": "plan_3912737109051033615_conv_1",
+    "user": "default_user",
+    "timestamp": "2025-10-23T11:40:52.297465",
+    "results": [
+      {
+        "RegionName": "Midwest",
+        "TotalHcpCalls": 5718,
+        "TotalSampleCalls": 917,
+        "TotalFlectorNRX": 81
+      },
+      {
+        "RegionName": "Southwest",
+        "TotalHcpCalls": 5552,
+        "TotalSampleCalls": 1153,
+        "TotalFlectorNRX": 146
+      },
+      {
+        "RegionName": "West",
+        "TotalHcpCalls": 5310,
+        "TotalSampleCalls": 1112,
+        "TotalFlectorNRX": 231
+      },
+      {
+        "RegionName": "Northeast",
+        "TotalHcpCalls": 5290,
+        "TotalSampleCalls": 945,
+        "TotalFlectorNRX": 322
+      },
+      {
+        "RegionName": "Midatlantic",
+        "TotalHcpCalls": 5152,
+        "TotalSampleCalls": 659,
+        "TotalFlectorNRX": 122
+      }
+    ],
+    "columns": [],
+    "row_count": 7
+  },
+  {
+    "nl": "\"How does the total number of calls for Flector in Q2 2022 vary across different regions?\"\n",
+    "sql": "SELECT TOP 100 \n    [RegionName], \n    SUM([HcpCalls]) AS TotalHcpCalls, \n    SUM([SampleCalls]) AS TotalSampleCalls, \n    SUM([Flector NRX]) AS TotalFlectorNRX\nFROM dbo.Reporting_BI_Nrx_SampleSummary\nWHERE [TimePeriod] = 'Q2 2025'\nGROUP BY [RegionName]\nORDER BY TotalHcpCalls DESC",
+    "job_id": "plan_8613389158863795238_conv_1",
+    "user": "default_user",
+    "timestamp": "2025-10-23T11:43:42.515271",
+    "results": [
+      {
+        "RegionName": "Midwest",
+        "TotalHcpCalls": 5718,
+        "TotalSampleCalls": 917,
+        "TotalFlectorNRX": 81
+      },
+      {
+        "RegionName": "Southwest",
+        "TotalHcpCalls": 5552,
+        "TotalSampleCalls": 1153,
+        "TotalFlectorNRX": 146
+      },
+      {
+        "RegionName": "West",
+        "TotalHcpCalls": 5310,
+        "TotalSampleCalls": 1112,
+        "TotalFlectorNRX": 231
+      },
+      {
+        "RegionName": "Northeast",
+        "TotalHcpCalls": 5290,
+        "TotalSampleCalls": 945,
+        "TotalFlectorNRX": 322
+      },
+      {
+        "RegionName": "Midatlantic",
+        "TotalHcpCalls": 5152,
+        "TotalSampleCalls": 659,
+        "TotalFlectorNRX": 122
+      }
+    ],
+    "columns": [],
+    "row_count": 7
+  },
+  {
+    "nl": "\"How does the total number of calls for Flector in Q2 2022 vary across different regions?\"\n",
+    "sql": "SELECT TOP 100 \n    [RegionName], \n    SUM([HcpCalls]) AS TotalHcpCalls, \n    SUM([SampleCalls]) AS TotalSampleCalls, \n    SUM([Flector NRX]) AS TotalFlectorNRX\nFROM dbo.Reporting_BI_Nrx_SampleSummary\nWHERE [TimePeriod] = 'Q2 2025'\nGROUP BY [RegionName]\nORDER BY TotalHcpCalls DESC",
+    "job_id": "plan_8613389158863795238_conv_1",
+    "user": "default_user",
+    "timestamp": "2025-10-23T11:46:26.321156",
+    "results": [
+      {
+        "RegionName": "Midwest",
+        "TotalHcpCalls": 5718,
+        "TotalSampleCalls": 917,
+        "TotalFlectorNRX": 81
+      },
+      {
+        "RegionName": "Southwest",
+        "TotalHcpCalls": 5552,
+        "TotalSampleCalls": 1153,
+        "TotalFlectorNRX": 146
+      },
+      {
+        "RegionName": "West",
+        "TotalHcpCalls": 5310,
+        "TotalSampleCalls": 1112,
+        "TotalFlectorNRX": 231
+      },
+      {
+        "RegionName": "Northeast",
+        "TotalHcpCalls": 5290,
+        "TotalSampleCalls": 945,
+        "TotalFlectorNRX": 322
+      },
+      {
+        "RegionName": "Midatlantic",
+        "TotalHcpCalls": 5152,
+        "TotalSampleCalls": 659,
+        "TotalFlectorNRX": 122
+      }
+    ],
+    "columns": [],
+    "row_count": 7
+  },
+  {
+    "nl": "\"How does the total number of calls for Flector in Q2 2022 vary across different regions?\"\n",
+    "sql": "SELECT TOP 100 \n    [RegionName], \n    SUM([HcpCalls]) AS TotalHcpCalls, \n    SUM([SampleCalls]) AS TotalSampleCalls, \n    SUM([Flector NRX]) AS TotalFlectorNRX\nFROM dbo.Reporting_BI_Nrx_SampleSummary\nWHERE [TimePeriod] = 'Q2 2025'\nGROUP BY [RegionName]\nORDER BY TotalHcpCalls DESC",
+    "job_id": "plan_-4791201789476381598_conv_1",
+    "user": "default_user",
+    "timestamp": "2025-10-23T11:50:33.414164",
+    "results": [
+      {
+        "RegionName": "Midwest",
+        "TotalHcpCalls": 5718,
+        "TotalSampleCalls": 917,
+        "TotalFlectorNRX": 81
+      },
+      {
+        "RegionName": "Southwest",
+        "TotalHcpCalls": 5552,
+        "TotalSampleCalls": 1153,
+        "TotalFlectorNRX": 146
+      },
+      {
+        "RegionName": "West",
+        "TotalHcpCalls": 5310,
+        "TotalSampleCalls": 1112,
+        "TotalFlectorNRX": 231
+      },
+      {
+        "RegionName": "Northeast",
+        "TotalHcpCalls": 5290,
+        "TotalSampleCalls": 945,
+        "TotalFlectorNRX": 322
+      },
+      {
+        "RegionName": "Midatlantic",
+        "TotalHcpCalls": 5152,
+        "TotalSampleCalls": 659,
+        "TotalFlectorNRX": 122
+      }
+    ],
+    "columns": [],
+    "row_count": 7
+  }
+]

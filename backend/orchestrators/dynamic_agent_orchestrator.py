@@ -1729,18 +1729,21 @@ Be intelligent but concise. Focus on actionable database insights."""
                     # Get full table details with chunk metadata for each matched table
                     table_details = await self.pinecone_store.get_table_details(table_name)
                     if table_details:
-                        # Transform to expected pinecone_matches structure
+                        # Transform to expected pinecone_matches structure with COMMENTS
                         detailed_match = {
                             'metadata': {
                                 'table_name': table_name,
                                 'chunks': table_details.get('chunks', {}),
                                 'content': table_details.get('description', ''),
-                                'columns': table_details.get('columns', [])
+                                'columns': table_details.get('columns', []),
+                                'table_comment': table_details.get('table_comment'),  # ← ADD TABLE COMMENT
+                                'column_comments': table_details.get('column_comments', {})  # ← ADD COLUMN COMMENTS
                             },
                             'score': table_match.get('best_score', 0.0)
                         }
                         detailed_pinecone_matches.append(detailed_match)
-                        print(f"🔍 Enhanced Pinecone match for {table_name} with {len(table_details.get('chunks', {}))} chunks")
+                        comment_count = len(table_details.get('column_comments', {}))
+                        print(f"🔍 Enhanced Pinecone match for {table_name}: {len(table_details.get('chunks', {}))} chunks, {comment_count} column comments")
                 except Exception as e:
                     print(f"⚠️ Failed to get detailed metadata for {table_name}: {e}")
             
@@ -1781,6 +1784,9 @@ Be intelligent but concise. Focus on actionable database insights."""
                     try:
                         table_details = await self.pinecone_store.get_table_details(table_name)
                         
+                        # ENHANCED: Extract column comments from Pinecone
+                        column_comments = table_details.get('column_comments', {})
+                        
                         # Use enhanced column extraction from get_table_details
                         extracted_columns = table_details.get('columns', [])
                         for col_name in extracted_columns:
@@ -1788,7 +1794,7 @@ Be intelligent but concise. Focus on actionable database insights."""
                                 "name": col_name,
                                 "data_type": "unknown",
                                 "nullable": True,
-                                "description": None
+                                "description": column_comments.get(col_name)  # ← ADD COMMENT!
                             })
                         
                         # Fallback: check chunks manually if no columns extracted
@@ -1803,14 +1809,15 @@ Be intelligent but concise. Focus on actionable database insights."""
                                                 "name": col_name,
                                                 "data_type": "unknown", 
                                                 "nullable": True,
-                                                "description": None
+                                                "description": column_comments.get(col_name)  # ← ADD COMMENT!
                                             })
                                     elif 'column_name' in col_meta:
+                                        col_name = col_meta.get("column_name", "unknown")
                                         columns.append({
-                                            "name": col_meta.get("column_name", "unknown"),
+                                            "name": col_name,
                                             "data_type": col_meta.get("data_type", "unknown"),
                                             "nullable": True,
-                                            "description": None
+                                            "description": column_comments.get(col_name)  # ← ADD COMMENT!
                                         })
                     except Exception:
                         # As a last resort leave columns empty and let later
@@ -1826,12 +1833,21 @@ Be intelligent but concise. Focus on actionable database insights."""
                 else:
                     schema = os.getenv("POSTGRES_SCHEMA", "public")
                 
+                # ENHANCED: Get table comment for this table
+                table_comment = None
+                try:
+                    table_details_for_comment = await self.pinecone_store.get_table_details(table_name)
+                    table_comment = table_details_for_comment.get('table_comment')
+                except Exception:
+                    pass
+                
                 relevant_tables.append({
                     "name": table_name,
                     "schema": schema,
                     "columns": columns,
                     "row_count": None,
-                    "description": f"Table containing {table_name.replace('_', ' ').lower()} data"
+                    "description": table_comment if table_comment else f"Table containing {table_name.replace('_', ' ').lower()} data",  # ← USE COMMENT!
+                    "table_comment": table_comment  # ← ALSO STORE SEPARATELY
                 })
             # Table suggestions for user - first create without row counts
             table_suggestions = []
@@ -2183,15 +2199,20 @@ Be intelligent but concise. Focus on actionable database insights."""
             # Discover available context
             available_context = self._gather_available_context(inputs)
             
-            # 🔍 DYNAMIC FILTER RESOLUTION: Query database for actual filter values
-            resolved_filters = await self._resolve_filter_values(query, available_context)
-            if resolved_filters:
-                available_context['resolved_filters'] = resolved_filters
-                print(f"✅ Resolved {len(resolved_filters)} filter(s) dynamically from database")
-            
-            # Determine target tables
+            # Determine target tables FIRST (we need these for filter resolution)
             confirmed_tables = await self._determine_target_tables(available_context, query)
             print(f"📊 Target tables: {confirmed_tables}")
+            
+            # 🔍 DYNAMIC FILTER RESOLUTION: Query database for actual filter values
+            # This needs to happen AFTER we have matched tables
+            if confirmed_tables:
+                available_context['relevant_tables'] = confirmed_tables  # Add matched tables to context
+                resolved_filters = await self._resolve_filter_values(query, available_context)
+                if resolved_filters:
+                    available_context['resolved_filters'] = resolved_filters
+                    print(f"✅ Resolved {len(resolved_filters)} filter(s) dynamically from database")
+            else:
+                print(f"⚠️ Skipping filter resolution - no tables matched yet")
             
             if not confirmed_tables:
                 # Perform autonomous table discovery
@@ -2199,6 +2220,14 @@ Be intelligent but concise. Focus on actionable database insights."""
                 confirmed_tables = autonomous_result.get("tables", [])
                 if autonomous_result.get("pinecone_matches"):
                     available_context["pinecone_matches"] = autonomous_result["pinecone_matches"]
+                
+                # 🔍 Try filter resolution again now that we have tables from autonomous discovery
+                if confirmed_tables:
+                    available_context['relevant_tables'] = confirmed_tables
+                    resolved_filters = await self._resolve_filter_values(query, available_context)
+                    if resolved_filters:
+                        available_context['resolved_filters'] = resolved_filters
+                        print(f"✅ Resolved {len(resolved_filters)} filter(s) dynamically from database (autonomous path)")
             
             if not confirmed_tables:
                 return {
@@ -2231,7 +2260,8 @@ Be intelligent but concise. Focus on actionable database insights."""
                     for table, metadata in table_metadata.items()
                 ],
                 'db_adapter': self.db_connector,  # Real database access
-                'query_context': available_context
+                'query_context': available_context,
+                'resolved_filters': available_context.get('resolved_filters', {})  # ✅ PASS FILTERS AT TOP LEVEL!
             }
             
             print(f"🔍 DEBUG: About to call intelligent_planner.generate_query_with_plan")
@@ -2382,10 +2412,61 @@ Be intelligent but concise. Focus on actionable database insights."""
                 print("🧠 Using Intelligent Query Planner for table selection")
                 
                 # Get available tables from the context (matched tables from Pinecone)
-                available_tables = context.get("matched_tables", [])
+                matched_tables = context.get("matched_tables", [])
                 
-                if available_tables:
-                    print(f"🧠 Found {len(available_tables)} tables for intelligent analysis")
+                if matched_tables:
+                    print(f"🧠 Found {len(matched_tables)} tables for intelligent analysis")
+                    
+                    # 🔧 CRITICAL FIX: Convert string table names to dict format with full metadata
+                    # The intelligent planner needs dict format with table_name, columns, comments, AND Pinecone scores!
+                    available_tables = []
+                    pinecone_matches = context.get("pinecone_matches", [])
+                    table_suggestions = context.get("table_suggestions", [])
+                    
+                    for table_name in matched_tables:
+                        # Find full table metadata from pinecone_matches or table_details
+                        table_metadata = None
+                        pinecone_score = 0.0
+                        
+                        # Try to find in table_suggestions first (has Pinecone score!)
+                        for suggestion in table_suggestions:
+                            if isinstance(suggestion, dict) and suggestion.get('table_name') == table_name:
+                                pinecone_score = suggestion.get('relevance_score', 0.0)
+                                break
+                        
+                        # Try to find in pinecone_matches (has full details including comments)
+                        for pm in pinecone_matches:
+                            if isinstance(pm, dict) and pm.get('table_name') == table_name:
+                                table_metadata = pm
+                                if 'relevance_score' in pm:
+                                    pinecone_score = pm['relevance_score']
+                                break
+                        
+                        # If not found in pinecone_matches, try table_details
+                        if not table_metadata:
+                            table_details = context.get("table_details", {})
+                            if isinstance(table_details, dict) and table_name in table_details:
+                                td = table_details[table_name]
+                                table_metadata = {
+                                    'table_name': table_name,
+                                    'columns': td.get('columns', []),
+                                    'table_comment': td.get('table_comment'),
+                                    'column_comments': td.get('column_comments', {})
+                                }
+                        
+                        # If still not found, create minimal dict
+                        if not table_metadata:
+                            table_metadata = {'table_name': table_name}
+                            print(f"⚠️ Warning: No metadata found for table '{table_name}', using minimal dict")
+                        
+                        # 🎯 CRITICAL: Add Pinecone score to metadata for intelligent ranking
+                        table_metadata['pinecone_score'] = pinecone_score
+                        if pinecone_score > 0:
+                            print(f"📊 Table '{table_name}' has Pinecone score: {pinecone_score:.3f}")
+                        
+                        available_tables.append(table_metadata)
+                    
+                    print(f"🔧 Converted {len(available_tables)} tables to dict format with metadata and Pinecone scores")
                     
                     # Use intelligent query planner to analyze and select optimal tables
                     query_plan = self.intelligent_planner.analyze_query_requirements(
@@ -6701,7 +6782,7 @@ Respond with exactly one word: insights or visualization"""
         No hardcoding - learns actual values from database.
         """
         try:
-            from tools.filter_value_resolver import get_filter_resolver
+            from backend.tools.filter_value_resolver import FilterValueResolver
             
             # Get schema context
             schema_context = await self._get_schema_context_for_resolver(context)
@@ -6710,7 +6791,7 @@ Respond with exactly one word: insights or visualization"""
                 return {}
             
             # Create resolver and resolve filters
-            resolver = get_filter_resolver(self.db_connector)
+            resolver = FilterValueResolver(self.db_connector)
             resolved_filters = resolver.resolve_filter_values(query, schema_context)
             
             if resolved_filters:
@@ -6735,10 +6816,12 @@ Respond with exactly one word: insights or visualization"""
         try:
             schema_context = {'tables': []}
             
+            # Get tables from context (passed as 'relevant_tables')
+            table_names = context.get('relevant_tables', [])
+            print(f"🔍 Filter resolver: Found {len(table_names)} relevant tables: {table_names}")
+            
             # Get tables from Pinecone if available
             if hasattr(self, 'pinecone_store') and self.pinecone_store:
-                # Get recent query tables or all tables
-                table_names = context.get('relevant_tables', [])
                 
                 if not table_names:
                     # Get top tables from recent queries
@@ -6763,10 +6846,29 @@ Respond with exactly one word: insights or visualization"""
                 for table_name in table_names[:10]:  # Limit to 10 tables for performance
                     table_info = await self.pinecone_store.get_table_details(table_name)
                     if table_info:
+                        # Transform column list to dict format expected by filter resolver
+                        column_names = table_info.get('columns', [])
+                        columns_with_metadata = []
+                        
+                        for col_name in column_names:
+                            # Infer type from column name if available
+                            col_type = self.pinecone_store._infer_datatype_from_column_name(col_name, table_name)
+                            columns_with_metadata.append({
+                                'name': col_name,
+                                'type': col_type
+                            })
+                        
                         schema_context['tables'].append({
                             'name': table_name,
-                            'columns': table_info.get('columns', [])
+                            'columns': columns_with_metadata
                         })
+                        
+                        print(f"   🔍 Transformed {len(column_names)} columns with type metadata for {table_name}")
+            
+            print(f"✅ Filter resolver: Built schema context with {len(schema_context['tables'])} tables")
+            if schema_context['tables']:
+                for table in schema_context['tables']:
+                    print(f"   • {table['name']}: {len(table.get('columns', []))} columns")
             
             return schema_context
             

@@ -477,7 +477,7 @@ class AzureSQLAdapter:
         try:
             # Build Azure SQL connection string with better timeout and retry settings
             connection_string = (
-                f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+                f"DRIVER={{ODBC Driver 18 for SQL Server}};"
                 f"SERVER={self.config['host']},{self.config['port']};"
                 f"DATABASE={self.config['dbname']};"
                 f"UID={self.config['user']};"
@@ -632,32 +632,52 @@ class AzureSQLAdapter:
         return health_result
 
     async def get_table_names(self):
-        """Get list of all table names"""
+        """Get list of all table names with their descriptions/comments"""
         cur = self.conn.cursor()
         cur.execute("""
-            SELECT TABLE_NAME, TABLE_SCHEMA 
-            FROM INFORMATION_SCHEMA.TABLES 
-            WHERE TABLE_TYPE = 'BASE TABLE'
-            ORDER BY TABLE_NAME
+            SELECT 
+                t.TABLE_NAME,
+                t.TABLE_SCHEMA,
+                ep.value AS TABLE_COMMENT
+            FROM INFORMATION_SCHEMA.TABLES t
+            LEFT JOIN sys.extended_properties ep ON 
+                ep.major_id = OBJECT_ID(t.TABLE_SCHEMA + '.' + t.TABLE_NAME)
+                AND ep.minor_id = 0
+                AND ep.name = 'MS_Description'
+                AND ep.class = 1
+            WHERE t.TABLE_TYPE = 'BASE TABLE'
+            ORDER BY t.TABLE_NAME
         """)
         results = cur.fetchall()
-        return [{"name": row[0], "schema": row[1]} for row in results]
+        return [{"name": row[0], "schema": row[1], "comment": row[2] if row[2] else None} for row in results]
 
     async def get_table_schema(self, table_name: str, schema_name: str = "dbo"):
-        """Get column information for a specific table"""
+        """Get column information for a specific table including comments/descriptions"""
         cur = self.conn.cursor()
+        
+        # Enhanced query to include column comments from extended properties
         cur.execute("""
-            SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE 
-            FROM INFORMATION_SCHEMA.COLUMNS 
-            WHERE TABLE_NAME = ? AND TABLE_SCHEMA = ?
-            ORDER BY ORDINAL_POSITION
+            SELECT 
+                c.COLUMN_NAME,
+                c.DATA_TYPE,
+                c.IS_NULLABLE,
+                ep.value AS COLUMN_COMMENT
+            FROM INFORMATION_SCHEMA.COLUMNS c
+            LEFT JOIN sys.extended_properties ep ON 
+                ep.major_id = OBJECT_ID(c.TABLE_SCHEMA + '.' + c.TABLE_NAME)
+                AND ep.minor_id = c.ORDINAL_POSITION
+                AND ep.name = 'MS_Description'
+                AND ep.class = 1
+            WHERE c.TABLE_NAME = ? AND c.TABLE_SCHEMA = ?
+            ORDER BY c.ORDINAL_POSITION
         """, (table_name, schema_name))
         results = cur.fetchall()
         return [
             {
                 "name": row[0],
                 "type": row[1],
-                "nullable": row[2] == "YES"
+                "nullable": row[2] == "YES",
+                "comment": row[3] if row[3] else None  # Include column comment/description
             }
             for row in results
         ]
@@ -674,15 +694,24 @@ class AzureSQLAdapter:
         return []
     
     def get_real_table_columns(self, table_name: str, schema_name: str = "dbo") -> list:
-        """Get the ACTUAL column names from the database for a specific table"""
+        """Get the ACTUAL column names from the database for a specific table including comments"""
         cur = self.conn.cursor()
         try:
             print(f"🔍 DEBUG: Getting REAL columns for {schema_name}.{table_name}")
             cur.execute("""
-                SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE 
-                FROM INFORMATION_SCHEMA.COLUMNS 
-                WHERE TABLE_NAME = ? AND TABLE_SCHEMA = ?
-                ORDER BY ORDINAL_POSITION
+                SELECT 
+                    c.COLUMN_NAME,
+                    c.DATA_TYPE,
+                    c.IS_NULLABLE,
+                    ep.value AS COLUMN_COMMENT
+                FROM INFORMATION_SCHEMA.COLUMNS c
+                LEFT JOIN sys.extended_properties ep ON 
+                    ep.major_id = OBJECT_ID(c.TABLE_SCHEMA + '.' + c.TABLE_NAME)
+                    AND ep.minor_id = c.ORDINAL_POSITION
+                    AND ep.name = 'MS_Description'
+                    AND ep.class = 1
+                WHERE c.TABLE_NAME = ? AND c.TABLE_SCHEMA = ?
+                ORDER BY c.ORDINAL_POSITION
             """, (table_name, schema_name))
             results = cur.fetchall()
             
@@ -691,7 +720,8 @@ class AzureSQLAdapter:
                 columns.append({
                     'column_name': row[0],
                     'data_type': row[1],
-                    'is_nullable': row[2] == 'YES'
+                    'is_nullable': row[2] == 'YES',
+                    'comment': row[3] if row[3] else None  # Include column description
                 })
             
             print(f"🔍 DEBUG: Found {len(columns)} real columns for {table_name}")

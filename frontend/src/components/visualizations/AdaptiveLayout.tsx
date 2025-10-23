@@ -16,6 +16,8 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
   const [activeComparisonCard, setActiveComparisonCard] = useState<number | null>(null);
   const [filteredData, setFilteredData] = useState<any[]>(data);
 
+  console.log('🔄 AdaptiveLayout rendering with data:', data?.length, 'rows');
+
   // Set the first comparison card as active by default
   useEffect(() => {
     if (plan.temporal_context?.enabled && plan.temporal_context.comparison_periods.length > 0) {
@@ -27,32 +29,54 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
   useEffect(() => {
     if (activeComparisonCard !== null && plan.temporal_context?.comparison_periods) {
       const card = plan.temporal_context.comparison_periods[activeComparisonCard];
-      
-      // Extract filter criteria from the card's time_period
-      const filterKey = card.time_period.toLowerCase();
-      
-      // Try to filter data based on the card's context
-      // For "By PDRPFlag" or "By Totaltrx", extract the column name
-      if (filterKey.includes('by ')) {
-        const columnName = filterKey.replace('by ', '').trim();
-        
-        // Find matching column in data (case-insensitive)
+
+      console.log(`🎯 Active comparison card changed to ${activeComparisonCard}:`, JSON.stringify(card, null, 2));
+
+      // Check if the card has KPIs with filter conditions
+      if (card.kpis && card.kpis.length > 0 && card.kpis[0].filter_condition) {
+        const { filter_column, filter_value } = card.kpis[0].filter_condition;
+
+        console.log(`🔍 Filtering chart data by ${filter_column}=${filter_value}`);
+
+        // Find actual column name (case-insensitive)
         const dataKeys = data.length > 0 ? Object.keys(data[0]) : [];
-        const matchingKey = dataKeys.find(key => 
-          key.toLowerCase() === columnName || 
-          key.toLowerCase().includes(columnName)
-        );
-        
-        if (matchingKey) {
-          // For contextual insights, show data grouped/highlighted by this column
-          // For now, just show all data with the context (actual grouping happens in chart)
-          console.log(`🔍 Filtering by: ${matchingKey}`, card);
-          setFilteredData(data);
+        const actualColumn = dataKeys.find(key =>
+          key.toLowerCase() === filter_column.toLowerCase() ||
+          key.toLowerCase().replace(/\s+/g, '') === filter_column.toLowerCase().replace(/\s+/g, '') ||
+          key.toLowerCase().includes(filter_column.toLowerCase())
+        ) || filter_column;
+
+        console.log(`📊 Using column: "${actualColumn}" (original: "${filter_column}")`);
+
+        const filtered = data.filter(row => {
+          const rowValue = row[actualColumn];
+          if (rowValue === null || rowValue === undefined) return false;
+
+          // Try multiple comparison methods
+          if (rowValue === filter_value) return true;
+
+          const rowStr = String(rowValue).trim().toLowerCase();
+          const filterStr = String(filter_value).trim().toLowerCase();
+          if (rowStr === filterStr) return true;
+
+          const rowNum = Number(rowValue);
+          const filterNum = Number(filter_value);
+          if (!isNaN(rowNum) && !isNaN(filterNum) && rowNum === filterNum) return true;
+
+          return false;
+        });
+
+        console.log(`✅ Filtered chart data: ${data.length} → ${filtered.length} rows`);
+
+        if (filtered.length > 0) {
+          setFilteredData(filtered);
         } else {
+          console.warn(`⚠️ No data matched filter, showing all data`);
           setFilteredData(data);
         }
       } else {
-        // No specific filter criteria found, show all data
+        // No filter condition, show all data
+        console.log(`ℹ️ No filter condition in comparison card, showing all data`);
         setFilteredData(data);
       }
     } else {
@@ -67,49 +91,80 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
 
   // Calculate KPI values from data with optional filtering - ROBUST for any data structure
   const calculateKPIValue = (spec: any): number => {
+    console.log(`💳 Calculating KPI "${spec.title}":`, JSON.stringify({
+      value_column: spec.value_column,
+      calculation: spec.calculation,
+      filter_condition: spec.filter_condition
+    }, null, 2));
+
     if (!data || data.length === 0) return 0;
 
     // Apply filter if specified
     let workingData = data;
     if (spec.filter_condition) {
       const { filter_column, filter_value } = spec.filter_condition;
+
+      console.log(`🔍 Attempting to filter KPI "${spec.title}" by ${filter_column}=${filter_value}`);
+      console.log(`📊 Available columns in data:`, data[0] ? Object.keys(data[0]) : []);
+
+      // Find the actual column name (case-insensitive match)
+      const dataKeys = data.length > 0 ? Object.keys(data[0]) : [];
+      const actualFilterColumn = dataKeys.find(key =>
+        key.toLowerCase() === filter_column.toLowerCase() ||
+        key.toLowerCase().replace(/\s+/g, '') === filter_column.toLowerCase().replace(/\s+/g, '') ||
+        key.toLowerCase().includes(filter_column.toLowerCase())
+      ) || filter_column;
+
+      console.log(`🎯 Using column: "${actualFilterColumn}" (original: "${filter_column}")`);
+
       workingData = data.filter(row => {
-        const rowValue = row[filter_column];
-        
+        const rowValue = row[actualFilterColumn];
+
         // Handle various comparison types robustly
         if (rowValue === null || rowValue === undefined) return false;
-        
+
         // Try exact match first
         if (rowValue === filter_value) return true;
-        
+
         // Try case-insensitive string comparison
         const rowStr = String(rowValue).trim().toLowerCase();
         const filterStr = String(filter_value).trim().toLowerCase();
         if (rowStr === filterStr) return true;
-        
+
         // Try numeric comparison if both are numbers
         const rowNum = Number(rowValue);
         const filterNum = Number(filter_value);
         if (!isNaN(rowNum) && !isNaN(filterNum) && rowNum === filterNum) return true;
-        
+
         return false;
       });
-      
-      console.log(`🔍 KPI "${spec.title}" filtered by ${filter_column}=${filter_value}: ${data.length} → ${workingData.length} rows`);
-      
+
+      console.log(`✅ KPI "${spec.title}" filtered: ${data.length} → ${workingData.length} rows`);
+
       if (workingData.length === 0) {
-        const uniqueValues = Array.from(new Set(data.map(r => r[filter_column])));
-        console.warn(`⚠️ No data matched filter ${filter_column}=${filter_value}. Available values:`, uniqueValues);
+        const uniqueValues = Array.from(new Set(data.map(r => r[actualFilterColumn]))).slice(0, 10);
+        console.warn(`⚠️ No data matched filter ${actualFilterColumn}=${filter_value}. Sample values:`, uniqueValues);
+        return 0;
       }
     }
 
     if (workingData.length === 0) return 0;
 
-    // Handle different calculation types
+    // 🔧 CRITICAL FIX: For aggregated data (already grouped), just read the value from the filtered row
+    // Check if data is already aggregated (only 1 row after filtering)
+    if (workingData.length === 1 && spec.filter_condition) {
+      // Data is pre-aggregated, just read the value directly
+      const value = workingData[0][spec.value_column];
+      const num = Number(value);
+      console.log(`📊 Using pre-aggregated value for "${spec.title}":`, num);
+      return isNaN(num) ? 0 : num;
+    }
+
+    // Handle different calculation types for detail data
     switch (spec.calculation) {
       case 'count':
         return workingData.length;
-        
+
       case 'sum':
       case 'mean':
       case 'max':
@@ -122,7 +177,7 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
             return isNaN(num) ? 0 : num;
           })
           .filter(v => v !== 0 || spec.calculation === 'sum'); // Keep zeros for sum
-        
+
         if (values.length === 0) return 0;
 
         switch (spec.calculation) {
@@ -142,7 +197,7 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
           default:
             return values[0] || 0;
         }
-        
+
       default:
         return 0;
     }
@@ -290,7 +345,7 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
             <span className="insight-type-badge">{temporal_context.insight_type.replace('_', ' ')}</span>
           )}
         </div>
-        
+
         <div className="comparison-cards-container">
           {temporal_context.comparison_periods.map((card, idx) => (
             <ComparisonCard
@@ -369,12 +424,12 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
             <div className="sidebar">
               {/* Priority 1: Comparison Cards */}
               {hasComparisons && renderComparisonSidebar()}
-              
+
               {/* Priority 2: Timeline */}
               {timeline?.enabled && (
                 <TimelineView spec={timeline} data={getDisplayData()} />
               )}
-              
+
               {/* Priority 3: Breakdown - Hidden until implemented */}
               {false && breakdown?.enabled && (
                 <div className="breakdown-section">

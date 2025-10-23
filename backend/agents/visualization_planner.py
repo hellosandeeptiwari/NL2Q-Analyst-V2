@@ -32,6 +32,7 @@ class KPISpec:
     sparkline: bool = False
     time_period: Optional[str] = None  # "Last month", "Last quarter", etc.
     comparison_text: Optional[str] = None  # Additional context text for the card
+    filter_condition: Optional[Dict[str, str]] = None  # {"filter_column": "RegionName", "filter_value": "Northeast"}
 
 @dataclass
 class ChartSpec:
@@ -217,6 +218,23 @@ class VisualizationPlanner:
                 'top_values': df[col].value_counts().head(5).to_dict()
             }
         
+        # Detect if this is aggregate-only data (single row, single value)
+        is_aggregate_only = (len(df) == 1 and len(df.columns) == 1 and len(numeric_cols) == 1)
+        
+        # 🔧 NEW: Detect grouped/comparison data
+        # If we have categorical columns with few unique values (2-10) and multiple numeric columns,
+        # this is likely grouped aggregation data (e.g., GROUP BY Region, Specialty, etc.)
+        grouping_column = None
+        grouping_values = []
+        if len(categorical_cols) > 0 and len(numeric_cols) > 0:
+            # Find the categorical column with fewest unique values (likely the GROUP BY dimension)
+            for col in categorical_cols:
+                unique_count = df[col].nunique()
+                if 2 <= unique_count <= 20:  # Reasonable number for comparisons
+                    grouping_column = col
+                    grouping_values = df[col].unique().tolist()
+                    break  # Use first suitable column
+        
         return {
             'row_count': len(df),
             'column_count': len(df.columns),
@@ -228,7 +246,10 @@ class VisualizationPlanner:
             'has_numeric': len(numeric_cols) > 0,
             'has_categorical': len(categorical_cols) > 0,
             'data_density': len(df) * len(df.columns),
-            'value_distributions': value_distributions
+            'value_distributions': value_distributions,
+            'is_aggregate_only': is_aggregate_only,  # ✅ Flag for single aggregate value
+            'grouping_column': grouping_column,  # 🔧 NEW: The column used for grouping
+            'grouping_values': grouping_values  # 🔧 NEW: Unique values in that column
         }
     
     def _detect_temporal_context(self, query: str, data_profile: Dict[str, Any]) -> Dict[str, Any]:
@@ -406,7 +427,8 @@ class VisualizationPlanner:
                 }
         
         # Strategy 3: Generic numeric query → Show statistical summary
-        elif data_profile.get('has_numeric', False):
+        # BUT: Skip if this is aggregate-only data (single row, single value)
+        elif data_profile.get('has_numeric', False) and not data_profile.get('is_aggregate_only', False):
             return {
                 'enabled': True,
                 'context_type': 'contextual_statistical',
@@ -415,7 +437,7 @@ class VisualizationPlanner:
                 'comparison_periods': ['Total Count', 'Average Value', 'Max Value', 'Min Value']
             }
         
-        # No contextual insights available
+        # No contextual insights available (including aggregate-only data)
         return {
             'enabled': False,
             'context_type': None
@@ -499,10 +521,25 @@ DATA CHARACTERISTICS:
 - Numeric columns: {numeric_summary or 'None'}
 - Categorical columns: {categorical_summary or 'None'}
 - Temporal columns: {temporal_summary}
-- Has temporal data: {data_profile['has_temporal']}{distribution_insights}{context_text}
+- Has temporal data: {data_profile['has_temporal']}
+- Data type: {'AGGREGATE ONLY (single value)' if data_profile.get('is_aggregate_only') else 'DETAILED DATA'}{distribution_insights}{context_text}
+
+🔧 **GROUPED DATA DETECTION:**
+{f"✅ DATA IS GROUPED BY: {data_profile['grouping_column']}" if data_profile.get('grouping_column') else ""}
+{f"   Unique values: {', '.join(map(str, data_profile['grouping_values']))}" if data_profile.get('grouping_values') else ""}
+{f"   📊 CRITICAL: Create KPIs with filter_condition for EACH value!" if data_profile.get('grouping_column') else ""}
+{f"   Example: {{'filter_column': '{data_profile['grouping_column']}', 'filter_value': '{data_profile['grouping_values'][0]}'}}" if data_profile.get('grouping_values') else ""}
 
 YOUR TASK:
 Analyze this query and data to plan a COMPREHENSIVE, ADAPTIVE visualization that provides maximum insight.
+
+🚨 **CRITICAL - AGGREGATE DATA DETECTION:**
+{"⚠️ THIS IS AGGREGATE-ONLY DATA (1 row, 1 value) - SPECIAL HANDLING REQUIRED!" if data_profile.get('is_aggregate_only') else ""}
+{"For aggregate data:" if data_profile.get('is_aggregate_only') else ""}
+{"  • Create ONLY ONE KPI card showing the single aggregate value" if data_profile.get('is_aggregate_only') else ""}
+{"  • DO NOT create multiple KPIs (Total, Average, Max, Min) - they would all show the same value!" if data_profile.get('is_aggregate_only') else ""}
+{"  • DO NOT create primary_chart (set to null) - single values cannot be plotted" if data_profile.get('is_aggregate_only') else ""}
+{"  • Use 'performance' layout type with just the one KPI" if data_profile.get('is_aggregate_only') else ""}
 
 AVAILABLE LAYOUT TYPES:
 1. **dashboard** - Multi-metric overview with KPIs, multiple charts, comprehensive view
@@ -523,6 +560,7 @@ PLANNING GUIDELINES:
 CRITICAL: Adapt to the data you see:
 - If temporal columns exist → Consider trend_analysis layout
 - If comparison keywords in query (compare, vs, enabled/disabled, top/bottom) → Use comparison layout with KPIs per category
+- **If data has grouping_column (see GROUPED DATA DETECTION above) → MUST create KPIs with filter_condition for EACH unique value**
 - If activity/recent keywords → Use activity_stream layout
 - If multiple metrics → Use dashboard layout
 - If performance keywords → Use performance layout
@@ -532,7 +570,8 @@ COMPARISON QUERY SPECIAL RULES:
   * Identify the comparison dimension (the column being compared, e.g., PDRPFlag, Region, Specialty)
   * Identify ALL unique values in that dimension from the data
   * Create SEPARATE KPIs for EACH value (e.g., if PDRPFlag has YES/NO, create KPIs for both)
-  * Use filter_condition: {{"filter_column": "ComparisonColumn", "filter_value": "SpecificValue"}}
+  * **MANDATORY: Use filter_condition: {{"filter_column": "ComparisonColumn", "filter_value": "SpecificValue"}}**
+- **If GROUPED DATA DETECTION shows a grouping_column, treat this as a comparison query!**
 - Include ALL numeric metrics mentioned in query (TRX, NRX, Sales, Calls, Samples, etc.)
 - Example: Query "compare sales by region" with 3 regions → Create KPIs for each region × each metric
 
@@ -587,7 +626,24 @@ REQUIRED STRUCTURE:
 
 EXAMPLES (for reference):
 
-EXAMPLE 1 - Comparison Query:
+⚠️ EXAMPLE 1 - GROUPED DATA (YOUR CURRENT SCENARIO):
+Query: "Show calls by region"
+GROUPED DATA DETECTION shows: grouping_column = "RegionName", grouping_values = ["Northeast", "West", "Midwest"]
+Data has: RegionName, TotalCalls (pre-aggregated, 1 row per region)
+CRITICAL: You MUST create separate KPIs with filter_condition for EACH grouping_value!
+{{
+  "layout_type": "comparison",
+  "reasoning": "Data is grouped by RegionName - creating filtered KPIs for each region value",
+  "kpis": [
+    {{"title": "Total Calls (Northeast)", "value_column": "TotalCalls", "calculation": "sum", "format": "number", "filter_condition": {{"filter_column": "RegionName", "filter_value": "Northeast"}}}},
+    {{"title": "Total Calls (West)", "value_column": "TotalCalls", "calculation": "sum", "format": "number", "filter_condition": {{"filter_column": "RegionName", "filter_value": "West"}}}},
+    {{"title": "Total Calls (Midwest)", "value_column": "TotalCalls", "calculation": "sum", "format": "number", "filter_condition": {{"filter_column": "RegionName", "filter_value": "Midwest"}}}}
+  ],
+  "primary_chart": {{"type": "bar", "title": "Total Calls by Region", "x_axis": "RegionName", "y_axis": "TotalCalls"}},
+  "breakdown": {{"enabled": false}}
+}}
+
+EXAMPLE 2 - Comparison Query:
 Query: "Compare sales by region"
 Data has: Region (East, West, North), Sales, Orders
 {{
@@ -605,7 +661,7 @@ Data has: Region (East, West, North), Sales, Orders
   "breakdown": {{"enabled": false}}
 }}
 
-EXAMPLE 2 - Trend Analysis:
+EXAMPLE 3 - Trend Analysis:
 Query: "Show prescription trends"
 {{
   "layout_type": "trend_analysis",
@@ -619,6 +675,12 @@ Query: "Show prescription trends"
 }}
 
 NOW GENERATE THE PLAN FOR THIS QUERY. Think carefully about what the user wants to see."""
+
+        # 🔍 DEBUG: Print grouping detection results
+        print(f"🔍 DEBUG - Grouping Detection:")
+        print(f"   grouping_column: {data_profile.get('grouping_column')}")
+        print(f"   grouping_values: {data_profile.get('grouping_values')}")
+        print(f"   Prompt includes grouping info: {'grouping_column' in prompt}")
 
         try:
             response = await self.client.chat.completions.create(
@@ -637,6 +699,51 @@ NOW GENERATE THE PLAN FOR THIS QUERY. Think carefully about what the user wants 
                 content = content.split('```')[1].strip()
             
             viz_plan = json.loads(content)
+            
+            # 🔧 POST-PROCESS: Auto-inject filter_condition for grouped data
+            # Since LLM keeps ignoring our instructions, we'll fix it ourselves
+            grouping_column = data_profile.get('grouping_column')
+            grouping_values = data_profile.get('grouping_values', [])
+            
+            print(f"🔍 POST-PROCESS DEBUG:")
+            print(f"   grouping_column: {grouping_column}")
+            print(f"   grouping_values: {grouping_values}")
+            print(f"   Number of KPIs: {len(viz_plan.get('kpis', []))}")
+            
+            if grouping_column and grouping_values:
+                print(f"🔧 POST-PROCESSING: Auto-injecting filter_condition for grouped data")
+                print(f"   Grouping column: {grouping_column}")
+                print(f"   Values: {grouping_values}")
+                
+                # Inject filter_condition into each KPI based on title
+                for idx, kpi in enumerate(viz_plan.get('kpis', [])):
+                    print(f"   🔍 Processing KPI #{idx + 1}: '{kpi.get('title', 'NO TITLE')}'")
+                    print(f"      Current filter_condition: {kpi.get('filter_condition')}")
+                    
+                    if 'filter_condition' not in kpi or not kpi['filter_condition']:
+                        # Extract group value from KPI title
+                        kpi_title = kpi.get('title', '')
+                        matched_value = None
+                        
+                        # Look for any grouping value in the KPI title (case-insensitive)
+                        for value in grouping_values:
+                            if value.lower() in kpi_title.lower():
+                                matched_value = value
+                                break
+                        
+                        if matched_value:
+                            kpi['filter_condition'] = {
+                                'filter_column': grouping_column,
+                                'filter_value': matched_value
+                            }
+                            print(f"      ✅ Injected filter_condition: {grouping_column} = {matched_value}")
+                        else:
+                            print(f"      ⚠️ Could not match to any grouping value")
+                            print(f"         Available values: {grouping_values}")
+                    else:
+                        print(f"      ℹ️ Already has filter_condition, skipping")
+            else:
+                print(f"   ⚠️ No grouped data detected, skipping post-processing")
             
             # Validate plan
             if not self._validate_plan(viz_plan, data_profile):
@@ -660,6 +767,25 @@ NOW GENERATE THE PLAN FOR THIS QUERY. Think carefully about what the user wants 
         # Validate column names exist in data
         all_columns = data_profile['columns']
         
+        # 🚨 CRITICAL: Force remove charts for aggregate-only data
+        if data_profile.get('is_aggregate_only', False):
+            if plan.get('primary_chart'):
+                print(f"🚫 AGGREGATE-ONLY DATA: Removing chart (cannot plot single value)")
+                plan['primary_chart'] = None
+            if plan.get('secondary_chart'):
+                print(f"🚫 AGGREGATE-ONLY DATA: Removing secondary chart")
+                plan['secondary_chart'] = None
+            if plan.get('timeline'):
+                print(f"🚫 AGGREGATE-ONLY DATA: Removing timeline")
+                plan['timeline'] = None
+            if plan.get('breakdown'):
+                print(f"🚫 AGGREGATE-ONLY DATA: Removing breakdown")
+                plan['breakdown'] = None
+            # Ensure only ONE KPI for aggregate data
+            if len(plan.get('kpis', [])) > 1:
+                print(f"🚫 AGGREGATE-ONLY DATA: Keeping only first KPI (had {len(plan['kpis'])})")
+                plan['kpis'] = plan['kpis'][:1]  # Keep only the first KPI
+        
         # Check KPIs reference valid columns
         for kpi in plan.get('kpis', []):
             if kpi.get('value_column') and kpi['value_column'] not in all_columns:
@@ -668,10 +794,15 @@ NOW GENERATE THE PLAN FOR THIS QUERY. Think carefully about what the user wants 
         
         # Check chart references valid columns
         chart = plan.get('primary_chart', {})
-        if chart.get('x_axis') and chart['x_axis'] not in all_columns:
-            print(f"⚠️ Chart x_axis references invalid column: {chart['x_axis']}")
-        if chart.get('y_axis') and chart['y_axis'] not in all_columns:
-            print(f"⚠️ Chart y_axis references invalid column: {chart['y_axis']}")
+        if chart and chart.get('chart_type'):  # Only validate if chart exists and has a type
+            if chart.get('x_axis') and chart['x_axis'] not in all_columns:
+                print(f"⚠️ Chart x_axis references invalid column: {chart['x_axis']}")
+                print(f"   🔧 FIXING: Removing invalid chart")
+                plan['primary_chart'] = None  # ✅ FIX: Remove chart if x_axis is invalid
+            if chart.get('y_axis') and chart['y_axis'] not in all_columns:
+                print(f"⚠️ Chart y_axis references invalid column: {chart['y_axis']}")
+                print(f"   🔧 FIXING: Removing invalid chart for aggregate-only data")
+                plan['primary_chart'] = None  # ✅ FIX: Remove chart if y_axis is invalid
         
         return True
     
@@ -697,8 +828,14 @@ NOW GENERATE THE PLAN FOR THIS QUERY. Think carefully about what the user wants 
                 icon=kpi_data.get('icon'),
                 sparkline=kpi_data.get('sparkline', False),
                 time_period=kpi_data.get('time_period'),  # NEW: temporal comparison
-                comparison_text=kpi_data.get('comparison_text')  # NEW: additional context
+                comparison_text=kpi_data.get('comparison_text'),  # NEW: additional context
+                filter_condition=kpi_data.get('filter_condition')  # ✅ FIX: Include filter_condition!
             ))
+        
+        # 🔍 DEBUG: Verify filter_condition survived conversion
+        print(f"🔍 AFTER CONVERSION - Checking {len(kpis)} KPIs:")
+        for idx, kpi in enumerate(kpis):
+            print(f"   KPI #{idx + 1}: '{kpi.title}' - filter_condition: {kpi.filter_condition}")
         
         # Convert chart
         chart_data = llm_plan.get('primary_chart', {})
@@ -914,10 +1051,18 @@ NOW GENERATE THE PLAN FOR THIS QUERY. Think carefully about what the user wants 
                 'comparison_periods': [asdict(card) for card in plan.temporal_context.comparison_periods] if plan.temporal_context.comparison_periods else []
             }
         
-        return {
+        # Convert KPIs to dict
+        kpis_dict = [asdict(kpi) for kpi in plan.kpis]
+        
+        # 🔍 DEBUG: Verify filter_condition in serialized KPIs
+        print(f"🔍 PLAN_TO_DICT - Serializing {len(kpis_dict)} KPIs:")
+        for idx, kpi_dict in enumerate(kpis_dict):
+            print(f"   KPI #{idx + 1}: '{kpi_dict.get('title')}' - has filter_condition: {('filter_condition' in kpi_dict)}, value: {kpi_dict.get('filter_condition')}")
+        
+        result = {
             'layout_type': plan.layout_type,
             'query_type': plan.query_type,
-            'kpis': [asdict(kpi) for kpi in plan.kpis],
+            'kpis': kpis_dict,
             'primary_chart': asdict(plan.primary_chart),
             'timeline': asdict(plan.timeline) if plan.timeline else None,
             'breakdown': asdict(plan.breakdown) if plan.breakdown else None,
@@ -925,6 +1070,8 @@ NOW GENERATE THE PLAN FOR THIS QUERY. Think carefully about what the user wants 
             'layout_structure': [asdict(row) for row in plan.layout_structure] if plan.layout_structure else [],
             'metadata': plan.metadata
         }
+        
+        return result
 
 
 # Example usage
