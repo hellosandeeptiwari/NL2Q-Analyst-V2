@@ -86,6 +86,53 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
 
   // Get display data (use filtered data if comparison card is active)
   const getDisplayData = () => {
+    // If no active card, show all data
+    if (activeComparisonCard === null || !plan.temporal_context?.comparison_periods) {
+      return filteredData.length > 0 ? filteredData : data;
+    }
+
+    const activeCard = plan.temporal_context.comparison_periods[activeComparisonCard];
+    const cardLabel = activeCard.time_period.toLowerCase();
+
+    // For statistical insight cards, filter data based on the statistic type
+    if (plan.temporal_context.context_type === 'contextual' || 
+        plan.temporal_context.insight_type === 'statistical_overview') {
+      
+      const displayData = filteredData.length > 0 ? filteredData : data;
+      if (!displayData || displayData.length === 0) return displayData;
+
+      // Get the y-axis column for calculations
+      const yColumn = plan.primary_chart?.y_axis;
+      if (!yColumn) return displayData;
+
+      // Extract numeric values
+      const values = displayData.map(row => Number(row[yColumn]) || 0);
+      
+      if (cardLabel.includes('max')) {
+        // Show only the row with maximum value
+        const maxValue = Math.max(...values);
+        console.log(`🔍 Filtering to MAX value: ${maxValue}`);
+        return displayData.filter(row => Number(row[yColumn]) === maxValue);
+      } 
+      else if (cardLabel.includes('min')) {
+        // Show only the row with minimum value
+        const minValue = Math.min(...values);
+        console.log(`🔍 Filtering to MIN value: ${minValue}`);
+        return displayData.filter(row => Number(row[yColumn]) === minValue);
+      }
+      else if (cardLabel.includes('average') || cardLabel.includes('mean')) {
+        // Show all data (average line will be added to chart separately)
+        console.log(`📊 Showing all data for AVERAGE comparison`);
+        return displayData;
+      }
+      else if (cardLabel.includes('total') || cardLabel.includes('count')) {
+        // Show all data (this is the total view)
+        console.log(`📊 Showing all data for TOTAL view`);
+        return displayData;
+      }
+    }
+
+    // For other types of cards (temporal, regional, etc.), use filtered data
     return filteredData.length > 0 ? filteredData : data;
   };
 
@@ -207,16 +254,16 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
   const renderChart = () => {
     const displayData = getDisplayData();
     if (!plan.primary_chart || !displayData || displayData.length === 0) {
-      console.log('⚠️ No chart to render:', { 
-        hasPrimaryChart: !!plan.primary_chart, 
-        hasData: !!displayData, 
-        dataLength: displayData?.length 
+      console.log('⚠️ No chart to render:', {
+        hasPrimaryChart: !!plan.primary_chart,
+        hasData: !!displayData,
+        dataLength: displayData?.length
       });
       return null;
     }
 
     const { primary_chart } = plan;
-    
+
     // Check if x_axis and y_axis columns exist in the data
     const dataKeys = displayData.length > 0 ? Object.keys(displayData[0]) : [];
     if (!dataKeys.includes(primary_chart.x_axis) || !dataKeys.includes(primary_chart.y_axis)) {
@@ -227,11 +274,20 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
       });
       return null;
     }
-    
+
     const xValues = displayData.map(row => row[primary_chart.x_axis]);
     const yValues = displayData.map(row => Number(row[primary_chart.y_axis]) || 0);
 
     let plotData: any[] = [];
+
+    // Check if we should add average line (when Average card is active)
+    const shouldShowAverageLine = activeComparisonCard !== null && 
+                                  plan.temporal_context?.comparison_periods &&
+                                  plan.temporal_context.comparison_periods[activeComparisonCard]?.time_period.toLowerCase().includes('average');
+    
+    // Calculate average from ALL data (not just filtered)
+    const allYValues = data.map(row => Number(row[primary_chart.y_axis]) || 0);
+    const averageValue = allYValues.reduce((a, b) => a + b, 0) / allYValues.length;
 
     switch (primary_chart.type) {
       case 'line':
@@ -243,7 +299,21 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
           fill: primary_chart.style === 'area_fill' ? 'tozeroy' : 'none',
           marker: { color: '#667eea', size: 8 },
           line: { color: '#667eea', width: 3 },
+          name: primary_chart.y_axis
         }];
+        
+        // Add average line if needed
+        if (shouldShowAverageLine) {
+          plotData.push({
+            x: xValues,
+            y: Array(xValues.length).fill(averageValue),
+            type: 'scatter',
+            mode: 'lines',
+            line: { color: '#ef4444', width: 2, dash: 'dash' },
+            name: `Average (${averageValue.toFixed(1)})`,
+            showlegend: true
+          });
+        }
         break;
 
       case 'bar':
@@ -255,7 +325,21 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
             color: '#667eea',
             line: { width: 0 }
           },
+          name: primary_chart.y_axis
         }];
+        
+        // Add average line if needed
+        if (shouldShowAverageLine) {
+          plotData.push({
+            x: xValues,
+            y: Array(xValues.length).fill(averageValue),
+            type: 'scatter',
+            mode: 'lines',
+            line: { color: '#ef4444', width: 3, dash: 'dash' },
+            name: `Average (${averageValue.toFixed(1)})`,
+            showlegend: true
+          });
+        }
         break;
 
       case 'pie':
@@ -322,7 +406,14 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
       plot_bgcolor: 'white',
       paper_bgcolor: 'white',
       margin: { t: 60, r: 40, b: 60, l: 60 },
-      showlegend: false,
+      showlegend: shouldShowAverageLine, // Show legend when average line is present
+      legend: {
+        orientation: 'h',
+        yanchor: 'bottom',
+        y: 1.02,
+        xanchor: 'right',
+        x: 1
+      },
       autosize: true,
       height: 400,
     };
@@ -340,6 +431,24 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
           }}
           style={{ width: '100%', height: '400px' }}
           useResizeHandler={true}
+          onClick={(data) => {
+            // Handle chart clicks
+            if (data.points && data.points.length > 0) {
+              const point = data.points[0];
+              console.log('📊 Chart clicked:', {
+                x: point.x,
+                y: point.y,
+                label: point.label
+              });
+              // You can add custom click behavior here
+              // For example, show a tooltip or filter data
+            }
+          }}
+          onDoubleClick={() => {
+            // Reset filters on double-click
+            console.log('🔄 Chart double-clicked - resetting filters');
+            setActiveComparisonCard(null);
+          }}
         />
       </div>
     );
