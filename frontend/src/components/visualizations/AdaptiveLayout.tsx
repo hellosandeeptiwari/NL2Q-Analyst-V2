@@ -206,9 +206,28 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
   // Render primary chart using Plotly
   const renderChart = () => {
     const displayData = getDisplayData();
-    if (!plan.primary_chart || !displayData || displayData.length === 0) return null;
+    if (!plan.primary_chart || !displayData || displayData.length === 0) {
+      console.log('⚠️ No chart to render:', { 
+        hasPrimaryChart: !!plan.primary_chart, 
+        hasData: !!displayData, 
+        dataLength: displayData?.length 
+      });
+      return null;
+    }
 
     const { primary_chart } = plan;
+    
+    // Check if x_axis and y_axis columns exist in the data
+    const dataKeys = displayData.length > 0 ? Object.keys(displayData[0]) : [];
+    if (!dataKeys.includes(primary_chart.x_axis) || !dataKeys.includes(primary_chart.y_axis)) {
+      console.warn('⚠️ Chart axes not found in data:', {
+        requestedX: primary_chart.x_axis,
+        requestedY: primary_chart.y_axis,
+        availableColumns: dataKeys
+      });
+      return null;
+    }
+    
     const xValues = displayData.map(row => row[primary_chart.x_axis]);
     const yValues = displayData.map(row => Number(row[primary_chart.y_axis]) || 0);
 
@@ -304,6 +323,8 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
       paper_bgcolor: 'white',
       margin: { t: 60, r: 40, b: 60, l: 60 },
       showlegend: false,
+      autosize: true,
+      height: 400,
     };
 
     return (
@@ -317,7 +338,8 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
             displaylogo: false,
             modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
           }}
-          style={{ width: '100%', height: '100%' }}
+          style={{ width: '100%', height: '400px' }}
+          useResizeHandler={true}
         />
       </div>
     );
