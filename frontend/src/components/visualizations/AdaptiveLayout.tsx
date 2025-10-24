@@ -431,7 +431,7 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
           }}
           style={{ width: '100%', height: '400px' }}
           useResizeHandler={true}
-          onClick={(data) => {
+          onClick={(data: any) => {
             // Handle chart clicks
             if (data.points && data.points.length > 0) {
               const point = data.points[0];
