@@ -95,9 +95,9 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
     const cardLabel = activeCard.time_period.toLowerCase();
 
     // For statistical insight cards, filter data based on the statistic type
-    if (plan.temporal_context.context_type === 'contextual' || 
-        plan.temporal_context.insight_type === 'statistical_overview') {
-      
+    if (plan.temporal_context.context_type === 'contextual' ||
+      plan.temporal_context.insight_type === 'statistical_overview') {
+
       const displayData = filteredData.length > 0 ? filteredData : data;
       if (!displayData || displayData.length === 0) return displayData;
 
@@ -107,13 +107,13 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
 
       // Extract numeric values
       const values = displayData.map(row => Number(row[yColumn]) || 0);
-      
+
       if (cardLabel.includes('max')) {
         // Show only the row with maximum value
         const maxValue = Math.max(...values);
         console.log(`🔍 Filtering to MAX value: ${maxValue}`);
         return displayData.filter(row => Number(row[yColumn]) === maxValue);
-      } 
+      }
       else if (cardLabel.includes('min')) {
         // Show only the row with minimum value
         const minValue = Math.min(...values);
@@ -281,10 +281,10 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
     let plotData: any[] = [];
 
     // Check if we should add average line (when Average card is active)
-    const shouldShowAverageLine = activeComparisonCard !== null && 
-                                  plan.temporal_context?.comparison_periods &&
-                                  plan.temporal_context.comparison_periods[activeComparisonCard]?.time_period.toLowerCase().includes('average');
-    
+    const shouldShowAverageLine = activeComparisonCard !== null &&
+      plan.temporal_context?.comparison_periods &&
+      plan.temporal_context.comparison_periods[activeComparisonCard]?.time_period.toLowerCase().includes('average');
+
     // Calculate average from ALL data (not just filtered)
     const allYValues = data.map(row => Number(row[primary_chart.y_axis]) || 0);
     const averageValue = allYValues.reduce((a, b) => a + b, 0) / allYValues.length;
@@ -301,7 +301,7 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
           line: { color: '#667eea', width: 3 },
           name: primary_chart.y_axis
         }];
-        
+
         // Add average line if needed
         if (shouldShowAverageLine) {
           plotData.push({
@@ -327,7 +327,7 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
           },
           name: primary_chart.y_axis
         }];
-        
+
         // Add average line if needed
         if (shouldShowAverageLine) {
           plotData.push({
@@ -534,14 +534,19 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
           )}
           
           {/* Show helpful message when no chart is available */}
-          {(!primary_chart || !getDisplayData() || getDisplayData().length === 0) && !hasSidebar && (
-            <div style={{
+          {(!primary_chart || !getDisplayData() || getDisplayData().length === 0) && (
+            <div className="main-chart-area" style={{
               background: '#f8fafc',
               border: '2px dashed #e5e7eb',
               borderRadius: '8px',
               padding: '32px',
               textAlign: 'center',
-              color: '#6b7280'
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#6b7280',
+              height: '420px'
             }}>
               <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
               <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px', color: '#374151' }}>
@@ -551,9 +556,7 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
                 This query returned a single aggregate value. No chart visualization available.
               </div>
             </div>
-          )}
-
-          {/* Sidebar for Comparisons, Timeline or Breakdown */}
+          )}          {/* Sidebar for Comparisons, Timeline or Breakdown */}
           {hasSidebar && (
             <div className="sidebar">
               {/* Priority 1: Comparison Cards */}
