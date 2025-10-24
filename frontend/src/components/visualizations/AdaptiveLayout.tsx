@@ -393,7 +393,7 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
     const layout = {
       title: {
         text: primary_chart.title,
-        font: { size: 18, color: '#1f2937' }
+        font: { size: 16, color: '#1f2937' }
       },
       xaxis: {
         title: primary_chart.x_axis.replace('_', ' '),
@@ -405,7 +405,7 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
       },
       plot_bgcolor: 'white',
       paper_bgcolor: 'white',
-      margin: { t: 60, r: 40, b: 60, l: 60 },
+      margin: { t: 40, r: 20, b: 50, l: 60 },
       showlegend: shouldShowAverageLine, // Show legend when average line is present
       legend: {
         orientation: 'h',
@@ -415,7 +415,6 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
         x: 1
       },
       autosize: true,
-      height: 400,
     };
 
     return (
@@ -429,26 +428,8 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
             displaylogo: false,
             modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
           }}
-          style={{ width: '100%', height: '400px' }}
+          style={{ width: '100%', height: '100%' }}
           useResizeHandler={true}
-          onClick={(data: any) => {
-            // Handle chart clicks
-            if (data.points && data.points.length > 0) {
-              const point = data.points[0];
-              console.log('📊 Chart clicked:', {
-                x: point.x,
-                y: point.y,
-                label: point.label
-              });
-              // You can add custom click behavior here
-              // For example, show a tooltip or filter data
-            }
-          }}
-          onDoubleClick={() => {
-            // Reset filters on double-click
-            console.log('🔄 Chart double-clicked - resetting filters');
-            setActiveComparisonCard(null);
-          }}
         />
       </div>
     );
