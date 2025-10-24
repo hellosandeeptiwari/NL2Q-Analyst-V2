@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Plot from 'react-plotly.js';
 import './EnterpriseQueryPanel.css';
+import { API_URL } from '../config/api';
 
 interface TableSuggestion {
   suggested_tables: string[];
@@ -81,7 +82,7 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
       
       // First, get table suggestions
       console.log('🔍 Getting table suggestions for query:', nl);
-      const suggestionsRes = await axios.post('http://localhost:8000/table-suggestions', {
+      const suggestionsRes = await axios.post('${API_URL}/table-suggestions', {
         query: nl,
         top_k: 5
       });
@@ -104,7 +105,7 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
 
       // Generate and execute the query
       console.log('🚀 Executing query with backend...');
-      const queryRes = await axios.post('http://localhost:8000/query', {
+      const queryRes = await axios.post('${API_URL}/query', {
         natural_language: nl,
         job_id: jobId || `query_${Date.now()}`,
         database_type: dbType
@@ -152,7 +153,7 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
     
     setInsightLoading(true);
     try {
-      const insightRes = await axios.post('http://localhost:8000/insight', {
+      const insightRes = await axios.post('${API_URL}/insight', {
         query: nl,
         results: queryResponse.rows.slice(0, 100), // Send first 100 rows for analysis
         columns: queryResponse.columns,

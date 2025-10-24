@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import Plot from 'react-plotly.js';
 import './ConversationalQueryPanel.css';
+import { API_URL } from '../config/api';
 
 interface Message {
   id: string;
@@ -76,7 +77,7 @@ const ConversationalQueryPanel: React.FC<ConversationalQueryPanelProps> = ({
 
     try {
       const jobId = generateJobId();
-      const response = await axios.post('http://localhost:8000/query', {
+      const response = await axios.post('${API_URL}/query', {
         natural_language: currentInput.trim(),
         job_id: jobId
       }, {

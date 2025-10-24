@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { API_URL } from '../config/api';
 
 interface DatabaseConfig {
   type: 'snowflake' | 'postgres' | 'mysql' | 'azure_sql';
@@ -44,7 +45,7 @@ function SettingsPanel({ isOpen, onClose, onDatabaseChange }: SettingsPanelProps
       try {
         // Always try to fetch from backend environment variables first
         console.log('📡 Fetching configuration from backend...');
-        const response = await axios.get('http://localhost:8000/get-db-config');
+        const response = await axios.get('${API_URL}/get-db-config');
         console.log('✅ Backend response:', response.data);
         
         if (response.data && response.data.config) {
@@ -153,7 +154,7 @@ function SettingsPanel({ isOpen, onClose, onDatabaseChange }: SettingsPanelProps
       };
 
       console.log('🔄 Sending test connection request:', { ...requestData, password: '***' });
-      const response = await axios.post('http://localhost:8000/test-connection', requestData);
+      const response = await axios.post('${API_URL}/test-connection', requestData);
       console.log('📡 Backend response:', response.data);
       
       if (response.data.success) {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import './EnhancedPharmaChat.css';
+import { API_URL, WS_URL } from '../config/api';
 import {
   FiSend, FiCopy, FiCheck, FiDatabase, FiSettings,
   FiBarChart2, FiTable, FiAlertTriangle, FiInfo,
@@ -163,7 +164,7 @@ const api = {
   // Database Status
   getDatabaseStatus: async (): Promise<DatabaseStatus> => {
     try {
-      const response = await fetch('http://localhost:8000/api/database/status');
+      const response = await fetch('${API_URL}/api/database/status');
       if (!response.ok) {
         throw new Error('Failed to fetch database status');
       }
@@ -189,7 +190,7 @@ const api = {
   // Agent Query (no timeout - waits indefinitely for backend)
   sendQuery: async (query: string, userId: string, conversationId: string): Promise<QueryPlan> => {
     // No timeout - let the backend take as long as it needs
-    const response = await fetch('http://localhost:8000/api/agent/query', {
+    const response = await fetch('${API_URL}/api/agent/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -210,7 +211,7 @@ const api = {
 
   // Intent Detection - Check if message needs planning or casual response
   detectIntent: async (query: string, context?: any): Promise<{ needsPlanning: boolean, isContextQuestion?: boolean, response?: string, contextType?: string }> => {
-    const response = await fetch('http://localhost:8000/api/agent/detect-intent', {
+    const response = await fetch('${API_URL}/api/agent/detect-intent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, context })
@@ -225,7 +226,7 @@ const api = {
 
   getPlanStatus: async (planId: string): Promise<QueryPlan> => {
     // No timeout for status checks either
-    const response = await fetch(`http://localhost:8000/api/agent/plan/${planId}/status`);
+    const response = await fetch(`${API_URL}/api/agent/plan/${planId}/status`);
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -505,7 +506,7 @@ const EnhancedPharmaChat: React.FC<EnhancedPharmaChatProps> = ({ onNavigateToSet
   // Setup WebSocket connection for real-time progress
   useEffect(() => {
     const connectWebSocket = () => {
-      const ws = new WebSocket('ws://localhost:8000/ws/progress');
+      const ws = new WebSocket('${WS_URL}/ws/progress');
 
       ws.onopen = () => {
         console.log('Connected to progress WebSocket');

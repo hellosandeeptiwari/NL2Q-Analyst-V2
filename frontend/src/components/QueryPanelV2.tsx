@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import Plot from 'react-plotly.js';
+import { API_URL } from '../config/api';
 
 interface TableSuggestion {
   suggested_tables: string[];
@@ -48,7 +49,7 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
     try {
       // First, get table suggestions
       console.log('🔍 Getting table suggestions for query:', nl);
-      const suggestionsRes = await axios.post('http://localhost:8000/table-suggestions', {
+      const suggestionsRes = await axios.post('${API_URL}/table-suggestions', {
         query: nl
       });
       
@@ -81,7 +82,7 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
       }
       
       // If no suggestions needed or no matches, run query directly
-      const res = await axios.post('http://localhost:8000/query', {
+      const res = await axios.post('${API_URL}/query', {
         natural_language: nl,
         job_id: jobId || `job_${Date.now()}`,
         db_type: dbType,
@@ -127,7 +128,7 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
     setErrorDetails(null);
     setLoading(true);
     try {
-      const res = await axios.post('http://localhost:8000/query-with-table', {
+      const res = await axios.post('${API_URL}/query-with-table', {
         natural_language: tableSuggestions?.query || nl,
         job_id: jobId || `job_${Date.now()}`,
         selected_tables: selectedTables,
@@ -162,7 +163,7 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
         columns: response.columns || []
       };
       
-      const res = await axios.post('http://localhost:8000/insights', insightPayload);
+      const res = await axios.post('${API_URL}/insights', insightPayload);
       setInsight(res.data.insight);
       // Notify parent component of insight update
       if (onInsightUpdate) {
