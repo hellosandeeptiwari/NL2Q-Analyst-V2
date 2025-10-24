@@ -540,15 +540,37 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
 
         {/* Main Content Area */}
         <div className={`main-content ${hasSidebar ? 'with-sidebar' : 'full-width'}`}>
-          {/* Primary Chart */}
-          <div className="main-chart-area">
-            {renderChart()}
-            {activeComparisonCard !== null && temporal_context?.comparison_periods && (
-              <div className="active-filter-badge">
-                Showing: {temporal_context.comparison_periods[activeComparisonCard].time_period}
+          {/* Primary Chart - Only show if there's actually data to chart */}
+          {primary_chart && getDisplayData() && getDisplayData().length > 0 && (
+            <div className="main-chart-area">
+              {renderChart()}
+              {activeComparisonCard !== null && temporal_context?.comparison_periods && (
+                <div className="active-filter-badge">
+                  Showing: {temporal_context.comparison_periods[activeComparisonCard].time_period}
+                </div>
+              )}
+            </div>
+          )}
+          
+          {/* Show helpful message when no chart is available */}
+          {(!primary_chart || !getDisplayData() || getDisplayData().length === 0) && !hasSidebar && (
+            <div style={{
+              background: '#f8fafc',
+              border: '2px dashed #e5e7eb',
+              borderRadius: '8px',
+              padding: '32px',
+              textAlign: 'center',
+              color: '#6b7280'
+            }}>
+              <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
+              <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px', color: '#374151' }}>
+                Single Value Result
               </div>
-            )}
-          </div>
+              <div style={{ fontSize: '14px' }}>
+                This query returned a single aggregate value. No chart visualization available.
+              </div>
+            </div>
+          )}
 
           {/* Sidebar for Comparisons, Timeline or Breakdown */}
           {hasSidebar && (
