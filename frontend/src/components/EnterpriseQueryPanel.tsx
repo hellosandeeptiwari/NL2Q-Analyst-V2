@@ -47,12 +47,12 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
     if (savedHistory) {
       setQueryHistory(JSON.parse(savedHistory));
     }
-    
+
     const savedTheme = localStorage.getItem('azure-analyst-theme') as 'light' | 'dark';
     if (savedTheme) {
       setTheme(savedTheme);
     }
-    
+
     // Set default job ID if empty
     if (!jobId) {
       setJobId(`query_${Date.now()}`);
@@ -69,17 +69,17 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nl.trim()) return;
-    
+
     setError('');
     setErrorDetails(null);
     setTableSuggestions(null);
     setResponse(null);
     setLoading(true);
-    
+
     try {
       // Save to history
       saveToHistory(nl);
-      
+
       // First, get table suggestions
       console.log('🔍 Getting table suggestions for query:', nl);
       const suggestionsRes = await axios.post('${API_URL}/table-suggestions', {
@@ -91,14 +91,14 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
         // Handle Azure agent server response format
         const azureResponse = suggestionsRes.data;
         const tableNames = azureResponse.suggestions?.map((s: any) => s.table_name || s) || azureResponse.suggested_tables;
-        
+
         setTableSuggestions({
           suggested_tables: tableNames,
           all_tables: azureResponse.all_tables || [],
           message: azureResponse.user_guidance?.message || 'Please select tables for your query',
           query: nl
         });
-        
+
         console.log('✅ Table suggestions received:', tableNames);
         setSelectedTables(tableNames.slice(0, 3)); // Auto-select top 3
       }
@@ -113,7 +113,7 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
 
       console.log('✅ Query response received:', queryRes.data);
       setResponse(queryRes.data);
-      
+
       if (onQueryResults) {
         onQueryResults(queryRes.data);
       }
@@ -125,11 +125,11 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
 
     } catch (err: any) {
       console.error('❌ Query failed:', err);
-      
+
       if (err.response?.data) {
         const errorData = err.response.data;
         setErrorDetails(errorData);
-        
+
         if (errorData.suggestions) {
           setTableSuggestions({
             suggested_tables: errorData.suggestions.suggested_tables || [],
@@ -138,7 +138,7 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
             query: nl
           });
         }
-        
+
         setError(errorData.error || errorData.message || 'Query execution failed');
       } else {
         setError('Network error. Please check if the server is running.');
@@ -150,7 +150,7 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
 
   const generateInsight = async (queryResponse: any) => {
     if (!queryResponse.rows || queryResponse.rows.length === 0) return;
-    
+
     setInsightLoading(true);
     try {
       const insightRes = await axios.post('${API_URL}/insight', {
@@ -159,7 +159,7 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
         columns: queryResponse.columns,
         job_id: jobId
       });
-      
+
       if (insightRes.data.insight) {
         setInsight(insightRes.data.insight);
         if (onInsightUpdate) {
@@ -201,15 +201,15 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
               ...viz.layout,
               paper_bgcolor: theme === 'dark' ? '#1a1a1a' : '#ffffff',
               plot_bgcolor: theme === 'dark' ? '#2d2d2d' : '#f8f9fa',
-              font: { 
+              font: {
                 color: theme === 'dark' ? '#ffffff' : '#333333',
                 family: 'Inter, system-ui, sans-serif'
               },
               title: {
                 ...viz.layout?.title,
-                font: { 
-                  size: 18, 
-                  color: theme === 'dark' ? '#ffffff' : '#333333' 
+                font: {
+                  size: 18,
+                  color: theme === 'dark' ? '#ffffff' : '#333333'
                 }
               }
             }}
@@ -237,7 +237,7 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
         <div className="grid-header">
           <h3>📊 Azure Analytics Results ({response.rows.length} records)</h3>
           <div className="grid-actions">
-            <button 
+            <button
               className="btn btn-secondary"
               onClick={() => {
                 const csv = [
@@ -256,7 +256,7 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
             </button>
           </div>
         </div>
-        
+
         <div className="grid-container">
           <table className="data-table">
             <thead>
@@ -278,7 +278,7 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
               ))}
             </tbody>
           </table>
-          
+
           {response.rows.length > 50 && (
             <div className="grid-footer">
               <p>Showing first 50 of {response.rows.length} records</p>
@@ -301,17 +301,17 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
               Enterprise-grade natural language data analysis platform
             </p>
           </div>
-          
+
           <div className="header-actions">
-            <button 
+            <button
               className="btn btn-icon"
               onClick={toggleTheme}
               title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
             >
               {theme === 'light' ? '🌙' : '☀️'}
             </button>
-            
-            <button 
+
+            <button
               className="btn btn-icon"
               onClick={() => setShowAdvanced(!showAdvanced)}
               title="Advanced settings"
@@ -339,7 +339,7 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
                 disabled={loading}
               />
             </div>
-            
+
             {showAdvanced && (
               <div className="advanced-settings">
                 <div className="form-row">
@@ -353,7 +353,7 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
                       placeholder="Auto-generated"
                     />
                   </div>
-                  
+
                   <div className="form-group">
                     <label className="form-label">Database Type</label>
                     <select
@@ -369,7 +369,7 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
                 </div>
               </div>
             )}
-            
+
             <div className="form-actions">
               <button
                 type="submit"
@@ -380,24 +380,24 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
               </button>
             </div>
           </form>
-          
+
           {/* Quick Actions */}
           <div className="quick-actions">
             <h4>Quick Actions</h4>
             <div className="action-buttons">
-              <button 
+              <button
                 className="btn btn-secondary btn-small"
                 onClick={() => handleExampleQuery('show me top 10 revenue sources with trends')}
               >
                 📈 Revenue Analysis
               </button>
-              <button 
+              <button
                 className="btn btn-secondary btn-small"
                 onClick={() => handleExampleQuery('analyze user engagement metrics by channel')}
               >
                 👥 User Analytics
               </button>
-              <button 
+              <button
                 className="btn btn-secondary btn-small"
                 onClick={() => handleExampleQuery('create performance dashboard for last quarter')}
               >
@@ -405,7 +405,7 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
               </button>
             </div>
           </div>
-          
+
           {/* Query History */}
           {queryHistory.length > 0 && (
             <div className="query-history">
@@ -440,7 +440,7 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
               <div className="error-content">
                 <h3>Query Error</h3>
                 <p>{error}</p>
-                
+
                 {errorDetails?.suggestions && (
                   <div className="error-suggestions">
                     <h4>Suggested Tables:</h4>
@@ -459,7 +459,7 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
             <div className="table-suggestions">
               <h3>📋 Table Suggestions</h3>
               <p className="suggestions-message">{tableSuggestions.message}</p>
-              
+
               <div className="suggested-tables">
                 <h4>Recommended Tables:</h4>
                 <div className="table-chips">
@@ -470,7 +470,7 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
                   ))}
                 </div>
               </div>
-              
+
               {showAllTables && tableSuggestions.all_tables.length > 0 && (
                 <div className="all-tables">
                   <h4>All Available Tables:</h4>
@@ -483,7 +483,7 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
                   </div>
                 </div>
               )}
-              
+
               <button
                 className="btn btn-link"
                 onClick={() => setShowAllTables(!showAllTables)}
@@ -497,10 +497,10 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
             <div className="success-results">
               {/* Visualization */}
               {renderVisualization()}
-              
+
               {/* Data Grid */}
               {renderDataGrid()}
-              
+
               {/* Insights */}
               {(insight || insightLoading) && (
                 <div className="insights-section">
@@ -519,7 +519,7 @@ function EnterpriseQueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelPro
                   )}
                 </div>
               )}
-              
+
               {/* Query Metadata */}
               <div className="query-metadata">
                 <div className="metadata-grid">

@@ -20,9 +20,9 @@ interface ConversationalQueryPanelProps {
   onInsightUpdate?: (insight: string) => void;
 }
 
-const ConversationalQueryPanel: React.FC<ConversationalQueryPanelProps> = ({ 
-  onQueryResults, 
-  onInsightUpdate 
+const ConversationalQueryPanel: React.FC<ConversationalQueryPanelProps> = ({
+  onQueryResults,
+  onInsightUpdate
 }) => {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -164,7 +164,7 @@ const ConversationalQueryPanel: React.FC<ConversationalQueryPanelProps> = ({
         data.columns.join(','),
         ...data.rows.map((row: any[]) => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
       ].join('\n');
-      
+
       const blob = new Blob([csvContent], { type: 'text/csv' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -181,7 +181,7 @@ const ConversationalQueryPanel: React.FC<ConversationalQueryPanelProps> = ({
           recordCount: data.rows.length
         }
       }, null, 2);
-      
+
       const blob = new Blob([jsonContent], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -220,7 +220,7 @@ const ConversationalQueryPanel: React.FC<ConversationalQueryPanelProps> = ({
             </span>
           </div>
         </div>
-        
+
         <div className="message-content">
           {message.isLoading ? (
             <div className="loading-indicator">
@@ -233,21 +233,21 @@ const ConversationalQueryPanel: React.FC<ConversationalQueryPanelProps> = ({
           ) : (
             <>
               <div className="message-text">{message.content}</div>
-              
+
               {/* Render data table if available */}
               {message.queryResults?.rows && (
                 <div className="data-results">
                   <div className="data-header">
                     <h4>📊 Query Results ({message.queryResults.rows.length} rows)</h4>
                     <div className="data-actions">
-                      <button 
+                      <button
                         className="action-btn"
                         onClick={() => downloadData(message.queryResults, `query_${message.id}`, 'csv')}
                         title="Download as CSV"
                       >
                         📄 CSV
                       </button>
-                      <button 
+                      <button
                         className="action-btn"
                         onClick={() => downloadData(message.queryResults, `query_${message.id}`, 'json')}
                         title="Download as JSON"
@@ -278,7 +278,7 @@ const ConversationalQueryPanel: React.FC<ConversationalQueryPanelProps> = ({
                     {message.queryResults.rows.length > 10 && (
                       <div className="data-pagination">
                         Showing 10 of {message.queryResults.rows.length} rows
-                        <button 
+                        <button
                           className="action-btn small"
                           onClick={() => {
                             // Show all data in a modal or expandable view
@@ -299,7 +299,7 @@ const ConversationalQueryPanel: React.FC<ConversationalQueryPanelProps> = ({
                   <div className="chart-header">
                     <h4>📈 Visualization</h4>
                     <div className="chart-actions">
-                      <button 
+                      <button
                         className="action-btn"
                         onClick={() => {
                           // Download chart as PNG
@@ -327,7 +327,7 @@ const ConversationalQueryPanel: React.FC<ConversationalQueryPanelProps> = ({
                       autosize: true,
                       margin: { t: 40, r: 20, b: 40, l: 60 }
                     }}
-                    config={{ 
+                    config={{
                       responsive: true,
                       displayModeBar: true,
                       modeBarButtonsToRemove: ['pan2d', 'lasso2d'],
@@ -356,21 +356,21 @@ const ConversationalQueryPanel: React.FC<ConversationalQueryPanelProps> = ({
             </div>
           </div>
           <div className="header-controls">
-            <button 
+            <button
               className="control-btn"
               onClick={toggleSidebar}
               title="Toggle sidebar"
             >
               📱
             </button>
-            <button 
+            <button
               className="control-btn"
               onClick={toggleTheme}
               title={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
             >
               {theme === 'light' ? '🌙' : '☀️'}
             </button>
-            <button 
+            <button
               className="control-btn"
               onClick={clearConversation}
               title="Clear conversation"
@@ -386,19 +386,19 @@ const ConversationalQueryPanel: React.FC<ConversationalQueryPanelProps> = ({
         {showSidebar && (
           <div className="sidebar">
             <div className="sidebar-tabs">
-              <button 
+              <button
                 className={`sidebar-tab ${sidebarTab === 'history' ? 'active' : ''}`}
                 onClick={() => setSidebarTab('history')}
               >
                 🕒 History
               </button>
-              <button 
+              <button
                 className={`sidebar-tab ${sidebarTab === 'settings' ? 'active' : ''}`}
                 onClick={() => setSidebarTab('settings')}
               >
                 ⚙️ Settings
               </button>
-              <button 
+              <button
                 className={`sidebar-tab ${sidebarTab === 'help' ? 'active' : ''}`}
                 onClick={() => setSidebarTab('help')}
               >
@@ -429,7 +429,7 @@ const ConversationalQueryPanel: React.FC<ConversationalQueryPanelProps> = ({
                             )}
                           </div>
                           <div className="history-actions">
-                            <button 
+                            <button
                               className="history-btn"
                               onClick={() => rerunQuery(item.query)}
                               title="Use this query"
@@ -437,7 +437,7 @@ const ConversationalQueryPanel: React.FC<ConversationalQueryPanelProps> = ({
                               🔄
                             </button>
                             {item.response?.rows && (
-                              <button 
+                              <button
                                 className="history-btn"
                                 onClick={() => downloadData(item.response, `history_${item.id}`, 'csv')}
                                 title="Download results"
@@ -497,19 +497,19 @@ const ConversationalQueryPanel: React.FC<ConversationalQueryPanelProps> = ({
                   <div className="help-section">
                     <h4>📊 Example Queries</h4>
                     <div className="example-queries">
-                      <button 
+                      <button
                         className="example-btn"
                         onClick={() => setCurrentInput('Show me the top 10 revenue sources')}
                       >
                         "Show me the top 10 revenue sources"
                       </button>
-                      <button 
+                      <button
                         className="example-btn"
                         onClick={() => setCurrentInput('Create a chart of user engagement over time')}
                       >
                         "Create a chart of user engagement over time"
                       </button>
-                      <button 
+                      <button
                         className="example-btn"
                         onClick={() => setCurrentInput('Analyze performance metrics by region')}
                       >
@@ -566,31 +566,31 @@ const ConversationalQueryPanel: React.FC<ConversationalQueryPanelProps> = ({
             )}
           </button>
         </div>
-        
+
         {/* Quick Actions */}
         <div className="quick-actions">
-          <button 
+          <button
             className="quick-action-btn"
             onClick={() => setCurrentInput('Show me the top 10 records from my analytics data')}
             disabled={isLoading}
           >
             📊 Show Top Data
           </button>
-          <button 
+          <button
             className="quick-action-btn"
             onClick={() => setCurrentInput('Create a visualization of revenue trends')}
             disabled={isLoading}
           >
             📈 Revenue Analysis
           </button>
-          <button 
+          <button
             className="quick-action-btn"
             onClick={() => setCurrentInput('Analyze user engagement patterns')}
             disabled={isLoading}
           >
             👥 User Analytics
           </button>
-          <button 
+          <button
             className="quick-action-btn"
             onClick={() => setCurrentInput('Generate a performance dashboard')}
             disabled={isLoading}

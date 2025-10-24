@@ -45,42 +45,42 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
     setTableSuggestions(null);
     setResponse(null);
     setLoading(true);
-    
+
     try {
       // First, get table suggestions
       console.log('🔍 Getting table suggestions for query:', nl);
       const suggestionsRes = await axios.post('${API_URL}/table-suggestions', {
         query: nl
       });
-      
+
       console.log('📋 Table suggestions response:', suggestionsRes.data);
-      
+
       // Handle Azure Analytics agent server response format
       if (suggestionsRes.data.user_guidance?.should_provide_suggestions && suggestionsRes.data.suggestions?.length > 0) {
         // Convert Azure Analytics agent format to frontend format
         const analyticsResponse = suggestionsRes.data;
         const tableNames = analyticsResponse.suggestions.map((s: any) => s.table_name || s);
-        
+
         const convertedSuggestions = {
           suggested_tables: tableNames,
           all_tables: tableNames, // For now, use the same list
           message: analyticsResponse.user_guidance.message || 'Please select tables for your query',
           query: nl
         };
-        
+
         console.log('🔄 Converted suggestions:', convertedSuggestions);
         setTableSuggestions(convertedSuggestions);
         setLoading(false);
         return;
       }
-      
+
       // Handle standard backend format  
       if (suggestionsRes.data.suggested_tables?.length > 0) {
         setTableSuggestions(suggestionsRes.data);
         setLoading(false);
         return;
       }
-      
+
       // If no suggestions needed or no matches, run query directly
       const res = await axios.post('${API_URL}/query', {
         natural_language: nl,
@@ -89,7 +89,7 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
         selected_tables: selectedTables,
         use_deterministic: useDeterministic
       });
-      
+
       setResponse(res.data);
       setSelectedTables([]); // Reset selections
       // Notify parent component of results
@@ -162,7 +162,7 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
         data_rows: response.rows || [],
         columns: response.columns || []
       };
-      
+
       const res = await axios.post('${API_URL}/insights', insightPayload);
       setInsight(res.data.insight);
       // Notify parent component of insight update
@@ -201,9 +201,9 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
           </p>
         </div>
       </div>
-      
+
       {/* Enhanced Main Query Form */}
-      <div style={{ 
+      <div style={{
         background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
         borderRadius: '16px',
         padding: '2rem',
@@ -211,32 +211,32 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
         boxShadow: '0 10px 25px rgba(0,0,0,0.1)'
       }}>
         <div style={{ marginBottom: '1.5rem' }}>
-          <h2 style={{ 
-            color: 'white', 
-            margin: 0, 
+          <h2 style={{
+            color: 'white',
+            margin: 0,
             fontSize: '1.5rem',
             fontWeight: '700',
             textAlign: 'center'
           }}>
             ☁️ Azure Analytics Intelligence System
           </h2>
-          <p style={{ 
-            color: 'rgba(255,255,255,0.9)', 
-            margin: '0.5rem 0 0 0', 
+          <p style={{
+            color: 'rgba(255,255,255,0.9)',
+            margin: '0.5rem 0 0 0',
             textAlign: 'center',
             fontSize: '14px'
           }}>
             Ask questions about Azure Analytics data in natural language and get intelligent insights
           </p>
         </div>
-        
+
         <form onSubmit={handleSubmit}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px 150px 120px', gap: '1rem', alignItems: 'end', marginBottom: '1.5rem' }}>
             <div>
-              <label style={{ 
-                display: 'block', 
-                marginBottom: '0.75rem', 
-                fontWeight: '600', 
+              <label style={{
+                display: 'block',
+                marginBottom: '0.75rem',
+                fontWeight: '600',
                 color: 'white',
                 fontSize: '0.9rem',
                 textTransform: 'uppercase',
@@ -248,10 +248,10 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
                 value={nl}
                 onChange={e => setNl(e.target.value)}
                 placeholder="Example queries:&#10;• 'read table final azure analytics output and fetch top 5 rows'&#10;• 'create a visualization with frequency of recommended message'&#10;• 'show me Azure Analytics performance data with charts'"
-                style={{ 
-                  width: '100%', 
-                  padding: '16px 20px', 
-                  border: 'none', 
+                style={{
+                  width: '100%',
+                  padding: '16px 20px',
+                  border: 'none',
                   borderRadius: '12px',
                   fontSize: '14px',
                   minHeight: '120px',
@@ -267,12 +267,12 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
                 required
               />
             </div>
-            
+
             <div>
-              <label style={{ 
-                display: 'block', 
-                marginBottom: '0.75rem', 
-                fontWeight: '600', 
+              <label style={{
+                display: 'block',
+                marginBottom: '0.75rem',
+                fontWeight: '600',
                 color: 'white',
                 fontSize: '0.9rem',
                 textTransform: 'uppercase',
@@ -283,113 +283,113 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
               <select
                 value={dbType}
                 onChange={e => setDbType(e.target.value)}
-              style={{ 
-                width: '100%', 
-                padding: '16px 20px', 
-                border: 'none', 
-                borderRadius: '12px',
-                background: 'white',
-                fontSize: '14px',
-                boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
-                outline: 'none'
-              }}
-            >
-              <option value="snowflake">❄️ Snowflake</option>
-              <option value="sqlite">💾 SQLite</option>
-              <option value="postgres">🐘 PostgreSQL</option>
-              <option value="azure_sql">☁️ Azure SQL</option>
-            </select>
-          </div>
-          
-          <div>
-            <label style={{ 
-              display: 'block', 
-              marginBottom: '0.75rem', 
-              fontWeight: '600', 
-              color: 'white',
-              fontSize: '0.9rem',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em'
-            }}>
-              🎯 Mode
-            </label>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              background: 'white',
-              borderRadius: '12px',
-              padding: '8px 12px',
-              boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
-              height: '52px'
-            }}>
-              <input
-                type="checkbox"
-                id="deterministic-toggle"
-                checked={useDeterministic}
-                onChange={(e) => setUseDeterministic(e.target.checked)}
-                style={{ marginRight: '8px' }}
-              />
-              <label 
-                htmlFor="deterministic-toggle"
-                style={{ 
-                  fontSize: '12px', 
-                  color: '#333',
-                  cursor: 'pointer',
-                  fontWeight: '500'
+                style={{
+                  width: '100%',
+                  padding: '16px 20px',
+                  border: 'none',
+                  borderRadius: '12px',
+                  background: 'white',
+                  fontSize: '14px',
+                  boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                  outline: 'none'
                 }}
               >
-                Enhanced
+                <option value="snowflake">❄️ Snowflake</option>
+                <option value="sqlite">💾 SQLite</option>
+                <option value="postgres">🐘 PostgreSQL</option>
+                <option value="azure_sql">☁️ Azure SQL</option>
+              </select>
+            </div>
+
+            <div>
+              <label style={{
+                display: 'block',
+                marginBottom: '0.75rem',
+                fontWeight: '600',
+                color: 'white',
+                fontSize: '0.9rem',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em'
+              }}>
+                🎯 Mode
               </label>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                background: 'white',
+                borderRadius: '12px',
+                padding: '8px 12px',
+                boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                height: '52px'
+              }}>
+                <input
+                  type="checkbox"
+                  id="deterministic-toggle"
+                  checked={useDeterministic}
+                  onChange={(e) => setUseDeterministic(e.target.checked)}
+                  style={{ marginRight: '8px' }}
+                />
+                <label
+                  htmlFor="deterministic-toggle"
+                  style={{
+                    fontSize: '12px',
+                    color: '#333',
+                    cursor: 'pointer',
+                    fontWeight: '500'
+                  }}
+                >
+                  Enhanced
+                </label>
+              </div>
+            </div>
+
+            <div>
+              <button
+                type="submit"
+                disabled={loading}
+                style={{
+                  width: '100%',
+                  padding: '16px 24px',
+                  backgroundColor: loading ? '#6c757d' : '#28a745',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '12px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                  transition: 'all 0.2s ease',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px'
+                }}
+                onMouseEnter={(e) => {
+                  if (!loading) {
+                    e.currentTarget.style.backgroundColor = '#218838';
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                    e.currentTarget.style.boxShadow = '0 6px 12px rgba(0,0,0,0.15)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!loading) {
+                    e.currentTarget.style.backgroundColor = '#28a745';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
+                  }
+                }}
+              >
+                {loading ? '🔄 Analyzing...' : '🚀 Query Azure Analytics'}
+              </button>
             </div>
           </div>
-          
-          <div>
-            <button
-              type="submit"
-              disabled={loading}
-              style={{ 
-                width: '100%',
-                padding: '16px 24px', 
-                backgroundColor: loading ? '#6c757d' : '#28a745',
-                color: 'white',
-                border: 'none',
-                borderRadius: '12px',
-                fontSize: '14px',
-                fontWeight: '600',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
-                transition: 'all 0.2s ease',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px'
-              }}
-              onMouseEnter={(e) => {
-                if (!loading) {
-                  e.currentTarget.style.backgroundColor = '#218838';
-                  e.currentTarget.style.transform = 'translateY(-1px)';
-                  e.currentTarget.style.boxShadow = '0 6px 12px rgba(0,0,0,0.15)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!loading) {
-                  e.currentTarget.style.backgroundColor = '#28a745';
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
-                }
-              }}
-            >
-              {loading ? '🔄 Analyzing...' : '🚀 Query Azure Analytics'}
-            </button>
-          </div>
-        </div>
         </form>
       </div>
 
       {/* Table Selection UI */}
       {tableSuggestions && (
-        <div style={{ 
-          marginTop: '2rem', 
-          padding: '2rem', 
-          background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)', 
+        <div style={{
+          marginTop: '2rem',
+          padding: '2rem',
+          background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
           border: '2px solid #e2e8f0',
           borderRadius: '16px',
           boxShadow: '0 4px 25px rgba(0, 0, 0, 0.05)'
@@ -416,13 +416,13 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
               </p>
             </div>
           </div>
-          
+
           {/* Suggested Tables */}
           {tableSuggestions && tableSuggestions.suggested_tables && tableSuggestions.suggested_tables.length > 0 && (
             <div style={{ marginBottom: '2rem' }}>
-              <h4 style={{ 
-                color: '#374151', 
-                marginBottom: '1rem', 
+              <h4 style={{
+                color: '#374151',
+                marginBottom: '1rem',
                 fontSize: '1rem',
                 fontWeight: '600',
                 display: 'flex',
@@ -438,7 +438,7 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
                     onClick={() => handleTableSelection(table)}
                     className="table-suggestion"
                     style={{
-                      ...(selectedTables.includes(table) ? { 
+                      ...(selectedTables.includes(table) ? {
                         background: 'linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%)',
                         borderColor: '#3b82f6',
                         color: '#1e40af'
@@ -492,9 +492,9 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
               <h4 style={{ color: '#495057', marginBottom: '0.5rem', fontSize: '1rem' }}>
                 📋 All Available Tables:
               </h4>
-              <div style={{ 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', 
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
                 gap: '0.5rem',
                 maxHeight: '200px',
                 overflowY: 'auto',
@@ -528,9 +528,9 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
           {/* Selected Tables Display */}
           {selectedTables.length > 0 && (
             <div style={{ marginBottom: '2rem' }}>
-              <h4 style={{ 
-                color: '#374151', 
-                marginBottom: '1rem', 
+              <h4 style={{
+                color: '#374151',
+                marginBottom: '1rem',
                 fontSize: '1rem',
                 fontWeight: '600',
                 display: 'flex',
@@ -588,8 +588,8 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
               <span style={{ fontSize: '18px' }}>
                 {loading ? '⏳' : selectedTables.length > 0 ? '🚀' : '⚠️'}
               </span>
-              {loading ? 'Processing Query...' : 
-               selectedTables.length > 0 ? 'Execute Query with Selected Tables' : 'Select Tables First'}
+              {loading ? 'Processing Query...' :
+                selectedTables.length > 0 ? 'Execute Query with Selected Tables' : 'Select Tables First'}
             </button>
           </div>
         </div>
@@ -597,8 +597,8 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
 
       {/* Enhanced Error Display */}
       {error && (
-        <div className="error-alert" style={{ 
-          display: 'flex', 
+        <div className="error-alert" style={{
+          display: 'flex',
           alignItems: 'flex-start',
           gap: '1rem',
           flexDirection: 'column'
@@ -625,22 +625,22 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
               </p>
             </div>
           </div>
-          
+
           {/* Enhanced Error Details */}
           {errorDetails && (
             <div style={{ width: '100%', marginTop: '1rem' }}>
               {errorDetails.message && (
-                <div style={{ 
-                  background: '#fff3cd', 
-                  border: '1px solid #ffeaa7', 
-                  padding: '1rem', 
+                <div style={{
+                  background: '#fff3cd',
+                  border: '1px solid #ffeaa7',
+                  padding: '1rem',
                   borderRadius: '8px',
                   marginBottom: '1rem'
                 }}>
                   <h5 style={{ margin: '0 0 0.5rem 0', color: '#856404' }}>💡 Suggestions</h5>
-                  <pre style={{ 
-                    whiteSpace: 'pre-wrap', 
-                    fontSize: '13px', 
+                  <pre style={{
+                    whiteSpace: 'pre-wrap',
+                    fontSize: '13px',
                     color: '#856404',
                     margin: 0,
                     fontFamily: 'inherit'
@@ -649,25 +649,25 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
                   </pre>
                 </div>
               )}
-              
+
               {errorDetails.llm_analysis && (
-                <div style={{ 
-                  background: '#e7f3ff', 
-                  border: '1px solid #b8daff', 
-                  padding: '1rem', 
+                <div style={{
+                  background: '#e7f3ff',
+                  border: '1px solid #b8daff',
+                  padding: '1rem',
                   borderRadius: '8px'
                 }}>
                   <h5 style={{ margin: '0 0 0.5rem 0', color: '#004085' }}>🤖 AI Analysis</h5>
-                  
+
                   {errorDetails.llm_analysis.column_matches?.length > 0 && (
                     <div style={{ marginBottom: '1rem' }}>
                       <strong style={{ color: '#004085' }}>Possible Column Matches:</strong>
                       {errorDetails.llm_analysis.column_matches?.map((match: any, index: number) => (
-                        <div key={index} style={{ 
-                          margin: '0.5rem 0', 
-                          padding: '0.5rem', 
-                          background: 'rgba(255,255,255,0.7)', 
-                          borderRadius: '4px' 
+                        <div key={index} style={{
+                          margin: '0.5rem 0',
+                          padding: '0.5rem',
+                          background: 'rgba(255,255,255,0.7)',
+                          borderRadius: '4px'
                         }}>
                           <div style={{ fontWeight: '600' }}>
                             '{match.requested}' → '{match.matched}' ({Math.round(match.confidence * 100)}% match)
@@ -679,16 +679,16 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
                       ))}
                     </div>
                   )}
-                  
+
                   {errorDetails.llm_analysis.suggested_alternatives?.length > 0 && (
                     <div>
                       <strong style={{ color: '#004085' }}>Alternative Columns:</strong>
                       {errorDetails.llm_analysis.suggested_alternatives?.slice(0, 3).map((alt: any, index: number) => (
-                        <div key={index} style={{ 
-                          margin: '0.5rem 0', 
-                          padding: '0.5rem', 
-                          background: 'rgba(255,255,255,0.7)', 
-                          borderRadius: '4px' 
+                        <div key={index} style={{
+                          margin: '0.5rem 0',
+                          padding: '0.5rem',
+                          background: 'rgba(255,255,255,0.7)',
+                          borderRadius: '4px'
                         }}>
                           <div style={{ fontWeight: '600' }}>'{alt.column}'</div>
                           <div style={{ fontSize: '12px', color: '#6c757d' }}>
@@ -700,26 +700,26 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
                   )}
                 </div>
               )}
-              
+
               {errorDetails.available_columns && (
-                <div style={{ 
-                  background: '#f8f9fa', 
-                  border: '1px solid #dee2e6', 
-                  padding: '1rem', 
+                <div style={{
+                  background: '#f8f9fa',
+                  border: '1px solid #dee2e6',
+                  padding: '1rem',
                   borderRadius: '8px',
                   marginTop: '1rem'
                 }}>
                   <h5 style={{ margin: '0 0 0.5rem 0', color: '#495057' }}>📋 Available Columns</h5>
-                  <div style={{ 
-                    display: 'grid', 
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', 
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
                     gap: '0.5rem',
                     fontSize: '13px'
                   }}>
                     {errorDetails.available_columns?.slice(0, 20).map((col, index) => (
-                      <div key={index} style={{ 
-                        padding: '0.25rem 0.5rem', 
-                        background: 'white', 
+                      <div key={index} style={{
+                        padding: '0.25rem 0.5rem',
+                        background: 'white',
                         borderRadius: '4px',
                         border: '1px solid #e9ecef'
                       }}>
@@ -743,14 +743,14 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
       {response && (
         <div style={{ marginTop: '2rem' }}>
           <h3 style={{ color: '#495057', marginBottom: '1rem' }}>Query Results</h3>
-          
+
           {/* Status and Info */}
-          <div style={{ 
-            marginBottom: '1rem', 
-            padding: '1rem', 
-            background: '#d4edda', 
+          <div style={{
+            marginBottom: '1rem',
+            padding: '1rem',
+            background: '#d4edda',
             border: '1px solid #c3e6cb',
-            borderRadius: '4px' 
+            borderRadius: '4px'
           }}>
             <p><strong>Status:</strong> {response.status}</p>
             <p><strong>Message:</strong> {response.message}</p>
@@ -764,13 +764,13 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
               <h4 style={{ color: '#495057', marginBottom: '1rem' }}>
                 📊 Azure Analytics Results ({response.rows.length} records)
               </h4>
-              
+
               {/* Executive Summary if available */}
               {response.executive_summary && (
-                <div style={{ 
-                  backgroundColor: '#e8f4f8', 
-                  padding: '1rem', 
-                  borderRadius: '8px', 
+                <div style={{
+                  backgroundColor: '#e8f4f8',
+                  padding: '1rem',
+                  borderRadius: '8px',
                   marginBottom: '1rem',
                   border: '1px solid #bee5eb'
                 }}>
@@ -793,10 +793,10 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
                   )}
                 </div>
               )}
-              
-              <div style={{ 
-                maxHeight: '500px', 
-                overflow: 'auto', 
+
+              <div style={{
+                maxHeight: '500px',
+                overflow: 'auto',
                 border: '1px solid #dee2e6',
                 borderRadius: '8px',
                 boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
@@ -810,9 +810,9 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
                           #
                         </th>
                         {response.columns.map((column: string, idx: number) => (
-                          <th key={idx} style={{ 
-                            padding: '12px 8px', 
-                            textAlign: 'left', 
+                          <th key={idx} style={{
+                            padding: '12px 8px',
+                            textAlign: 'left',
                             fontWeight: '600',
                             fontSize: '13px',
                             borderLeft: idx > 0 ? '1px solid #495057' : 'none'
@@ -825,15 +825,15 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
                   )}
                   <tbody>
                     {response.rows.slice(0, 15).map((row: any, index: number) => (
-                      <tr key={index} style={{ 
+                      <tr key={index} style={{
                         borderBottom: '1px solid #e9ecef',
                         backgroundColor: index % 2 === 0 ? '#f8f9fa' : 'white',
                         transition: 'background-color 0.2s'
                       }}
-                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e3f2fd'}
-                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = index % 2 === 0 ? '#f8f9fa' : 'white'}>
-                        <td style={{ 
-                          padding: '10px 8px', 
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e3f2fd'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = index % 2 === 0 ? '#f8f9fa' : 'white'}>
+                        <td style={{
+                          padding: '10px 8px',
                           textAlign: 'center',
                           fontWeight: '500',
                           color: '#6c757d',
@@ -844,8 +844,8 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
                         {typeof row === 'object' && !Array.isArray(row) ? (
                           // Handle formatted object rows from backend
                           Object.values(row).map((cell: any, cellIndex: number) => (
-                            <td key={cellIndex} style={{ 
-                              padding: '10px 8px', 
+                            <td key={cellIndex} style={{
+                              padding: '10px 8px',
                               textAlign: 'left',
                               fontSize: '13px',
                               fontFamily: typeof cell === 'number' ? 'monospace' : 'inherit',
@@ -857,17 +857,17 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
                         ) : (
                           // Handle array rows (fallback)
                           (Array.isArray(row) ? row : Object.values(row)).map((cell: any, cellIndex: number) => (
-                            <td key={cellIndex} style={{ 
-                              padding: '10px 8px', 
+                            <td key={cellIndex} style={{
+                              padding: '10px 8px',
                               textAlign: 'left',
                               fontSize: '13px',
                               fontFamily: typeof cell === 'number' ? 'monospace' : 'inherit',
                               color: typeof cell === 'number' ? '#0d6efd' : '#212529'
                             }}>
-                              {typeof cell === 'number' ? 
-                                (cell < 1 && cell > 0 ? `${(cell * 100).toFixed(2)}%` : 
-                                 cell > 1000 ? cell.toLocaleString() : 
-                                 cell.toFixed(3)) : 
+                              {typeof cell === 'number' ?
+                                (cell < 1 && cell > 0 ? `${(cell * 100).toFixed(2)}%` :
+                                  cell > 1000 ? cell.toLocaleString() :
+                                    cell.toFixed(3)) :
                                 String(cell)}
                             </td>
                           ))
@@ -878,9 +878,9 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
                 </table>
               </div>
               {response.rows.length > 15 && (
-                <p style={{ 
-                  fontSize: '14px', 
-                  color: '#6c757d', 
+                <p style={{
+                  fontSize: '14px',
+                  color: '#6c757d',
                   marginTop: '0.75rem',
                   textAlign: 'center',
                   fontStyle: 'italic'
@@ -888,19 +888,19 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
                   📄 Showing first 15 of {response.rows.length} records
                 </p>
               )}
-              
+
               {/* Performance Metrics */}
               {response.performance_metrics && (
-                <div style={{ 
-                  marginTop: '1rem', 
-                  padding: '0.75rem', 
-                  backgroundColor: '#f8f9fa', 
+                <div style={{
+                  marginTop: '1rem',
+                  padding: '0.75rem',
+                  backgroundColor: '#f8f9fa',
                   borderRadius: '6px',
                   fontSize: '12px',
                   color: '#495057'
                 }}>
-                  ⚡ Query executed in {response.performance_metrics.total_execution_time}s 
-                  ({response.performance_metrics.rows_per_second} rows/sec) • 
+                  ⚡ Query executed in {response.performance_metrics.total_execution_time}s
+                  ({response.performance_metrics.rows_per_second} rows/sec) •
                   Performance: {response.performance_metrics.performance_category}
                 </div>
               )}
@@ -913,11 +913,11 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
               <h4 style={{ color: '#495057', marginBottom: '1rem' }}>
                 📈 Data Visualization
               </h4>
-              
+
               {/* Visualization Context */}
               {response.analysis_insights && response.analysis_insights.visualization_type && (
-                <div style={{ 
-                  backgroundColor: '#fff3cd', 
+                <div style={{
+                  backgroundColor: '#fff3cd',
                   border: '1px solid #ffeaa7',
                   borderRadius: '6px',
                   padding: '0.75rem',
@@ -933,8 +933,8 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
                   </p>
                 </div>
               )}
-              
-              <div style={{ 
+
+              <div style={{
                 border: '1px solid #dee2e6',
                 borderRadius: '8px',
                 padding: '1rem',
@@ -959,10 +959,10 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
                   }}
                 />
               </div>
-              
+
               {/* Chart Insights */}
               {response.analysis_insights && response.analysis_insights.data_interpretation && (
-                <div style={{ 
+                <div style={{
                   marginTop: '1rem',
                   padding: '1rem',
                   backgroundColor: '#d1ecf1',
@@ -983,7 +983,7 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
           )}
 
           {/* Insights Button */}
-          <button 
+          <button
             onClick={handleInsight}
             disabled={insightLoading}
             style={{
@@ -1014,12 +1014,12 @@ function QueryPanel({ onQueryResults, onInsightUpdate }: QueryPanelProps = {}) {
 
           {/* Insights Display */}
           {insight && (
-            <div style={{ 
-              marginTop: '1rem', 
-              padding: '1rem', 
-              background: '#e2f3ff', 
+            <div style={{
+              marginTop: '1rem',
+              padding: '1rem',
+              background: '#e2f3ff',
               border: '1px solid #b8daff',
-              borderRadius: '4px' 
+              borderRadius: '4px'
             }}>
               <h4 style={{ color: '#495057', marginBottom: '0.5rem' }}>💡 Insights</h4>
               <p>{insight}</p>

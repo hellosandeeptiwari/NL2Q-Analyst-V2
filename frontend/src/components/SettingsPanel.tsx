@@ -41,19 +41,19 @@ function SettingsPanel({ isOpen, onClose, onDatabaseChange }: SettingsPanelProps
   useEffect(() => {
     const loadConfiguration = async () => {
       console.log('🔧 Loading database configuration...');
-      
+
       try {
         // Always try to fetch from backend environment variables first
         console.log('📡 Fetching configuration from backend...');
         const response = await axios.get('${API_URL}/get-db-config');
         console.log('✅ Backend response:', response.data);
-        
+
         if (response.data && response.data.config) {
           const envConfig = response.data.config;
-          
+
           // Pre-populate with Snowflake config from environment if available
-          if (envConfig.snowflake && 
-              (envConfig.snowflake.account || envConfig.snowflake.username || envConfig.snowflake.database)) {
+          if (envConfig.snowflake &&
+            (envConfig.snowflake.account || envConfig.snowflake.username || envConfig.snowflake.database)) {
             console.log('🔗 Found Snowflake config in environment, populating form...');
             setDbConfig(prev => ({
               ...prev,
@@ -70,7 +70,7 @@ function SettingsPanel({ isOpen, onClose, onDatabaseChange }: SettingsPanelProps
             return; // Exit after setting environment config
           }
         }
-        
+
         // If no environment config, try localStorage
         console.log('💾 No environment config found, checking localStorage...');
         const savedConfig = localStorage.getItem('databaseConfig');
@@ -81,10 +81,10 @@ function SettingsPanel({ isOpen, onClose, onDatabaseChange }: SettingsPanelProps
         } else {
           console.log('ℹ️ No saved configuration found, using defaults');
         }
-        
+
       } catch (error) {
         console.error('❌ Failed to load configuration from backend:', error);
-        
+
         // Fall back to localStorage only
         const savedConfig = localStorage.getItem('databaseConfig');
         if (savedConfig) {
@@ -156,7 +156,7 @@ function SettingsPanel({ isOpen, onClose, onDatabaseChange }: SettingsPanelProps
       console.log('🔄 Sending test connection request:', { ...requestData, password: '***' });
       const response = await axios.post('${API_URL}/test-connection', requestData);
       console.log('📡 Backend response:', response.data);
-      
+
       if (response.data.success) {
         setConnectionStatus('success');
         setStatusMessage('Connection successful!');
@@ -171,7 +171,7 @@ function SettingsPanel({ isOpen, onClose, onDatabaseChange }: SettingsPanelProps
     } catch (error: any) {
       console.error('❌ Connection test error:', error);
       setConnectionStatus('error');
-      
+
       // Better error message handling
       let errorMessage = 'Connection failed';
       if (error.response) {
@@ -184,7 +184,7 @@ function SettingsPanel({ isOpen, onClose, onDatabaseChange }: SettingsPanelProps
         // Other error
         errorMessage = error.message || 'Unknown connection error';
       }
-      
+
       setStatusMessage(errorMessage);
     } finally {
       setIsConnecting(false);
