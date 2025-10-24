@@ -250,6 +250,17 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
     }
   };
 
+  // Check if chart can actually be rendered
+  const canRenderChart = () => {
+    const displayData = getDisplayData();
+    if (!plan.primary_chart || !displayData || displayData.length === 0) {
+      return false;
+    }
+    const { primary_chart } = plan;
+    const dataKeys = displayData.length > 0 ? Object.keys(displayData[0]) : [];
+    return dataKeys.includes(primary_chart.x_axis) && dataKeys.includes(primary_chart.y_axis);
+  };
+
   // Render primary chart using Plotly
   const renderChart = () => {
     const displayData = getDisplayData();
@@ -521,8 +532,8 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
 
         {/* Main Content Area */}
         <div className={`main-content ${hasSidebar ? 'with-sidebar' : 'full-width'}`}>
-          {/* Primary Chart - Only show if there's actually data to chart */}
-          {primary_chart && getDisplayData() && getDisplayData().length > 0 && (
+          {/* Primary Chart - Only show if chart can actually be rendered */}
+          {canRenderChart() ? (
             <div className="main-chart-area">
               {renderChart()}
               {activeComparisonCard !== null && temporal_context?.comparison_periods && (
@@ -531,10 +542,7 @@ const AdaptiveLayout: React.FC<AdaptiveLayoutProps> = ({ plan, data }) => {
                 </div>
               )}
             </div>
-          )}
-          
-          {/* Show helpful message when no chart is available */}
-          {(!primary_chart || !getDisplayData() || getDisplayData().length === 0) && (
+          ) : (
             <div className="main-chart-area" style={{
               background: '#f8fafc',
               border: '2px dashed #e5e7eb',
