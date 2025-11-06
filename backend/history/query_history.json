@@ -911,5 +911,19 @@
     ],
     "columns": [],
     "row_count": 7
+  },
+  {
+    "nl": "What was the total number of prescriptions (TRx) for Tirosint Capsules during Q2 2022?\n",
+    "sql": "SELECT TOP 100\n    SUM(ISNULL([TRX], 0)) AS TotalPrescriptions\nFROM dbo.Reporting_BI_TerritoryPerformanceSummary\nWHERE [ProductGroupName] = 'Tirosint Caps'\n  AND [TimePeriod] = 'Q2 2025'",
+    "job_id": "plan_-6908025415091164216_conv_1",
+    "user": "default_user",
+    "timestamp": "2025-10-23T13:05:51.574670",
+    "results": [
+      {
+        "TotalPrescriptions": 130795
+      }
+    ],
+    "columns": [],
+    "row_count": 1
   }
 ]
